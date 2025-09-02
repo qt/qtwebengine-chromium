@@ -9,7 +9,9 @@ import datetime as dt
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Iterable, Type
+from typing import TYPE_CHECKING, Iterable, Self, Type
+
+from typing_extensions import override
 
 from crossbench.parse import DurationParser, ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
@@ -32,7 +34,8 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
   IS_GENERAL_PURPOSE = False
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "interval",
@@ -53,6 +56,7 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
       raise ValueError(f"Polling interval must be >= 0.1s, but got: {interval}")
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (("cmd", tuple(self.cmd)),
                           ("interval", self.interval.total_seconds()))
@@ -65,12 +69,14 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
   def cmd(self) -> TupleCmdArgs:
     return self._cmd
 
+  @override
   def validate_env(self, env: HostEnvironment) -> None:
     super().validate_env(env)
     if env.repetitions != 1:
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
+  @override
   def get_context_cls(self) -> Type[PollingProbeContext]:
     return PollingProbeContext
 
@@ -84,7 +90,8 @@ class PollingShellProbe(PollingProbe):
   NAME = "poll"
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "cmd",
@@ -102,6 +109,7 @@ class PollingProbeContext(ProbeContext[PollingProbe]):
     self._poller = CMDPoller(self.browser_platform, self.probe.cmd,
                              self.probe.interval, self.local_result_path)
 
+  @override
   def setup(self) -> None:
     self.local_result_path.mkdir()
 
@@ -118,7 +126,7 @@ class PollingProbeContext(ProbeContext[PollingProbe]):
 class CMDPoller(threading.Thread):
 
   def __init__(self, platform: plt.Platform, cmd: Iterable[CmdArg],
-               interval: dt.timedelta, path: LocalPath):
+               interval: dt.timedelta, path: LocalPath) -> None:
     super().__init__()
     self._platform = platform
     self._cmd: TupleCmdArgs = tuple(cmd)
@@ -141,8 +149,7 @@ class CMDPoller(threading.Thread):
       data = self._platform.sh_stdout(*self._cmd)
       datetime_str = poll_start.strftime("%Y-%m-%d_%H%M%S_%f")
       out_file = self._path / f"{datetime_str}.txt"
-      with out_file.open("w", encoding="utf-8") as f:
-        f.write(data)
+      out_file.write_text(data, encoding="utf-8")
 
       poll_end = dt.datetime.now()
       diff = (poll_end - poll_start).total_seconds()

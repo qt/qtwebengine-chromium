@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type
 
 import selenium.common.exceptions
 import urllib3.exceptions
+from typing_extensions import override
 
 from crossbench.action_runner.action_runner_listener import \
     ActionRunnerListener
@@ -47,6 +48,7 @@ class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
   """
   NAME: str = "memory_probe"
 
+  @override
   def get_context_cls(self) -> Type[MemoryProbeContext]:
     return MemoryProbeContext
 
@@ -54,9 +56,11 @@ class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
     raise NotImplementedError(
         "should not be called, data comes from memory probe context")
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_result(group.results, single_result=False)
 
@@ -79,12 +83,14 @@ class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
       else:
         self._log_result_metrics(data)
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         repetitions_group.results[self].json
         for repetitions_group in group.repetitions_groups)
     return self.write_group_result(group, merged)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
         self.merge_browsers_csv_list(group))
@@ -100,6 +106,9 @@ class MemoryProbeContext(ActionRunnerListener,
       raise TypeError("The probe only works for MemoryBenchmark")
     cur_benchmark.action_runner.set_listener(self)
     self._skippable_tab_count = cur_benchmark._skippable_tab_count
+    self._target_tab_count = cur_benchmark.get_target_tab_count()
+    self._intensive_tab_switch_count = \
+      cur_benchmark.get_intensive_tab_switch_count()
     # Records the navigation_start_time time for each window handle.
     self._navigation_time_ms: Dict[str, float] = {}
     self._tab_count: int = 1
@@ -107,10 +116,11 @@ class MemoryProbeContext(ActionRunnerListener,
   def start(self) -> None:
     pass
 
+  @override
   def to_json(self, actions: Actions) -> JsonDict:
     return {"alive_tab_count": self._tab_count - 1}
 
-  def _increment_tab_count(self):
+  def _increment_tab_count(self) -> None:
     self._tab_count += 1
 
   def _record_navigation_time(self, run: Run) -> None:
@@ -145,7 +155,7 @@ class MemoryProbeContext(ActionRunnerListener,
               "is: %s ", run.browser, self._tab_count - 1)
           raise StopStoryException("Found a page that has been reloaded.")
 
-  def _check_error_msg(self, e: Exception):
+  def _check_error_msg(self, e: Exception) -> bool:
     if isinstance(e, selenium.common.exceptions.WebDriverException
                  ) and "page crash" in str(e):
       return True
@@ -158,6 +168,7 @@ class MemoryProbeContext(ActionRunnerListener,
       return True
     return False
 
+  @override
   def handle_error(self, run: Run, e: Exception) -> None:
     """
     If there is a page crash error or a http request time out
@@ -170,13 +181,44 @@ class MemoryProbeContext(ActionRunnerListener,
           "is: %s ", run.browser, self._tab_count - 1)
       raise StopStoryException(f"Found a Tab Crash/Timeout: {e}")
 
+  @override
   def handle_page_run(self, run: Run) -> None:
     self._record_navigation_time(run)
     if self._tab_count > self._skippable_tab_count:
       self._check_liveness(run)
+    # Conduct intensive tab switch between the target num of tabs.
+    if self._intensive_tab_switch_count > 0 \
+      and self._tab_count == self._target_tab_count:
+      self._intensive_tab_switch(run)
+      self._collect_tab_switch_metric(run)
 
+  @override
   def handle_new_tab(self, run: Run) -> None:
     self._increment_tab_count()
+
+  def _intensive_tab_switch(self, run: Run) -> None:
+    cur_tab_switch_count = 0
+    with run.actions("Intensive Tab Switching", measure=False) as action:
+      while cur_tab_switch_count < self._intensive_tab_switch_count:
+        for handle, _ in self._navigation_time_ms.items():
+          cur_tab_switch_count += 1
+          logging.debug(
+              "Browser: %s. Switching to handle: %s. "
+              "Current tab switch count: %s", run.browser, handle,
+              cur_tab_switch_count)
+          action.switch_window(handle)
+          action.wait(2)
+
+  def _collect_tab_switch_metric(self, run: Run) -> None:
+    with run.actions("Collect Tab Switch Metric", measure=False) as action:
+      browser = run.browser
+      browser.switch_to_new_tab()
+      switch_duration_histogram = \
+        "chrome://histograms/#Browser.Tabs.TotalSwitchDuration3"
+      browser.show_url(switch_duration_histogram)
+      content = action.js(
+          "let content = document.documentElement.innerText; return content;")
+      logging.info("TabSwitchDuration Metrics: %s", content)
 
 
 class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
@@ -190,6 +232,7 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
   URL = "https://chromium-workloads.web.app/web-tests/main/synthetic/memory"
 
   @classmethod
+  @override
   def add_cli_parser(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser = super().add_cli_parser(parser)
@@ -250,6 +293,7 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
     return parser
 
   @classmethod
+  @override
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["args"] = args
@@ -264,6 +308,7 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
 
     super().__init__(story_cls, patterns, separate)
 
+  @override
   def process_all(self, patterns: Sequence[str]) -> None:
     self.stories = self.stories_from_cli_args(self._args)
 
@@ -283,8 +328,9 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
     stories = [page]
     return stories
 
+  @override
   def create_stories(self, separate: bool) -> Sequence[Page]:
-    logging.info("SELECTED STORIES: %s", ", ".join(map(str, self.stories)))
+    self.log_stories(self.stories)
     return self.stories
 
 
@@ -299,6 +345,7 @@ class MemoryBenchmark(SubStoryBenchmark):
   PROBES: Tuple[Type[MemoryProbe], ...] = (MemoryProbe,)
 
   @classmethod
+  @override
   def add_cli_parser(
       cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
   ) -> CrossBenchArgumentParser:
@@ -309,35 +356,56 @@ class MemoryBenchmark(SubStoryBenchmark):
         type=NumberParser.positive_int,
         default=0,
         help="The number of tabs that can be skipped for liveness checking.")
+    parser.add_argument(
+        "--intensive-tab-switch-count",
+        type=NumberParser.positive_int,
+        default=0,
+        help="The num of tab switch for stress testing.")
     return parser
 
   @classmethod
+  @override
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["skippable_tab_count"] = args.skippable_tab_count
+    kwargs["target_tab_count"] = args.tabs.count
+    kwargs["intensive_tab_switch_count"] = args.intensive_tab_switch_count
     return kwargs
 
   @classmethod
+  @override
   def stories_from_cli_args(cls, args: argparse.Namespace) -> Sequence[Page]:
     super().stories_from_cli_args(args)
     stories = MemoryBenchmarkStoryFilter.stories_from_cli_args(args)
     return stories
 
   @classmethod
+  @override
   def all_story_names(cls) -> Tuple[str, ...]:
     return ()
 
   def __init__(self,
                stories: Sequence[Page],
                skippable_tab_count: int = 0,
+               target_tab_count: int = 0,
+               intensive_tab_switch_count: int = 0,
                action_runner: Optional[ActionRunner] = None) -> None:
     self._action_runner = action_runner or DefaultActionRunner()
     for story in stories:
       assert isinstance(story, Page)
     super().__init__(stories)
     self._skippable_tab_count = skippable_tab_count
+    self._target_tab_count = target_tab_count
+    self._intensive_tab_switch_count = intensive_tab_switch_count
+
+  def get_target_tab_count(self) -> int:
+    return self._target_tab_count
+
+  def get_intensive_tab_switch_count(self) -> int:
+    return self._intensive_tab_switch_count
 
   @classmethod
+  @override
   def describe(cls) -> Dict[str, Any]:
     data = super().describe()
     data["url"] = cls.STORY_FILTER_CLS.URL

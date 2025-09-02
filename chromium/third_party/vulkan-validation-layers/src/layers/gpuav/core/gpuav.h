@@ -28,22 +28,10 @@ struct ShaderObject;
 }  // namespace chassis
 
 namespace gpuav {
-class Buffer;
-class BufferView;
-class CommandBuffer;
-class ImageView;
-class Queue;
-class Sampler;
-class DescriptorSet;
+class CommandBufferSubState;
+class DescriptorSetSubState;
+class QueueSubState;
 }  // namespace gpuav
-
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkBuffer, gpuav::Buffer, vvl::Buffer)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkBufferView, gpuav::BufferView, vvl::BufferView)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, gpuav::CommandBuffer, vvl::CommandBuffer)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkDescriptorSet, gpuav::DescriptorSet, vvl::DescriptorSet)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkImageView, gpuav::ImageView, vvl::ImageView)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkSampler, gpuav::Sampler, vvl::Sampler)
-VALSTATETRACK_DERIVED_STATE_OBJECT(VkQueue, gpuav::Queue, vvl::Queue)
 
 namespace gpuav {
 
@@ -64,6 +52,7 @@ class Instance : public vvl::Instance {
                                                     VkPhysicalDeviceProperties2* pPhysicalDeviceProperties2,
                                                     const RecordObject& record_obj) final;
     void InternalWarning(LogObjectList objlist, const Location& loc, const char* const specific_message) const;
+    void AddFeatures(VkPhysicalDevice physical_device, vku::safe_VkDeviceCreateInfo* modified_create_info, const Location& loc);
     bool timeline_khr_{false};
 };
 
@@ -80,18 +69,6 @@ class Validator : public GpuShaderInstrumentor {
     // gpuav_setup.cpp
     // -------------
   public:
-    std::shared_ptr<vvl::Buffer> CreateBufferState(VkBuffer handle, const VkBufferCreateInfo* create_info) final;
-    std::shared_ptr<vvl::BufferView> CreateBufferViewState(const std::shared_ptr<vvl::Buffer>& buffer, VkBufferView handle,
-                                                           const VkBufferViewCreateInfo* create_info,
-                                                           VkFormatFeatureFlags2 format_features) final;
-    std::shared_ptr<vvl::ImageView> CreateImageViewState(const std::shared_ptr<vvl::Image>& image_state, VkImageView handle,
-                                                         const VkImageViewCreateInfo* create_info,
-                                                         VkFormatFeatureFlags2 format_features,
-                                                         const VkFilterCubicImageViewImageFormatPropertiesEXT& cubic_props) final;
-    std::shared_ptr<vvl::Sampler> CreateSamplerState(VkSampler handle, const VkSamplerCreateInfo* create_info) final;
-    std::shared_ptr<vvl::AccelerationStructureKHR> CreateAccelerationStructureState(
-        VkAccelerationStructureKHR handle, const VkAccelerationStructureCreateInfoKHR* create_info,
-        std::shared_ptr<vvl::Buffer>&& buf_state) final;
     std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer handle,
                                                              const VkCommandBufferAllocateInfo* allocate_info,
                                                              const vvl::CommandPool* pool) final;
@@ -102,10 +79,9 @@ class Validator : public GpuShaderInstrumentor {
                                             VkDeviceQueueCreateFlags flags,
                                             const VkQueueFamilyProperties& queueFamilyProperties) override;
 
-    void PostCreateDevice(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) final;
+    void FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) final;
 
     void InternalVmaError(LogObjectList objlist, const Location& loc, const char* const specific_message) const;
-    VkDeviceAddress GetBufferDeviceAddressHelper(VkBuffer buffer) const;
 
   private:
     void InitSettings(const Location& loc);
@@ -144,8 +120,6 @@ class Validator : public GpuShaderInstrumentor {
                                          const RecordObject& record_obj) final;
     void PostCallRecordCmdEndRendering(VkCommandBuffer commandBuffer, const RecordObject& record_obj) final;
     void PostCallRecordCmdEndRenderingKHR(VkCommandBuffer commandBuffer, const RecordObject& record_obj) final;
-    void PostCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline,
-                                       const RecordObject& record_obj) final;
     void PostCallRecordCmdBindDescriptorSets2(VkCommandBuffer commandBuffer,
                                               const VkBindDescriptorSetsInfo* pBindDescriptorSetsInfo,
                                               const RecordObject& record_obj) final;
@@ -177,6 +151,12 @@ class Validator : public GpuShaderInstrumentor {
         VkCommandBuffer commandBuffer,
         const VkBindDescriptorBufferEmbeddedSamplersInfoEXT* pBindDescriptorBufferEmbeddedSamplersInfo,
         const RecordObject& record_obj) final;
+
+    void PreCallActionCommand(Validator& gpuav, CommandBufferSubState& cb_state, VkPipelineBindPoint bind_point,
+                              const Location& loc);
+    void PostCallActionCommand(Validator& gpuav, CommandBufferSubState& cb_state, VkPipelineBindPoint bind_point,
+                               const Location& loc);
+
     void PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
                               uint32_t firstInstance, const RecordObject& record_obj) final;
     void PostCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
@@ -443,7 +423,6 @@ class Validator : public GpuShaderInstrumentor {
     PFN_vkSetDeviceLoaderData vk_set_device_loader_data_;
 
     VmaAllocator vma_allocator_ = {};
-    VmaPool output_buffer_pool_ = VK_NULL_HANDLE;
     std::unique_ptr<vko::DescriptorSetManager> desc_set_manager_;
 
     vko::Buffer indices_buffer_;

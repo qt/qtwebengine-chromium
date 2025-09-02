@@ -27,14 +27,6 @@
 // This file contains methods for class vvl::base::Device and it is designed to ONLY be
 // included into validation_object.h.
 
-// We make many internal dispatch calls to extended query functions which can depend on the API version
-void DispatchGetImageMemoryRequirements2Helper(VkDevice device, const VkImageMemoryRequirementsInfo2* pInfo,
-                                               VkMemoryRequirements2* pMemoryRequirements) const;
-void DispatchGetBufferMemoryRequirements2Helper(VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo,
-                                                VkMemoryRequirements2* pMemoryRequirements) const;
-void DispatchGetImageSparseMemoryRequirements2Helper(VkDevice device, const VkImageSparseMemoryRequirementsInfo2* pInfo,
-                                                     uint32_t* pSparseMemoryRequirementCount,
-                                                     VkSparseImageMemoryRequirements2* pSparseMemoryRequirements) const;
 virtual bool PreCallValidateGetDeviceProcAddr(VkDevice device, const char* pName, const ErrorObject& error_obj) const {
     return false;
 }
@@ -4260,6 +4252,7 @@ virtual void PreCallRecordGetPrivateDataEXT(VkDevice device, VkObjectType object
                                             VkPrivateDataSlot privateDataSlot, uint64_t* pData, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                                              VkPrivateDataSlot privateDataSlot, uint64_t* pData, const RecordObject& record_obj) {}
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 virtual bool PreCallValidateCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
                                                const ErrorObject& error_obj) const {
@@ -4314,6 +4307,7 @@ virtual void PreCallRecordCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, c
                                                 const RecordObject& record_obj) {}
 virtual void PostCallRecordCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, const VkCudaLaunchInfoNV* pLaunchInfo,
                                                  const RecordObject& record_obj) {}
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 virtual bool PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo,
                                                   const ErrorObject& error_obj) const {
@@ -5629,6 +5623,14 @@ virtual void PostCallRecordGetMemoryMetalHandlePropertiesEXT(VkDevice device, Vk
                                                              VkMemoryMetalHandlePropertiesEXT* pMemoryMetalHandleProperties,
                                                              const RecordObject& record_obj) {}
 #endif  // VK_USE_PLATFORM_METAL_EXT
+virtual bool PreCallValidateCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
+                                               const RecordObject& record_obj) {}
 virtual bool PreCallValidateCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                            const VkAllocationCallbacks* pAllocator,
                                                            VkAccelerationStructureKHR* pAccelerationStructure,

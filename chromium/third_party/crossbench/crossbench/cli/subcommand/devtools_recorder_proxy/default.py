@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any, Coroutine, Dict, Optional, Tuple
 
 from websockets import server as websockets
 
-from crossbench import compat
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.helper.state import BaseState, StateMachine
@@ -40,7 +39,7 @@ class State(BaseState):
 
 
 @enum.unique
-class Response(compat.StrEnum):
+class Response(enum.StrEnum):
   STATUS = "status"
   OUTPUT = "output"
 
@@ -53,13 +52,12 @@ class CrossbenchDevToolsRecorderProxy:
   DEFAULT_PORT = 44645
 
   @classmethod
-  def add_subcommand(cls, subparsers) -> argparse.ArgumentParser:
+  def add_cli_parser(cls, subparsers) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
         help=("Starts a local server to communicate with the "
               "DevTools Recorder extension."))
-    parser.set_defaults(subcommand_fn=cls._subcommand)
     parser.add_argument(
         "--disable-token-authentication",
         dest="use_auth_token",
@@ -70,7 +68,7 @@ class CrossbenchDevToolsRecorderProxy:
     return parser
 
   @classmethod
-  def _subcommand(cls, args: argparse.Namespace) -> None:
+  def run_subcommand(cls, args: argparse.Namespace) -> None:
     instance: CrossbenchDevToolsRecorderProxy = cls(
         use_auth_token=args.use_auth_token)
     instance.run()
@@ -83,8 +81,8 @@ class CrossbenchDevToolsRecorderProxy:
     self._print_cmd_output: bool = False
     self._port: int = self.DEFAULT_PORT
     self._state = StateMachine(State.CONNECTED)
-    self._crossbench_task: Optional[asyncio.Task] = None
-    self._crossbench_process: Optional[Process] = None
+    self._crossbench_task: asyncio.Task | None = None
+    self._crossbench_process: Process | None = None
     self._tmp_json = pth.LocalPath(
         tempfile.mkdtemp("crossbench_proxy")) / "devtools_recorder.json"
 
@@ -145,7 +143,8 @@ class CrossbenchDevToolsRecorderProxy:
     logging.debug("SEND Response: %s", response_json)
     await self._websocket.send(response_json)
 
-  async def _handle_message(self, message) -> Optional[Tuple[Response, Any]]:
+  async def _handle_message(
+      self, message: bytearray | bytes | str) -> Optional[Tuple[Response, Any]]:
     logging.debug("RECEIVE Message: %s", message)
     try:
       payload: Dict[str, Any] = json.loads(message)
@@ -171,7 +170,7 @@ class CrossbenchDevToolsRecorderProxy:
   async def _stop_command(self) -> Tuple[Response, str]:
     if process := self._crossbench_process:
       logging.info("# CROSSBENCH COMMAND: KILL")
-      plt.PLATFORM.wait_and_terminate(process)
+      plt.PLATFORM.terminate_gracefully(process)
     self._state.transition(State.CONNECTED, State.CONNECTED, to=State.CONNECTED)
     return await self._status_command()
 

@@ -24,7 +24,6 @@
 #include "absl/strings/str_cat.h"
 #include "ink/brush/easing_function.h"
 #include "ink/brush/fuzz_domains.h"
-#include "ink/types/duration.h"
 
 namespace ink {
 namespace {
@@ -32,6 +31,7 @@ namespace {
 using ::absl_testing::IsOk;
 using ::absl_testing::StatusIs;
 using ::testing::HasSubstr;
+using ::testing::Not;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();
 constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
@@ -161,6 +161,23 @@ TEST(BrushBehaviorTest, StringifyTarget) {
             "kRotationOffsetInRadians");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kCornerRoundingOffset),
             "kCornerRoundingOffset");
+  EXPECT_EQ(absl::StrCat(
+                BrushBehavior::Target::kPositionOffsetXInMultiplesOfBrushSize),
+            "kPositionOffsetXInMultiplesOfBrushSize");
+  EXPECT_EQ(absl::StrCat(
+                BrushBehavior::Target::kPositionOffsetYInMultiplesOfBrushSize),
+            "kPositionOffsetYInMultiplesOfBrushSize");
+  EXPECT_EQ(
+      absl::StrCat(
+          BrushBehavior::Target::kPositionOffsetForwardInMultiplesOfBrushSize),
+      "kPositionOffsetForwardInMultiplesOfBrushSize");
+  EXPECT_EQ(
+      absl::StrCat(
+          BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize),
+      "kPositionOffsetLateralInMultiplesOfBrushSize");
+  EXPECT_EQ(
+      absl::StrCat(BrushBehavior::Target::kTextureAnimationProgressOffset),
+      "kTextureAnimationProgressOffset");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kHueOffsetInRadians),
             "kHueOffsetInRadians");
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kSaturationMultiplier),
@@ -169,6 +186,19 @@ TEST(BrushBehaviorTest, StringifyTarget) {
   EXPECT_EQ(absl::StrCat(BrushBehavior::Target::kOpacityMultiplier),
             "kOpacityMultiplier");
   EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::Target>(91)), "Target(91)");
+}
+
+TEST(BrushBehaviorTest, StringifyPolarTarget) {
+  EXPECT_EQ(
+      absl::StrCat(BrushBehavior::PolarTarget::
+                       kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize),
+      "kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize");
+  EXPECT_EQ(
+      absl::StrCat(BrushBehavior::PolarTarget::
+                       kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize),
+      "kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize");
+  EXPECT_EQ(absl::StrCat(static_cast<BrushBehavior::PolarTarget>(91)),
+            "PolarTarget(91)");
 }
 
 TEST(BrushBehaviorTest, StringifyOutOfRange) {
@@ -310,6 +340,18 @@ TEST(BrushBehaviorTest, StringifyTargetNode) {
             }),
             "TargetNode{target=kSizeMultiplier, "
             "target_modifier_range={0.5, 1.5}}");
+}
+
+TEST(BrushBehaviorTest, StringifyPolarTargetNode) {
+  EXPECT_EQ(absl::StrCat(BrushBehavior::PolarTargetNode{
+                .target = BrushBehavior::PolarTarget::
+                    kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+                .angle_range = {0.5, 1.5},
+                .magnitude_range = {0, 2},
+            }),
+            "PolarTargetNode{target="
+            "kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize, "
+            "angle_range={0.5, 1.5}, magnitude_range={0, 2}}");
 }
 
 TEST(BrushBehaviorTest, StringifyBrushBehavior) {
@@ -543,6 +585,43 @@ TEST(BrushBehaviorTest, TargetNodeEqualAndNotEqual) {
             node);
 }
 
+TEST(BrushBehaviorTest, PolarTargetNodeEqualAndNotEqual) {
+  BrushBehavior::PolarTargetNode node = {
+      .target = BrushBehavior::PolarTarget::
+          kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+      .angle_range = {0.5, 1.5},
+      .magnitude_range = {0, 2},
+  };
+  EXPECT_EQ((BrushBehavior::PolarTargetNode{
+                .target = BrushBehavior::PolarTarget::
+                    kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+                .angle_range = {0.5, 1.5},
+                .magnitude_range = {0, 2},
+            }),
+            node);
+  EXPECT_NE((BrushBehavior::PolarTargetNode{
+                .target = BrushBehavior::PolarTarget::  // different
+                kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize,
+                .angle_range = {0.5, 1.5},
+                .magnitude_range = {0, 2},
+            }),
+            node);
+  EXPECT_NE((BrushBehavior::PolarTargetNode{
+                .target = BrushBehavior::PolarTarget::
+                    kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+                .angle_range = {0, 1.5},  // different
+                .magnitude_range = {0, 2},
+            }),
+            node);
+  EXPECT_NE((BrushBehavior::PolarTargetNode{
+                .target = BrushBehavior::PolarTarget::
+                    kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+                .angle_range = {0.5, 1.5},
+                .magnitude_range = {0, 3},  // different
+            }),
+            node);
+}
+
 TEST(BrushBehaviorTest, BrushBehaviorEqualAndNotEqual) {
   EXPECT_EQ(BrushBehavior{}, BrushBehavior{});
   EXPECT_NE(BrushBehavior{},
@@ -708,16 +787,16 @@ TEST(BrushBehaviorTest, ValidateFallbackFilterNode) {
 }
 
 TEST(BrushBehaviorTest, ValidateToolTypeFilterNode) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehaviorNode(
-                BrushBehavior::ToolTypeFilterNode{
-                    BrushBehavior::EnabledToolTypes{.mouse = true}}),
-            absl::OkStatus());
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorNode(
+                  BrushBehavior::ToolTypeFilterNode{
+                      BrushBehavior::EnabledToolTypes{.mouse = true}}),
+              IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehaviorNode(
-      BrushBehavior::ToolTypeFilterNode{BrushBehavior::EnabledToolTypes{}});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(),
-              HasSubstr("must contain at least one true value"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(
+          BrushBehavior::ToolTypeFilterNode{BrushBehavior::EnabledToolTypes{}}),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("must enable at least one tool type")));
 }
 
 TEST(BrushBehaviorTest, ValidateDampingNode) {
@@ -829,10 +908,78 @@ TEST(BrushBehaviorTest, ValidateTargetNode) {
           "target_modifier_range` must hold 2 finite and distinct values"));
 }
 
+TEST(BrushBehaviorTest, ValidatePolarTargetNode) {
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = BrushBehavior::PolarTarget::
+              kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+          .angle_range = {0, 2},
+          .magnitude_range = {1, 3},
+      }),
+      IsOk());
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = static_cast<BrushBehavior::PolarTarget>(123),
+          .angle_range = {0, 2},
+          .magnitude_range = {1, 3},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("non-enumerator value 123")));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = BrushBehavior::PolarTarget::
+              kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+          .angle_range = {0, kInfinity},
+          .magnitude_range = {1, 3},
+      }),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("angle_range` must hold 2 finite and distinct values")));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = BrushBehavior::PolarTarget::
+              kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+          .angle_range = {2, 2},
+          .magnitude_range = {1, 3},
+      }),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("angle_range` must hold 2 finite and distinct values")));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = BrushBehavior::PolarTarget::
+              kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+          .angle_range = {0, 2},
+          .magnitude_range = {1, kInfinity},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr(
+                   "magnitude_range` must hold 2 finite and distinct values")));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(BrushBehavior::PolarTargetNode{
+          .target = BrushBehavior::PolarTarget::
+              kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+          .angle_range = {0, 2},
+          .magnitude_range = {3, 3},
+      }),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr(
+                   "magnitude_range` must hold 2 finite and distinct values")));
+}
+
 TEST(BrushBehaviorTest, ValidateBrushBehavior) {
-  EXPECT_EQ(brush_internal::ValidateBrushBehavior(BrushBehavior{}),
-            absl::OkStatus());
-  EXPECT_EQ(
+  EXPECT_THAT(brush_internal::ValidateBrushBehavior(BrushBehavior{}), IsOk());
+  BrushBehavior has_invalid_node = {{
+      BrushBehavior::ConstantNode{0},
+      BrushBehavior::TargetNode{
+          .target = BrushBehavior::Target::kSizeMultiplier,
+          .target_modifier_range = {1, 1},
+      },
+  }};
+  EXPECT_THAT(brush_internal::ValidateBrushBehavior(has_invalid_node),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("target_modifier_range")));
+  EXPECT_THAT(
       brush_internal::ValidateBrushBehavior(BrushBehavior{{
           BrushBehavior::SourceNode{
               .source = BrushBehavior::Source::kNormalizedPressure,
@@ -852,20 +999,74 @@ TEST(BrushBehaviorTest, ValidateBrushBehavior) {
               .target_modifier_range = {1, 2},
           },
       }}),
-      absl::OkStatus());
+      IsOk());
 
-  absl::Status status = brush_internal::ValidateBrushBehavior(BrushBehavior{{
-      BrushBehavior::ResponseNode{EasingFunction::Predefined::kEaseOut},
-  }});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("Insufficient inputs"));
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehavior(BrushBehavior{{
+          BrushBehavior::ResponseNode{EasingFunction::Predefined::kEaseOut},
+      }}),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("Insufficient inputs")));
 
-  status = brush_internal::ValidateBrushBehavior(BrushBehavior{{
+  EXPECT_THAT(brush_internal::ValidateBrushBehavior(BrushBehavior{{
+                  BrushBehavior::ConstantNode{0},
+                  BrushBehavior::ConstantNode{1},
+              }}),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("there were 2 values remaining")));
+}
+
+TEST(BrushBehaviorTest, ValidateBrushBehaviorTopLevel) {
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorTopLevel(BrushBehavior{}),
+              IsOk());
+  BrushBehavior has_invalid_node = {{
       BrushBehavior::ConstantNode{0},
-      BrushBehavior::ConstantNode{1},
-  }});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("there were 2 values remaining"));
+      BrushBehavior::TargetNode{
+          .target = BrushBehavior::Target::kSizeMultiplier,
+          .target_modifier_range = {1, 1},
+      },
+  }};
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorTopLevel(has_invalid_node),
+              IsOk());
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorNode(has_invalid_node.nodes[1]),
+      Not(IsOk()));
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorTopLevel(BrushBehavior{{
+          BrushBehavior::SourceNode{
+              .source = BrushBehavior::Source::kNormalizedPressure,
+              .source_value_range = {0.5, 0.75},
+          },
+          BrushBehavior::ToolTypeFilterNode{{.stylus = true}},
+          BrushBehavior::FallbackFilterNode{
+              BrushBehavior::OptionalInputProperty::kTilt},
+          BrushBehavior::DampingNode{
+              .damping_source = BrushBehavior::DampingSource::kTimeInSeconds,
+              .damping_gap = 0.25,
+          },
+          BrushBehavior::ConstantNode{0.75},
+          BrushBehavior::BinaryOpNode{BrushBehavior::BinaryOp::kProduct},
+          BrushBehavior::TargetNode{
+              .target = BrushBehavior::Target::kSizeMultiplier,
+              .target_modifier_range = {1, 2},
+          },
+      }}),
+      IsOk());
+
+  EXPECT_THAT(
+      brush_internal::ValidateBrushBehaviorTopLevel(BrushBehavior{{
+          BrushBehavior::ResponseNode{EasingFunction::Predefined::kEaseOut},
+      }}),
+      StatusIs(absl::StatusCode::kInvalidArgument,
+               HasSubstr("Insufficient inputs")));
+
+  EXPECT_THAT(brush_internal::ValidateBrushBehaviorTopLevel(BrushBehavior{{
+                  BrushBehavior::ConstantNode{0},
+                  BrushBehavior::ConstantNode{1},
+              }}),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("there were 2 values remaining")));
 }
 
 void CanValidateValidBrushBehavior(const BrushBehavior& behavior) {

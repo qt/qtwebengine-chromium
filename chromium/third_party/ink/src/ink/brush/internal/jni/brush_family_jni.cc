@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 
 #include <jni.h>
 
-#include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/log/absl_check.h"
@@ -28,42 +28,71 @@
 #include "ink/jni/internal/jni_string_util.h"
 #include "ink/jni/internal/jni_throw_util.h"
 
+namespace {
+
+using ::ink::BrushCoat;
+using ::ink::BrushFamily;
+using ::ink::jni::CastToBrushCoat;
+using ::ink::jni::CastToBrushFamily;
+using ::ink::jni::JStringView;
+using ::ink::jni::ThrowExceptionFromStatus;
+
+}  // namespace
+
 extern "C" {
 
 // Construct a native BrushFamily and return a pointer to it as a long.
-JNI_METHOD(brush, BrushFamily, jlong, nativeCreateBrushFamily)
-(JNIEnv* env, jobject thiz, jlongArray coat_native_pointer_array, jstring j_uri,
- jboolean use_spring_model_v2) {
-  std::vector<ink::BrushCoat> coats;
+JNI_METHOD(brush, BrushFamilyNative, jlong,
+           create)(JNIEnv* env, jobject object,
+                   jlongArray coat_native_pointer_array,
+                   jstring client_brush_family_id) {
+  std::vector<BrushCoat> coats;
   const jsize num_coats = env->GetArrayLength(coat_native_pointer_array);
   coats.reserve(num_coats);
   jlong* coat_pointers =
       env->GetLongArrayElements(coat_native_pointer_array, nullptr);
-  ABSL_CHECK(coat_pointers);
+  ABSL_CHECK(coat_pointers != nullptr);
   for (jsize i = 0; i < num_coats; ++i) {
-    coats.push_back(ink::CastToBrushCoat(coat_pointers[i]));
+    coats.push_back(CastToBrushCoat(coat_pointers[i]));
   }
-  env->ReleaseLongArrayElements(coat_native_pointer_array, coat_pointers, 0);
+  env->ReleaseLongArrayElements(
+      coat_native_pointer_array, coat_pointers,
+      // No need to copy back the array, which is not modified.
+      JNI_ABORT);
 
-  ink::BrushFamily::InputModel input_model = ink::BrushFamily::SpringModelV1();
-  if (use_spring_model_v2) {
-    input_model = ink::BrushFamily::SpringModelV2();
-  }
-
-  absl::StatusOr<ink::BrushFamily> brush_family = ink::BrushFamily::Create(
-      coats, ink::jni::JStringView(env, j_uri).string_view(), input_model);
+  BrushFamily::InputModel input_model = BrushFamily::SpringModel();
+  absl::StatusOr<BrushFamily> brush_family = BrushFamily::Create(
+      coats, JStringView(env, client_brush_family_id).string_view(),
+      input_model);
   if (!brush_family.ok()) {
-    ink::jni::ThrowExceptionFromStatus(env, brush_family.status());
-    return -1;  // Unused return value.
+    ThrowExceptionFromStatus(env, brush_family.status());
+    return 0;  // Unused return value.
   }
 
-  return reinterpret_cast<jlong>(
-      new ink::BrushFamily(*std::move(brush_family)));
+  return reinterpret_cast<jlong>(new BrushFamily(*std::move(brush_family)));
 }
 
-JNI_METHOD(brush, BrushFamily, void, nativeFreeBrushFamily)
-(JNIEnv* env, jobject thiz, jlong native_pointer) {
-  delete reinterpret_cast<ink::BrushFamily*>(native_pointer);
+JNI_METHOD(brush, BrushFamilyNative, void, free)
+(JNIEnv* env, jobject object, jlong native_pointer) {
+  delete reinterpret_cast<BrushFamily*>(native_pointer);
+}
+
+JNI_METHOD(brush, BrushFamilyNative, jstring, getClientBrushFamilyId)
+(JNIEnv* env, jobject object, jlong native_pointer) {
+  const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
+  return env->NewStringUTF(brush_family.GetClientBrushFamilyId().c_str());
+}
+
+JNI_METHOD(brush, BrushFamilyNative, jlong, getBrushCoatCount)
+(JNIEnv* env, jobject object, jlong native_pointer) {
+  const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
+  return brush_family.GetCoats().size();
+}
+
+JNI_METHOD(brush, BrushFamilyNative, jlong, newCopyOfBrushCoat)
+(JNIEnv* env, jobject object, jlong native_pointer, jint index) {
+  const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
+  return reinterpret_cast<jlong>(new BrushCoat(brush_family.GetCoats()[index]));
 }
 
 }  // extern "C"

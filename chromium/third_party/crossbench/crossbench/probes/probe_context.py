@@ -10,6 +10,8 @@ import datetime as dt
 from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Optional,
                     TypeVar)
 
+from typing_extensions import override
+
 from crossbench import plt
 from crossbench.probes.results import (BrowserProbeResult, EmptyProbeResult,
                                        LocalProbeResult, ProbeResult)
@@ -46,8 +48,8 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     self._result_origin = result_origin
     self._is_active: bool = False
     self._is_success: bool = False
-    self._start_time: Optional[dt.datetime] = None
-    self._stop_time: Optional[dt.datetime] = None
+    self._start_time: dt.datetime | None = None
+    self._stop_time: dt.datetime | None = None
 
   def set_start_time(self, start_datetime: dt.datetime) -> None:
     assert self._start_time is None
@@ -200,26 +202,32 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return self._run
 
   @property
+  @override
   def result_origin(self) -> ResultOrigin:
     return self._run
 
   @property
+  @override
   def session(self) -> BrowserSessionRunGroup:
     return self._run.session
 
   @property
+  @override
   def browser(self) -> Browser:
     return self._run.browser
 
   @property
+  @override
   def runner(self) -> Runner:
     return self._run.runner
 
   @property
+  @override
   def result_path(self) -> AnyPath:
     return self._default_result_path
 
   @property
+  @override
   def local_result_path(self) -> LocalPath:
     return self.host_platform.local_path(self.result_path)
 
@@ -231,6 +239,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     del options
 
   @abc.abstractmethod
+  @override
   def start(self) -> None:
     """
     Called immediately before starting the given Run, after the browser started.
@@ -251,6 +260,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     """
 
   @abc.abstractmethod
+  @override
   def stop(self) -> None:
     """
     Called immediately after finishing the given Run with the browser still
@@ -261,6 +271,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return None
 
   @abc.abstractmethod
+  @override
   def teardown(self) -> ProbeResult:
     """
     Called after stopping all probes and shutting down the browser.
@@ -290,17 +301,21 @@ class ProbeSessionContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     return self._session.get_default_probe_result_path(self._probe)
 
   @property
+  @override
   def session(self) -> BrowserSessionRunGroup:
     return self._session
 
   @property
+  @override
   def result_origin(self) -> ResultOrigin:
     return self._session
 
   @property
+  @override
   def browser(self) -> Browser:
     return self._session.browser
 
   @property
+  @override
   def result_path(self) -> AnyPath:
     return self._default_result_path

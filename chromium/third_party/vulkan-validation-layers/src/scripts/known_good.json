@@ -7,7 +7,7 @@
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "v1.4.307"
+            "commit": "v1.4.311"
         },
         {
             "name": "Vulkan-Utility-Libraries",
@@ -15,7 +15,7 @@
             "sub_dir": "Vulkan-Utility-Libraries",
             "build_dir": "Vulkan-Utility-Libraries/build",
             "install_dir": "Vulkan-Utility-Libraries/build/install",
-            "commit": "v1.4.307",
+            "commit": "v1.4.311",
             "deps": [
                 {
                     "var_name": "VULKAN_HEADERS_INSTALL_DIR",
@@ -29,7 +29,7 @@
             "sub_dir": "SPIRV-Headers",
             "build_dir": "SPIRV-Headers/build",
             "install_dir": "SPIRV-Headers/build/install",
-            "commit": "e7294a8ebed84f8c5bd3686c68dbe12a4e65b644"
+            "commit": "8c88e0c4c94a21de825efccba5f99a862b049825"
         },
         {
             "name": "SPIRV-Tools",
@@ -43,18 +43,7 @@
                 "-DSPIRV_SKIP_TESTS=ON",
                 "-DSPIRV_SKIP_EXECUTABLES=OFF"
             ],
-            "commit": "7cf95f1d50e1ac7b226697f6efe56734a4dce7ad"
-        },
-        {
-            "name": "robin-hood-hashing",
-            "url": "https://github.com/martinus/robin-hood-hashing.git",
-            "sub_dir": "robin-hood-hashing",
-            "build_dir": "robin-hood-hashing/build",
-            "install_dir": "robin-hood-hashing/build/install",
-            "cmake_options": [
-                "-DRH_STANDALONE_PROJECT=OFF"
-            ],
-            "commit": "3.11.5"
+            "commit": "393d5c7df150532045c50affffea2df22e8231b0"
         },
         {
             "name": "mimalloc",
@@ -95,7 +84,7 @@
             "sub_dir": "glslang",
             "build_dir": "glslang/build",
             "install_dir": "glslang/build/install",
-            "commit": "b3a6aa7b03c51ba976e4f4e96b1e31f77f43f312",
+            "commit": "e57f993cff981c8c3ffd38967e030f04d13781a9",
             "cmake_options": [
                 "-DENABLE_OPT=OFF"
             ],
@@ -110,7 +99,7 @@
             "sub_dir": "Vulkan-Loader",
             "build_dir": "Vulkan-Loader/build",
             "install_dir": "Vulkan-Loader/build/install",
-            "commit": "v1.4.307",
+            "commit": "v1.4.311",
             "build_step": "skip",
             "optional": [
                 "tests"
@@ -136,7 +125,7 @@
             "sub_dir": "Vulkan-Tools",
             "build_dir": "Vulkan-Tools/build",
             "install_dir": "Vulkan-Tools/build/install",
-            "commit": "v1.4.307",
+            "commit": "v1.4.311",
             "build_step": "skip",
             "optional": [
                 "tests"
@@ -149,7 +138,6 @@
         "Vulkan-Utility-Libraries": "VULKAN_UTILITY_LIBRARIES_INSTALL_DIR",
         "SPIRV-Headers": "SPIRV_HEADERS_INSTALL_DIR",
         "SPIRV-Tools": "SPIRV_TOOLS_INSTALL_DIR",
-        "robin-hood-hashing": "ROBIN_HOOD_HASHING_INSTALL_DIR",
         "googletest": "GOOGLETEST_INSTALL_DIR",
         "mimalloc": "MIMALLOC_INSTALL_DIR"
     }

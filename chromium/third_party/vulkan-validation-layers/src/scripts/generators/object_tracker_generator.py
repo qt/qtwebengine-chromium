@@ -20,8 +20,8 @@
 
 import os
 from generators.generator_utils import buildListVUID, getVUID, PlatformGuardHelper
-from generators.vulkan_object import Handle, Command, Struct, Member, Param
-from generators.base_generator import BaseGenerator
+from vulkan_object import Handle, Command, Struct, Member, Param
+from base_generator import BaseGenerator
 
 # This class is a container for any source code, data, or other behavior that is necessary to
 # customize the generator script for a specific target API variant (e.g. Vulkan SC). As such,
@@ -800,9 +800,9 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
         if structName == 'VkVideoEncodeQuantizationMapInfoKHR' and memberName == 'quantizationMap':
             return '"UNASSIGNED-VkVideoEncodeQuantizationMapInfoKHR-quantizationMap-parent"'
         if structName == 'VkPipelineInfoKHR' and memberName == 'pipeline':
-            return '"VUID-VkPipelineInfoKHR-pipeline-parent"'
+            return '"UNASSIGNED-VkPipelineInfoKHR-pipeline-parent"'
         if structName == 'VkMemoryGetMetalHandleInfoEXT' and memberName == 'memory':
-            return '"VUID-VkMemoryGetMetalHandleInfoEXT-memory-parent"'
+            return '"UNASSIGNED-VkMemoryGetMetalHandleInfoEXT-memory-parent"'
 
         # Common parents because the structs have more then one handle that needs to be check
         if (structName == 'VkBufferMemoryBarrier' and memberName == 'buffer') or (structName == 'VkImageMemoryBarrier' and memberName == 'image'):

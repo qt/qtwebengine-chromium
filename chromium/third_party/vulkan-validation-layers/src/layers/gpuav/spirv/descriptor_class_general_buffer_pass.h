@@ -31,25 +31,49 @@ class DescriptorClassGeneralBufferPass : public Pass {
     void PrintDebugInfo() const final;
 
   private:
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst);
-    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data);
-    void Reset() final;
+    // This is metadata tied to a single instruction gathered during RequiresInstrumentation() to be used later
+    struct InstructionMeta {
+        const Instruction* target_instruction = nullptr;
 
-    uint32_t link_function_id = 0;
+        uint32_t descriptor_set = 0;
+        uint32_t descriptor_binding = 0;
+        uint32_t descriptor_index_id = 0;  // index input the descriptor array
+
+        // The Type of the OpVariable that is being accessed
+        const Type* descriptor_type = nullptr;
+
+        // List of OpAccessChains fom the Store/Load down to the OpVariable
+        // The front() will be closet to the exact spot accesssed
+        // The back() will be closest to the OpVariable
+        // (note GLSL will try to always create a single large OpAccessChain)
+        std::vector<const Instruction*> access_chain_insts;
+    };
+
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta, bool pre_pass);
+    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
+                                const InstructionMeta& meta);
+
     uint32_t GetLinkFunctionId();
 
-    // List of OpAccessChains fom the Store/Load down to the OpVariable
-    // The front() will be closet to the exact spot accesssed
-    // The back() will be closest to the OpVariable
-    // (note GLSL will try to always create a single large OpAccessChain)
-    std::vector<const Instruction*> access_chain_insts_;
-    // The Type of the OpVariable that is being accessed
-    const Type* descriptor_type_ = nullptr;
+    // Finds the offset into the SSBO/UBO
+    uint32_t FindLastByteOffset(uint32_t descriptor_id, bool is_descriptor_array,
+                                const std::vector<const Instruction*>& access_chain_insts) const;
 
-    uint32_t descriptor_set_ = 0;
-    uint32_t descriptor_binding_ = 0;
-    uint32_t descriptor_index_id_ = 0;  // index input the descriptor array
-    uint32_t descriptor_offset_id_ = 0;
+    // If robustBufferAccess is turned on, we can use that to ensure the hardware will handle OOB accesses (in this case it is very
+    // "safe" actually)
+    uint32_t unsafe_mode_;
+    // If there is a shader like
+    //    if (x)
+    //        ssbo.data[6] = 0;
+    //    else
+    //        ssbo.data[8] = 0;
+    // We don't know which will actually execute, but by definition a Block must execute from start to finish
+    //
+    // < Descriptor SSA ID, Highest offset byte that will be accessed >
+    vvl::unordered_map<uint32_t, uint32_t> block_highest_offset_map_;
+
+    // Function IDs to link in
+    uint32_t link_function_id_ = 0;
 };
 
 }  // namespace spirv

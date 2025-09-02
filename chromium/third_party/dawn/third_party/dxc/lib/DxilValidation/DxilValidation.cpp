@@ -1708,6 +1708,41 @@ static void ValidateDxilOperationCallInProfile(CallInst *CI,
     ValidateSignatureDxilOp(CI, opcode, ValCtx);
     break;
   // Special.
+  case DXIL::OpCode::AllocateRayQuery: {
+    // validate flags are immediate and compatible
+    llvm::Value *constRayFlag = CI->getOperand(1);
+    if (!llvm::isa<llvm::Constant>(constRayFlag)) {
+      ValCtx.EmitInstrError(CI,
+                            ValidationRule::DeclAllocateRayQueryFlagsAreConst);
+    }
+    break;
+  }
+  case DXIL::OpCode::AllocateRayQuery2: {
+    // validate flags are immediate and compatible
+    llvm::Value *constRayFlag = CI->getOperand(1);
+    llvm::Value *RayQueryFlag = CI->getOperand(2);
+    if (!llvm::isa<llvm::Constant>(constRayFlag) ||
+        !llvm::isa<llvm::Constant>(RayQueryFlag)) {
+      ValCtx.EmitInstrError(CI,
+                            ValidationRule::DeclAllocateRayQuery2FlagsAreConst);
+      break;
+    }
+    // When the ForceOMM2State ConstRayFlag is given as an argument to
+    // a RayQuery object, AllowOpacityMicromaps is expected
+    // as a RayQueryFlag argument
+    llvm::ConstantInt *Arg1 = llvm::cast<llvm::ConstantInt>(constRayFlag);
+    llvm::ConstantInt *Arg2 = llvm::cast<llvm::ConstantInt>(RayQueryFlag);
+    if ((Arg1->getValue().getSExtValue() &
+         (unsigned)DXIL::RayFlag::ForceOMM2State) &&
+        (Arg2->getValue().getSExtValue() &
+         (unsigned)DXIL::RayQueryFlag::AllowOpacityMicromaps) == 0) {
+      ValCtx.EmitInstrError(
+          CI,
+          ValidationRule::DeclAllowOpacityMicromapsExpectedGivenForceOMM2State);
+    }
+    break;
+  }
+
   case DXIL::OpCode::BufferUpdateCounter: {
     DxilInst_BufferUpdateCounter updateCounter(CI);
     Value *handle = updateCounter.get_uav();
@@ -2158,6 +2193,9 @@ static bool ValidateType(Type *Ty, ValidationContext &ValCtx,
     return true;
 
   if (Ty->isVectorTy()) {
+    if (Ty->getVectorNumElements() > 1 &&
+        ValCtx.DxilMod.GetShaderModel()->IsSM69Plus())
+      return true;
     ValCtx.EmitTypeError(Ty, ValidationRule::TypesNoVector);
     return false;
   }
@@ -2634,6 +2672,23 @@ static bool IsLLVMInstructionAllowedForLib(Instruction &I,
   }
 }
 
+// Shader model specific checks for valid LLVM instructions.
+// Currently only checks for pre 6.9 usage of vector operations.
+// Returns false if shader model is pre 6.9 and I represents a vector
+// operation. Returns true otherwise.
+static bool IsLLVMInstructionAllowedForShaderModel(Instruction &I,
+                                                   ValidationContext &ValCtx) {
+  if (ValCtx.DxilMod.GetShaderModel()->IsSM69Plus())
+    return true;
+  unsigned OpCode = I.getOpcode();
+  if (OpCode == Instruction::InsertElement ||
+      OpCode == Instruction::ExtractElement ||
+      OpCode == Instruction::ShuffleVector)
+    return false;
+
+  return true;
+}
+
 static void ValidateFunctionBody(Function *F, ValidationContext &ValCtx) {
   bool SupportsMinPrecision =
       ValCtx.DxilMod.GetGlobalFlags() & DXIL::kEnableMinPrecision;
@@ -2656,7 +2711,8 @@ static void ValidateFunctionBody(Function *F, ValidationContext &ValCtx) {
       }
 
       // Instructions must be allowed.
-      if (!IsLLVMInstructionAllowed(I)) {
+      if (!IsLLVMInstructionAllowed(I) ||
+          !IsLLVMInstructionAllowedForShaderModel(I, ValCtx)) {
         if (!IsLLVMInstructionAllowedForLib(I, ValCtx)) {
           ValCtx.EmitInstrError(&I, ValidationRule::InstrAllowed);
           continue;

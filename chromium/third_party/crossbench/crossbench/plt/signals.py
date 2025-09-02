@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import enum
 import signal
-from typing import Union
+from typing import TypeAlias
 
 
 class Signals(enum.IntEnum):
@@ -114,7 +114,7 @@ class LinuxSignals(_PosixSignals):
   SIGUSR2 = 12
   SIGPIPE = 13
   SIGALRM = 14
-  # SIGSTKFLT = 16 not supported by python.
+  SIGSTKFLT = 16
   SIGCLD = 17
   SIGCHLD = 17
   SIGCONT = 18
@@ -174,7 +174,7 @@ class MacOSSignals(_PosixSignals):
 
 
 # Type unions of concrete Signals implementations.
-AnySignals = Union[WinSignals, PosixBaseSignal, PosixSignals, LinuxSignals,
-                   MacOSSignals]
-AnyPosixSignals = Union[PosixBaseSignal, PosixSignals, LinuxSignals,
-                        MacOSSignals]
+AnySignals: TypeAlias = (
+    WinSignals | PosixBaseSignal | PosixSignals | LinuxSignals | MacOSSignals)
+AnyPosixSignals: TypeAlias = (
+    PosixBaseSignal | PosixSignals | LinuxSignals | MacOSSignals)

@@ -22,6 +22,7 @@
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "generated/validation_cmd_trace_rays_rgen.h"
 #include "error_message/error_strings.h"
+#include "containers/limits.h"
 
 // See gpuav/shaders/validation_cmd/trace_rays.rgen
 constexpr uint32_t kPushConstantDWords = 6u;
@@ -160,7 +161,7 @@ struct SharedTraceRaysValidationResources final {
         shader_group_handle_size_aligned = shader_group_size_aligned;
 
         // Retrieve SBT address
-        const VkDeviceAddress sbt_address = gpuav.GetBufferDeviceAddressHelper(sbt_buffer);
+        const VkDeviceAddress sbt_address = gpuav.GetBufferDeviceAddressHelper(sbt_buffer, &gpuav.modified_extensions);
         assert(sbt_address != 0);
         if (sbt_address == 0) {
             gpuav.InternalError(gpuav.device, loc, "Retrieved SBT buffer device address is null.");
@@ -196,16 +197,15 @@ struct SharedTraceRaysValidationResources final {
     bool IsValid() const { return valid; }
 };
 
-void InsertIndirectTraceRaysValidation(Validator& gpuav, const Location& loc, CommandBuffer& cb_state,
+void InsertIndirectTraceRaysValidation(Validator& gpuav, const Location& loc, CommandBufferSubState& cb_state,
                                        VkDeviceAddress indirect_data_address) {
     if (!gpuav.gpuav_settings.validate_indirect_trace_rays_buffers) {
         return;
     }
 
-    if (!gpuav.enabled_features.shaderInt64) {
+    if (!gpuav.modified_features.shaderInt64) {
         return;
     }
-
     auto& shared_trace_rays_resources =
         gpuav.shared_resources_manager.Get<SharedTraceRaysValidationResources>(gpuav, cb_state.GetErrorLoggingDescSetLayout(), loc);
 
@@ -252,17 +252,19 @@ void InsertIndirectTraceRaysValidation(Validator& gpuav, const Location& loc, Co
     VkStridedDeviceAddressRegionKHR empty_sbt{};
     DispatchCmdTraceRaysKHR(cb_state.VkHandle(), &ray_gen_sbt, &empty_sbt, &empty_sbt, &empty_sbt, 1, 1, 1);
 
-    CommandBuffer::ErrorLoggerFunc error_logger = [loc](Validator& gpuav, const CommandBuffer&, const uint32_t* error_record,
-                                                        const LogObjectList& objlist, const std::vector<std::string>&) {
+    CommandBufferSubState::ErrorLoggerFunc error_logger = [loc](Validator& gpuav, const CommandBufferSubState&,
+                                                                const uint32_t* error_record, const LogObjectList& objlist,
+                                                                const std::vector<std::string>&) {
         bool skip = false;
-
         using namespace glsl;
 
-        if (error_record[kHeaderErrorGroupOffset] != kErrorGroupGpuPreTraceRays) {
+        const uint32_t error_group = error_record[kHeaderShaderIdErrorOffset] >> kErrorGroupShift;
+        if (error_group != kErrorGroupGpuPreTraceRays) {
             return skip;
         }
 
-        switch (error_record[kHeaderErrorSubCodeOffset]) {
+        const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
+        switch (error_sub_code) {
             case kErrorSubCodePreTraceRaysLimitWidth: {
                 const uint32_t width = error_record[kPreActionParamOffset_0];
                 skip |= gpuav.LogError("VUID-VkTraceRaysIndirectCommandKHR-width-03638", objlist, loc,

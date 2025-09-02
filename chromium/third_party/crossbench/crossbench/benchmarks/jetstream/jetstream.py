@@ -7,16 +7,18 @@ from __future__ import annotations
 import abc
 import json
 import logging
+import statistics
 from collections import defaultdict
 from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
                     Tuple, Type, cast)
+
+from typing_extensions import override
 
 from crossbench.benchmarks.base import PressBenchmark
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
-from crossbench.probes.metric import (CSVFormatter, Metric, MetricsMerger,
-                                      geomean)
+from crossbench.probes.metric import CSVFormatter, Metric, MetricsMerger
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 
 if TYPE_CHECKING:
@@ -46,12 +48,15 @@ class JetStreamProbe(
     return cast(JetStreamBenchmark, self.benchmark)
 
   @abc.abstractmethod
+  @override
   def get_context_cls(self) -> Type[JetStreamProbeContext]:
     pass
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_result(group.results, single_result=False)
 
@@ -73,6 +78,7 @@ class JetStreamProbe(
       else:
         self._log_result_metrics(data)
 
+  @override
   def _extract_result_metrics_table(self, metrics: Dict[str, Any],
                                     table: Dict[str, List[str]]) -> None:
     for metric_key, metric_value in metrics.items():
@@ -86,6 +92,7 @@ class JetStreamProbe(
       table["Score"].append(
           Metric.format(metric_value["average"], metric_value["stddev"]))
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
@@ -106,6 +113,7 @@ class JetStreamProbe(
       total_score.append(iteration_score)
     return total_score
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
         self.merge_browsers_csv_list(group))
@@ -143,6 +151,7 @@ class JetStreamProbeContext(JsonResultProbeContext):
   return JSON.stringify(results);
 """
 
+  @override
   def to_json(self, actions: Actions) -> Dict[str, float]:
     # Use serialized json as transport format to preserve object key order.
     json_payload = actions.js(self.JS)
@@ -150,6 +159,7 @@ class JetStreamProbeContext(JsonResultProbeContext):
     ObjectParser.non_empty_dict(json_data, f"{self.probe.name} metrics")
     return json_data
 
+  @override
   def process_json_data(self, json_data: Json) -> Json:
     assert isinstance(json_data, dict)
     assert "Total" not in json_data, (
@@ -166,13 +176,14 @@ class JetStreamProbeContext(JsonResultProbeContext):
         accumulated_metrics[metric].append(value)
     total: Dict[str, float] = {}
     for metric, values in accumulated_metrics.items():
-      total[metric] = geomean(values)
+      total[metric] = statistics.geometric_mean(values)
     return total
 
 
 class JetStreamCSVFormatter(CSVFormatter):
   TOTAL_METRIC_KEY: Final[str] = JetStreamProbe.TOTAL_METRIC_KEY
 
+  @override
   def format_items(self, data: Dict[str, Json],
                    sort: bool) -> Sequence[Tuple[str, Json]]:
     items = list(data.items())
@@ -190,14 +201,17 @@ class JetStreamCSVFormatter(CSVFormatter):
 class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
 
   @classmethod
+  @override
   def short_base_name(cls) -> str:
     return "js"
 
   @classmethod
+  @override
   def base_name(cls) -> str:
     return "jetstream"
 
   @classmethod
+  @override
   def add_cli_parser(
       cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
   ) -> CrossBenchArgumentParser:
@@ -211,6 +225,7 @@ class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
     return parser
 
   @classmethod
+  @override
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["detailed_metrics"] = args.detailed_metrics
@@ -219,7 +234,7 @@ class JetStreamBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
   def __init__(self,
                stories: Sequence[Story],
                custom_url: Optional[str] = None,
-               detailed_metrics: bool = False):
+               detailed_metrics: bool = False) -> None:
     self._detailed_metrics = detailed_metrics
     super().__init__(stories, custom_url)
 

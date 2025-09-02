@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from typing import TYPE_CHECKING, Any, Dict, Final, Type
+from typing import TYPE_CHECKING, Any, Dict, Final, Self, Type
+
+from typing_extensions import override
 
 from crossbench.config import ConfigError, ConfigObject
 from crossbench.parse import ObjectParser
@@ -30,17 +32,18 @@ _PROBE_CONFIG_RE: Final[re.Pattern] = re.compile(
 
 @dataclasses.dataclass(frozen=True)
 class ProbeConfig(ConfigObject):
-  cls: Type[Probe]
+  probe_cls: Type[Probe]
   config: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
   def __post_init__(self) -> None:
-    if not self.cls:
+    if not self.probe_cls:
       raise ValueError(f"{type(self).__name__}.cls cannot be None.")
     if self.config is None:
       raise ValueError(f"{type(self).__name__}.config cannot be None.")
 
   @classmethod
-  def parse_str(cls, value: str) -> ProbeConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     # 1. variant: known probe
     if value in PROBE_LOOKUP:
       return cls(PROBE_LOOKUP[value])
@@ -61,13 +64,13 @@ class ProbeConfig(ConfigObject):
     return cls.parse_dict(config)
 
   @classmethod
-  def parse_dict(cls, config: Dict[str, Any]) -> ProbeConfig:
+  @override
+  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
     probe_name = ObjectParser.non_empty_str(config.pop("name"), "name")
     return cls.parse_probe_dict(probe_name, config)
 
   @classmethod
-  def parse_probe_dict(cls, probe_name: str, config: Dict[str,
-                                                          Any]) -> ProbeConfig:
+  def parse_probe_dict(cls, probe_name: str, config: Dict[str, Any]) -> Self:
     if probe_cls := PROBE_LOOKUP.get(probe_name):
       return cls(probe_cls, config)
     raise cls._unknown_probe_error(probe_name)
@@ -82,4 +85,4 @@ class ProbeConfig(ConfigObject):
 
   @property
   def name(self) -> str:
-    return self.cls.NAME
+    return self.probe_cls.NAME

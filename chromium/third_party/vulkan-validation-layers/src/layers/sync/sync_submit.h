@@ -27,14 +27,16 @@ class SyncValidator;
 
 using BatchContextPtr = std::shared_ptr<QueueBatchContext>;
 using BatchContextConstPtr = std::shared_ptr<const QueueBatchContext>;
-using CommandBufferConstPtr = std::shared_ptr<const syncval_state::CommandBuffer>;
 
 namespace vvl {
+class CommandBuffer;
 class Semaphore;
 }  // namespace vvl
 
+using CommandBufferConstPtr = std::shared_ptr<const vvl::CommandBuffer>;
+
 struct AcquiredImage {
-    std::shared_ptr<const syncval_state::ImageState> image;
+    std::shared_ptr<const vvl::Image> image;
     subresource_adapter::ImageRangeGenerator generator;
     ResourceUsageTag present_tag;
     ResourceUsageTag acquire_tag;
@@ -145,8 +147,8 @@ struct PresentedImageRecord {
     ResourceUsageTag tag;  // the global tag at presentation
     uint32_t image_index;
     uint32_t present_index;
-    std::weak_ptr<const syncval_state::Swapchain> swapchain_state;
-    std::shared_ptr<const syncval_state::ImageState> image;
+    std::weak_ptr<vvl::Swapchain> swapchain_state;
+    std::shared_ptr<const vvl::Image> image;
 };
 
 struct PresentedImage : public PresentedImageRecord {
@@ -155,10 +157,10 @@ struct PresentedImage : public PresentedImageRecord {
 
     PresentedImage() = default;
     void UpdateMemoryAccess(SyncAccessIndex usage, ResourceUsageTag tag, AccessContext &access_context) const;
-    PresentedImage(const SyncValidator &sync_state, std::shared_ptr<QueueBatchContext> batch, VkSwapchainKHR swapchain,
+    PresentedImage(SyncValidator &sync_state, std::shared_ptr<QueueBatchContext> batch, VkSwapchainKHR swapchain,
                    uint32_t image_index, uint32_t present_index, ResourceUsageTag present_tag_);
     // For non-previsously presented images..
-    PresentedImage(std::shared_ptr<const syncval_state::Swapchain> swapchain, uint32_t at_index);
+    PresentedImage(std::shared_ptr<vvl::Swapchain> &&swapchain, uint32_t at_index);
     bool Invalid() const;
     void ExportToSwapchain(SyncValidator &);
     void SetImage(uint32_t at_index);
@@ -264,7 +266,6 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
         Base_::Record MakeRecord() const override;
         ~PresentResourceRecord() override {}
         PresentResourceRecord(const PresentedImageRecord &presented) : presented_(presented) {}
-        std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const override;
         vvl::Func GetCommand() const override { return vvl::Func::vkQueuePresentKHR; }
 
       private:
@@ -277,7 +278,6 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
         Base_::Record MakeRecord() const override;
         AcquireResourceRecord(const PresentedImageRecord &presented, ResourceUsageTag tag, vvl::Func command)
             : presented_(presented), acquire_tag_(tag), command_(command) {}
-        std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const override;
         vvl::Func GetCommand() const override { return command_; }
 
       private:
@@ -295,15 +295,13 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
     ~QueueBatchContext();
     void Trim();
 
-    std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const override;
-    void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const override;
+    ResourceUsageInfo GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const override;
     AccessContext *GetCurrentAccessContext() override { return current_access_context_; }
     const AccessContext *GetCurrentAccessContext() const override { return current_access_context_; }
     SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
     const SyncEventsContext *GetCurrentEventsContext() const override { return &events_context_; }
     const QueueSyncState *GetQueueSyncState() { return queue_state_; }
     QueueId GetQueueId() const override;
-    ExecutionType Type() const override { return kSubmitted; }
     ResourceUsageRange GetTagRange() const { return tag_range_; }
 
     ResourceUsageTag SetupBatchTags(uint32_t tag_count);

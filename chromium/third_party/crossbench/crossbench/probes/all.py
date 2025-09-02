@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Tuple, Type
 from crossbench.probes.android_logcat import LogcatAndroidProbe
 from crossbench.probes.chrome_histograms import ChromeHistogramsProbe
 from crossbench.probes.debugger import DebuggerProbe
+from crossbench.probes.downloads import DownloadsProbe
 from crossbench.probes.dtrace import DTraceProbe
 from crossbench.probes.dump_html import DumpHtmlProbe
 from crossbench.probes.frequency import FrequencyProbe
@@ -87,6 +88,7 @@ GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
     BrowserProfilingProbe,
     ChromeHistogramsProbe,
     DebuggerProbe,
+    DownloadsProbe,
     DTraceProbe,
     DumpHtmlProbe,
     FrequencyProbe,

@@ -24,6 +24,7 @@
 #include "absl/strings/str_join.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/geometry/angle.h"
+#include "ink/geometry/vec.h"
 #include "ink/types/duration.h"
 
 namespace ink {
@@ -44,7 +45,7 @@ bool BrushTip::operator!=(const BrushTip& other) const {
 
 namespace brush_internal {
 
-absl::Status ValidateBrushTip(const BrushTip& tip) {
+absl::Status ValidateBrushTipTopLevel(const BrushTip& tip) {
   if (!std::isfinite(tip.scale.x) || !std::isfinite(tip.scale.y) ||
       tip.scale.x < 0 || tip.scale.y < 0 || tip.scale == Vec{0, 0}) {
     return absl::InvalidArgumentError(absl::StrFormat(
@@ -95,8 +96,15 @@ absl::Status ValidateBrushTip(const BrushTip& tip) {
                         "non-negative. Got %v",
                         tip.particle_gap_duration));
   }
+  return absl::OkStatus();
+}
+
+absl::Status ValidateBrushTip(const BrushTip& tip) {
+  if (absl::Status status = ValidateBrushTipTopLevel(tip); !status.ok()) {
+    return status;
+  }
   for (const BrushBehavior& behavior : tip.behaviors) {
-    if (auto status = ValidateBrushBehavior(behavior); !status.ok()) {
+    if (absl::Status status = ValidateBrushBehavior(behavior); !status.ok()) {
       return status;
     }
   }

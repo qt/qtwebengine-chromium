@@ -69,7 +69,7 @@ test_debug_symbols() {
   echo "============ ${FUNC}: run for the first time, with empty seed corpus, with feature logging"
   test_fuzz --log_features_shards=1 --workdir="${WD}" --seed=1 --num_runs=1000 \
     --symbolizer_path="${LLVM_SYMBOLIZER}" | tee "${LOG}"
-  centipede::assert_regex_in_file 'Custom mutator detected: will use it' "${LOG}"
+  centipede::assert_regex_in_file 'Custom mutator detected; will use it' "${LOG}"
   # Note: the test assumes LLVMFuzzerTestOneInput is defined on a specific line.
   centipede::assert_regex_in_file "FUNC: LLVMFuzzerTestOneInput .*testing/test_fuzz_target.cc:71" "${LOG}"
   centipede::assert_regex_in_file "EDGE: LLVMFuzzerTestOneInput .*testing/test_fuzz_target.cc" "${LOG}"
@@ -176,10 +176,37 @@ test_pcpair_features() {
   centipede::assert_regex_in_file "end-fuzz.*pair: [^0]" "${LOG}"
 }
 
+test_timeouts() {
+  FUNC="${FUNCNAME[0]}"
+  WD="${TEST_TMPDIR}/${FUNC}/WD"
+  CORPUS="${TEST_TMPDIR}/${FUNC}/corpus"
+  LOG="${TEST_TMPDIR}/${FUNC}/log"
+
+  centipede::ensure_empty_dir "${WD}"
+  centipede::ensure_empty_dir "${CORPUS}"
+  echo -n "slo" >"${CORPUS}"/input
+
+  echo "============ ${FUNC}: fuzz with --timeout_per_input"
+  test_fuzz --workdir="${WD}" --corpus_dir="${CORPUS}" --num_runs=0 --timeout_per_input=2 | tee "${LOG}"
+  centipede::assert_regex_in_file "Failure.*: per-input-timeout-exceeded" "${LOG}"
+  centipede::assert_regex_in_file "end-fuzz:.*crash: 1" "${LOG}"
+
+  centipede::ensure_empty_dir "${WD}"
+  centipede::ensure_empty_dir "${CORPUS}"
+  echo -n "slo" >"${CORPUS}"/input
+
+  echo "============ ${FUNC}: fuzz with --timeout_per_input --ignore_timeout_reports"
+  test_fuzz --workdir="${WD}" --corpus_dir="${CORPUS}" --num_runs=0 --timeout_per_input=2 --ignore_timeout_reports | tee "${LOG}"
+  centipede::assert_regex_not_in_file "Failure.*: per-input-timeout-exceeded" "${LOG}"
+  centipede::assert_regex_not_in_file "end-fuzz:.*crash: 1" "${LOG}"
+}
+
+
 centipede::test_crashing_target abort_test_fuzz "foo" "AbOrT" "I AM ABOUT TO ABORT"
 test_debug_symbols
 test_dictionary
 test_for_each_blob
 test_pcpair_features
+test_timeouts
 
 echo "PASS"

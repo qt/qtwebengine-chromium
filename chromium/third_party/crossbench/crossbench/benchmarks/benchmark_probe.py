@@ -14,7 +14,7 @@ class BenchmarkProbeMixin:
   NAME: str = ""
   IS_GENERAL_PURPOSE: bool = False
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs) -> None:
     self._benchmark: Benchmark = kwargs.pop("benchmark")
     #assert isinstance(self._benchmark, Benchmark)
     super().__init__(*args, **kwargs)

@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-from typing import TYPE_CHECKING, Dict, Optional
+import functools
+from typing import TYPE_CHECKING, Dict, Self, Type
+
+from typing_extensions import override
 
 from crossbench.benchmarks.loading.point import Point
 from crossbench.config import ConfigObject, ConfigParser, UnusedPropertiesMode
@@ -22,16 +25,16 @@ class CoordinatesConfig(ConfigObject):
   y: int
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> CoordinatesConfig:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def parse_str(cls, value):
+  @override
+  def parse_str(cls, value: str):
     del value
     raise NotImplementedError("Cannot create CoordinatesConfig from string")
 
   @classmethod
-  def config_parser(cls) -> ConfigParser[CoordinatesConfig]:
+  @override
+  @functools.lru_cache(maxsize=1)
+  def config_parser(
+      cls: Type[CoordinatesConfig]) -> ConfigParser[CoordinatesConfig]:
     parser = ConfigParser(
         cls, unused_properties_mode=UnusedPropertiesMode.ERROR)
     parser.add_argument("x", type=NumberParser.positive_zero_int, required=True)
@@ -51,17 +54,16 @@ class SelectorConfig(ConfigObject):
   wait: bool
 
   @classmethod
-  def parse_str(cls, value) -> SelectorConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     selector = ObjectParser.non_empty_str(value, "selector")
     return cls(
         selector=selector, required=True, scroll_into_view=False, wait=False)
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> SelectorConfig:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def config_parser(cls) -> ConfigParser[SelectorConfig]:
+  @override
+  @functools.lru_cache(maxsize=1)
+  def config_parser(cls: Type[SelectorConfig]) -> ConfigParser[SelectorConfig]:
     parser = ConfigParser(
         cls, unused_properties_mode=UnusedPropertiesMode.ERROR)
     parser.add_argument(
@@ -75,15 +77,17 @@ class SelectorConfig(ConfigObject):
 
 @dataclasses.dataclass(frozen=True)
 class PositionConfig(ConfigObject):
-  coordinates: Optional[CoordinatesConfig] = None
-  selector: Optional[SelectorConfig] = None
+  coordinates: CoordinatesConfig | None = None
+  selector: SelectorConfig | None = None
 
   @classmethod
-  def parse_str(cls, value) -> PositionConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     return cls(selector=SelectorConfig.parse_str(value))
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> PositionConfig:
+  @override
+  def parse_dict(cls, config: Dict, **kwargs) -> Self:
     selector_parser = SelectorConfig.config_parser()
     if selector_parser.has_all_required_args(config):
       return cls(selector=selector_parser.parse(config))
@@ -96,7 +100,7 @@ class PositionConfig(ConfigObject):
         f"{config} is not a valid coordinate or selector")
 
   @classmethod
-  def from_coordinates(cls, x: int, y: int) -> PositionConfig:
+  def from_coordinates(cls, x: int, y: int) -> Self:
     return cls(coordinates=CoordinatesConfig(x, y))
 
   @classmethod
@@ -104,7 +108,7 @@ class PositionConfig(ConfigObject):
                     selector: str,
                     required: bool = True,
                     scroll_into_view: bool = False,
-                    wait: bool = False) -> PositionConfig:
+                    wait: bool = False) -> Self:
     return cls(
         selector=SelectorConfig(
             selector=selector,
@@ -112,16 +116,17 @@ class PositionConfig(ConfigObject):
             scroll_into_view=scroll_into_view,
             wait=wait))
 
+  @override
   def validate(self) -> None:
     super().validate()
-    if bool(self.coordinates) != bool(self.coordinates):
+    if bool(self.coordinates) == bool(self.selector):
       raise ValueError(
           "Position config must have exactly one coordinates or selector")
 
   def to_json(self) -> JsonDict:
     if coordinates := self.coordinates:
       return {"x": coordinates.x, "y": coordinates.y}
-    elif selector := self.selector:
+    if selector := self.selector:
       return {
           "required": selector.required,
           "scroll_into_view": selector.scroll_into_view,

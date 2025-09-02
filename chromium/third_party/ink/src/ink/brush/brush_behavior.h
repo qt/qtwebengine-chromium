@@ -17,15 +17,12 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "absl/status/status.h"
-#include "absl/types/span.h"
 #include "ink/brush/easing_function.h"
-#include "ink/types/duration.h"
 
 namespace ink {
 
@@ -42,7 +39,8 @@ namespace ink {
 //      outputting their input value, or "off" by outputting a null value.
 //   3. Operator nodes take in one or more input values and generate an output.
 //      For example, by mapping input to output with an easing function.
-//   4. Target nodes apply an input value to chosen properties of the brush tip.
+//   4. Terminal nodes apply one or more input values to chosen properties of
+//      the brush tip.
 //
 // The behavior is specified by a single list of nodes that represents a
 // flattened, post-order traversal of the graph. The simplest form of behavior
@@ -286,6 +284,12 @@ struct BrushBehavior {
     // Y-axis (and a negative value moves the brush tip center towards the
     // negative Y-axis).
     kPositionOffsetLateralInMultiplesOfBrushSize,
+    // Adds the target modifier to the initial texture animation progress value
+    // of the current particle (which is relevant only for strokes with an
+    // animated texture). The final progress offset is not clamped, but is
+    // effectively normalized (mod 1). If multiple behaviors have this target,
+    // they stack additively.
+    kTextureAnimationProgressOffset,
 
     // The following are targets for tip color adjustments, including opacity.
     // Renderers can apply them to the brush color when a stroke is drawn to
@@ -311,6 +315,29 @@ struct BrushBehavior {
     // one of these targets, they stack multiplicatively.  The final opacity
     // multiplier is clamped to [0, 2].
     kOpacityMultiplier,
+  };
+
+  // List of vector tip properties that can be modified by a `BrushBehavior`.
+  //
+  // This should match the enums in BrushBehavior.kt and BrushExtensions.kt.
+  enum class PolarTarget : int8_t {
+    // Adds the vector to the brush tip's absolute x/y position in stroke space,
+    // where the angle input is measured in radians and the magnitude input is
+    // measured in units equal to the brush size. An angle of zero indicates an
+    // offset in the direction of the positive X-axis in stroke space; an angle
+    // of π/2 indicates the direction of the positive Y-axis in stroke space.
+    kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize,
+    // Adds the vector to the brush tip's forward/lateral position relative to
+    // the current direction of input travel, where the angle input is measured
+    // in radians and the magnitude input is measured in units equal to the
+    // brush size. An angle of zero indicates a forward offset in the current
+    // direction of input travel, while an angle of π indicates a backwards
+    // offset. Meanwhile, if the X- and Y-axes of stroke space were rotated so
+    // that the positive X-axis points in the direction of stroke travel, then
+    // an angle of π/2 would indicate a lateral offset towards the positive
+    // Y-axis, and an angle of -π/2 would indicate a lateral offset towards the
+    // negative Y-axis.
+    kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
   };
 
   // The desired behavior when an input value is outside the bounds of
@@ -524,11 +551,12 @@ struct BrushBehavior {
     Interpolation interpolation;
   };
 
-  ////////////////////
-  /// TARGET NODES ///
-  ////////////////////
+  //////////////////////
+  /// TERMINAL NODES ///
+  //////////////////////
 
-  // Target node that consumes a single input value.
+  // Terminal node that consumes a single input value to modify a scalar brush
+  // tip property.
   // Inputs: 1
   // Effect: Applies a modifier to the specified target equal to the input value
   //     lerped to the specified range. If the input becomes null, the target
@@ -542,15 +570,33 @@ struct BrushBehavior {
     std::array<float, 2> target_modifier_range;
   };
 
+  // Terminal node that consumes two input values (angle and magnitude), forming
+  // a polar vector to modify a vector brush tip property.
+  // Inputs: 2
+  // Effect: Applies a vector modifier to the specified target equal to the
+  //     polar vector formed by lerping the first input value to the specified
+  //     angle range, and the second input to the specified magnitude range. If
+  //     either input becomes null, the target continues to apply its previous
+  //     effect from the most recent non-null inputs (if any).
+  // To be valid:
+  //   - `target` must be a valid `PolarTarget` enumerator.
+  //   - The endpoints of `angle_range` and of `magnitude_range` must be finite
+  //     and distinct.
+  struct PolarTargetNode {
+    PolarTarget target;
+    std::array<float, 2> angle_range;
+    std::array<float, 2> magnitude_range;
+  };
+
   // A single node in a behavior's graph.  Each node type is either a "value
   // node" which consumes zero or more input values and produces a single output
-  // value, or a "target node" which consumes one or more input values and
+  // value, or a "terminal node" which consumes one or more input values and
   // applies some effect to the brush tip (but does not produce any output
   // value).
   using Node =
       std::variant<SourceNode, ConstantNode, NoiseNode, FallbackFilterNode,
                    ToolTypeFilterNode, DampingNode, ResponseNode, BinaryOpNode,
-                   InterpolationNode, TargetNode>;
+                   InterpolationNode, TargetNode, PolarTargetNode>;
 
   std::vector<Node> nodes;
 };
@@ -610,18 +656,31 @@ bool operator==(const BrushBehavior::TargetNode& lhs,
 bool operator!=(const BrushBehavior::TargetNode& lhs,
                 const BrushBehavior::TargetNode& rhs);
 
+bool operator==(const BrushBehavior::PolarTargetNode& lhs,
+                const BrushBehavior::PolarTargetNode& rhs);
+bool operator!=(const BrushBehavior::PolarTargetNode& lhs,
+                const BrushBehavior::PolarTargetNode& rhs);
+
 bool operator==(const BrushBehavior& lhs, const BrushBehavior& rhs);
 bool operator!=(const BrushBehavior& lhs, const BrushBehavior& rhs);
 
 namespace brush_internal {
 
 // Determines whether the given BrushBehavior struct is valid to be used in a
-// BrushFamily, and returns an error if not.
+// BrushFamily, and returns an error if not. Validates both the top-level
+// structure and the individual nodes.
 absl::Status ValidateBrushBehavior(const BrushBehavior& behavior);
+
+// Validates the top-level structure of a BrushBehavior, but not the individual
+// nodes. This can be used to validate a BrushBehavior if the nodes are already
+// validated.
+absl::Status ValidateBrushBehaviorTopLevel(const BrushBehavior& behavior);
+
 absl::Status ValidateBrushBehaviorNode(const BrushBehavior::Node& node);
 
 std::string ToFormattedString(BrushBehavior::Source source);
 std::string ToFormattedString(BrushBehavior::Target target);
+std::string ToFormattedString(BrushBehavior::PolarTarget target);
 std::string ToFormattedString(BrushBehavior::OutOfRange out_of_range);
 std::string ToFormattedString(BrushBehavior::EnabledToolTypes enabled);
 std::string ToFormattedString(BrushBehavior::OptionalInputProperty input);
@@ -640,6 +699,11 @@ void AbslStringify(Sink& sink, BrushBehavior::Source source) {
 
 template <typename Sink>
 void AbslStringify(Sink& sink, BrushBehavior::Target target) {
+  sink.Append(brush_internal::ToFormattedString(target));
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, BrushBehavior::PolarTarget target) {
   sink.Append(brush_internal::ToFormattedString(target));
 }
 

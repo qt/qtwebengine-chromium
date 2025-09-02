@@ -13,9 +13,10 @@ with corresponding changes in CBB in google3
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, List, Optional, Type
+from typing import TYPE_CHECKING, Dict, List, Optional, Type
 
 from selenium import webdriver
+from typing_extensions import override
 
 import crossbench.benchmarks.all as benchmarks
 import crossbench.browsers.browser
@@ -32,18 +33,27 @@ if TYPE_CHECKING:
   from crossbench.stories.story import Story
 
 press_benchmarks: List[Type[PressBenchmark]] = [
+    # Speedometer:
     benchmarks.Speedometer20Benchmark,
     benchmarks.Speedometer21Benchmark,
     benchmarks.Speedometer30Benchmark,
+    benchmarks.Speedometer31Benchmark,
+    benchmarks.SpeedometerMainBenchmark,
+    # MotionMark:
     benchmarks.MotionMark12Benchmark,
     benchmarks.MotionMark13Benchmark,
+    benchmarks.MotionMark131Benchmark,
+    benchmarks.MotionMarkMainBenchmark,
+    # JetStream:
     benchmarks.JetStream20Benchmark,
     benchmarks.JetStream21Benchmark,
     benchmarks.JetStream22Benchmark,
-    benchmarks.JetStream30Benchmark,
+    benchmarks.JetStreamMainBenchmark,
 ]
 
-press_benchmarks_dict = {cls.NAME: cls for cls in press_benchmarks}
+press_benchmarks_dict: Dict[str, Type[PressBenchmark]] = {
+    cls.NAME: cls for cls in press_benchmarks
+}
 
 
 def get_pressbenchmark_cls(
@@ -86,7 +96,6 @@ def create_remote_webdriver(driver: webdriver.Remote
   """
 
   browser = cb_webdriver.RemoteWebDriver("default", driver)
-  browser.version = driver.capabilities["browserVersion"]
   return browser
 
 
@@ -119,6 +128,7 @@ def get_probe_result_file(benchmark_name: str,
 
 class CbbRunner(crossbench.runner.runner.Runner):
 
+  @override
   def create_run(self, browser_session: BrowserSessionRunGroup, story: Story,
                  repetition: int, is_warmup: bool, temperature: str, index: int,
                  name: str, timeout: dt.timedelta, throw: bool) -> Run:
@@ -128,6 +138,7 @@ class CbbRunner(crossbench.runner.runner.Runner):
 
 class CbbRun(Run):
 
+  @override
   def _setup_session_dir(self) -> None:
     # Don't create symlink loops and skip this step
     pass

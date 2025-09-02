@@ -37,7 +37,7 @@ class MultiException(ValueError):
   are automatically added to active ExceptionAnnotator in an
   ExceptionAnnotationScope."""
 
-  def __init__(self, message: str, exceptions: ExceptionAnnotator):
+  def __init__(self, message: str, exceptions: ExceptionAnnotator) -> None:
     super().__init__(message)
     self.exceptions: ExceptionAnnotator = exceptions
 
@@ -74,7 +74,7 @@ class ExceptionAnnotationScope:
         StopIteration, GeneratorExit, StopAsyncIteration)
     self._ignore_exception_types = ignore_exception_types
     self._added_info_stack_entries = entries
-    self._throw_cls: Optional[Type[BaseException]] = throw_cls
+    self._throw_cls: Type[BaseException] | None = throw_cls
     self._previous_info_stack: TInfoStack = ()
 
   def __enter__(self) -> ExceptionAnnotationScope:
@@ -125,7 +125,7 @@ class ExceptionAnnotator:
                throw_cls: Optional[Type[BaseException]] = None) -> None:
     self._exceptions: List[Entry] = []
     self.throw: bool = throw
-    self._throw_cls: Optional[Type[BaseException]] = throw_cls
+    self._throw_cls: Type[BaseException] | None = throw_cls
     # The info_stack adds additional meta information to handle exceptions.
     # Unlike the source-based backtrace, this can contain dynamic information
     # for easier debugging.
@@ -337,8 +337,9 @@ class ArgumentTypeMultiException(MultiException, argparse.ArgumentTypeError):
   pass
 
 
-def annotate_argparsing(*stack_entries: str,
-                        exceptions: TExceptionTypes = (Exception,)):
+def annotate_argparsing(
+    *stack_entries: str, exceptions: TExceptionTypes = (Exception,)
+) -> ExceptionAnnotationScope:
   """Use this to annotate argument parsing-related code blocks to get more
   readable annotated exception back.
   - Wraps multiple exception in an ArgumentTypeMultiException

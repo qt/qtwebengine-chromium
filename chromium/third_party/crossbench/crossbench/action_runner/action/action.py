@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import abc
 import datetime as dt
-from typing import TYPE_CHECKING, Any, Dict, Type, TypeVar
+import functools
+import json
+from typing import TYPE_CHECKING, Any, Dict, Self, Type, TypeVar
+
+from typing_extensions import override
 
 from crossbench import exception
 from crossbench.action_runner.action.action_type import ActionType
@@ -24,7 +28,7 @@ class ActionTypeConfigParser(ConfigParser):
   Action Configs. This way we can pop the 'value' or 'type' key from the
   config dict."""
 
-  def __init__(self):
+  def __init__(self) -> None:
     super().__init__(
         ActionType, unused_properties_mode=UnusedPropertiesMode.IGNORE)
     self.add_argument(
@@ -41,23 +45,26 @@ _ACTION_TYPE_CONFIG_PARSER = ActionTypeConfigParser()
 
 ACTION_TIMEOUT = dt.timedelta(seconds=20)
 
-ActionT = TypeVar("ActionT", bound="Action")
-
 # Lazily initialized Action class lookup.
 ACTIONS: Dict[ActionType, Type[Action]] = {}
 
+# TODO: remove once pytype is fixed/replaced since it gets confused with Self
+# annotations on classmethods with decorators.
+ActionT = TypeVar("ActionT", bound="Action")
 
 class Action(ConfigObject, metaclass=abc.ABCMeta):
   TYPE: ActionType = ActionType.GET
 
   @classmethod
+  @override
   def parse_str(cls, value: str) -> Action:
     return ACTIONS[ActionType.GET].parse_str(value)
 
   @classmethod
-  def parse_dict(cls: Type[ActionT], config: Dict[str, Any]) -> ActionT:
+  @override
+  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
     action_type: ActionType = _ACTION_TYPE_CONFIG_PARSER.parse(config)
-    action_cls: Type[ActionT] = ACTIONS[action_type]  # type: ignore
+    action_cls: Type[Self] = ACTIONS[action_type]  # type: ignore
     # Drop _ACTION_TYPE_CONFIG_PARSER arguments/aliases and avoid warnings
     config = dict(config)
     config.pop("action", None)
@@ -65,11 +72,13 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
 
     with exception.annotate_argparsing(
         f"Parsing Action details  ...{{ action: \"{action_type}\", ...}}:"):
-      action = action_cls.config_parser().parse(config)
+      action = action_cls.config_parser().parse(config, **kwargs)
     assert isinstance(action, cls), f"Expected {cls} but got {type(action)}"
     return action
 
   @classmethod
+  @override
+  @functools.cache
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = ConfigParser(cls)
     parser.add_argument("index", type=NumberParser.positive_zero_int, default=0)
@@ -79,7 +88,9 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
         default=ACTION_TIMEOUT)
     return parser
 
-  def __init__(self, timeout: dt.timedelta = ACTION_TIMEOUT, index: int = 0):
+  def __init__(self,
+               timeout: dt.timedelta = ACTION_TIMEOUT,
+               index: int = 0) -> None:
     self._timeout: dt.timedelta = timeout
     self._index = index
     self.validate()
@@ -104,6 +115,7 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:
     pass
 
+  @override
   def validate(self) -> None:
     if self._timeout.total_seconds() < 0:
       raise ValueError(
@@ -119,3 +131,6 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
     if isinstance(other, Action):
       return self.to_json() == other.to_json()
     return False
+
+  def __hash__(self) -> int:
+    return hash(json.dumps(self.to_json()))

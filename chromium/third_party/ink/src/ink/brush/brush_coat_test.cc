@@ -17,15 +17,14 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "fuzztest/fuzztest.h"
-#include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "ink/brush/brush_behavior.h"
 #include "ink/brush/brush_paint.h"
 #include "ink/brush/brush_tip.h"
 #include "ink/brush/fuzz_domains.h"
 #include "ink/geometry/mesh_format.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace {
@@ -35,62 +34,25 @@ using ::testing::HasSubstr;
 using ::testing::Not;
 using ::testing::UnorderedElementsAre;
 
-Uri CreateTextureUri() {
-  auto uri = Uri::Parse("ink://ink/texture:test-paint");
-  ABSL_CHECK_OK(uri);
-  return *uri;
-}
+constexpr absl::string_view kTestTextureId = "test-paint";
 
 TEST(BrushCoatTest, Stringify) {
-  EXPECT_EQ(absl::StrCat(BrushCoat{}),
-            "BrushCoat{tips=[], paint=BrushPaint{texture_layers={}}}");
-  EXPECT_EQ(absl::StrCat(BrushCoat{.tips = {BrushTip{}}}),
-            "BrushCoat{tips=[BrushTip{scale=<1, 1>, corner_rounding=1}], "
-            "paint=BrushPaint{texture_layers={}}}");
-  EXPECT_EQ(absl::StrCat(BrushCoat{.tips = {BrushTip{.corner_rounding = 0},
-                                            BrushTip{.corner_rounding = 1}}}),
-            "BrushCoat{tips=[BrushTip{scale=<1, 1>, corner_rounding=0}, "
-            "BrushTip{scale=<1, 1>, corner_rounding=1}], "
+  EXPECT_EQ(absl::StrCat(BrushCoat{.tip = BrushTip{}}),
+            "BrushCoat{tip=BrushTip{scale=<1, 1>, corner_rounding=1}, "
             "paint=BrushPaint{texture_layers={}}}");
 }
 
 TEST(BrushCoatTest, CoatWithDefaultTipAndPaintIsValid) {
   absl::Status status = brush_internal::ValidateBrushCoat(
-      BrushCoat{.tips = {BrushTip{}}, .paint = BrushPaint{}});
+      BrushCoat{.tip = BrushTip{}, .paint = BrushPaint{}});
   EXPECT_EQ(status, absl::OkStatus());
 }
 
 TEST(BrushCoatTest, CoatWithInvalidTipIsInvalid) {
   absl::Status status = brush_internal::ValidateBrushCoat(
-      BrushCoat{.tips = {BrushTip{.pinch = -1}}, .paint = BrushPaint{}});
+      BrushCoat{.tip = BrushTip{.pinch = -1}, .paint = BrushPaint{}});
   EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(status.message(), HasSubstr("pinch"));
-}
-
-TEST(BrushCoatTest, CoatWithInvalidPaintIsInvalid) {
-  absl::Status status = brush_internal::ValidateBrushCoat(BrushCoat{
-      .tips = {BrushTip{}},
-      .paint = BrushPaint{.texture_layers = {{.color_texture_uri = Uri()}}}});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("color_texture_uri"));
-}
-
-TEST(BrushCoatTest, CoatWithNoTipsIsInvalid) {
-  absl::Status status = brush_internal::ValidateBrushCoat(BrushCoat{});
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), HasSubstr("must have at least one BrushTip"));
-}
-
-TEST(BrushCoatTest, CoatWithTooManyTipsIsInvalid) {
-  BrushCoat coat;
-  // TODO: b/285594469 - For now, two tips is all it takes to be too many. Once
-  // multi-tip `BrushCoat` support is implemented, we'll still want some kind of
-  // cap on the number of tips.
-  for (int i = 0; i < 2; ++i) {
-    coat.tips.push_back(BrushTip{});
-  }
-  absl::Status status = brush_internal::ValidateBrushCoat(coat);
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
 }
 
 void CanValidateValidBrushCoat(const BrushCoat& coat) {
@@ -122,7 +84,7 @@ TEST(BrushCoatTest, GetRequiredAttributeIdsWithoutColorShift) {
           },
       }}},
   };
-  BrushCoat coat = {.tips = {tip}};
+  BrushCoat coat = {.tip = tip};
   EXPECT_THAT(brush_internal::GetRequiredAttributeIds(coat),
               Not(Contains(MeshFormat::AttributeId::kColorShiftHsl)));
 }
@@ -146,7 +108,7 @@ TEST(BrushCoatTest, GetRequiredAttributeIdsWithColorShift) {
             },
         }}},
     };
-    BrushCoat coat = {.tips = {tip}};
+    BrushCoat coat = {.tip = tip};
     EXPECT_THAT(brush_internal::GetRequiredAttributeIds(coat),
                 Contains(MeshFormat::AttributeId::kColorShiftHsl));
   }
@@ -155,11 +117,11 @@ TEST(BrushCoatTest, GetRequiredAttributeIdsWithColorShift) {
 TEST(BrushCoatTest, GetRequiredAttributeIdsWithoutWindingTextures) {
   BrushPaint paint = {
       .texture_layers = {BrushPaint::TextureLayer{
-          .color_texture_uri = CreateTextureUri(),
+          .client_texture_id = std::string(kTestTextureId),
           .mapping = BrushPaint::TextureMapping::kTiling,
       }},
   };
-  BrushCoat coat = {.tips = {BrushTip()}, .paint = paint};
+  BrushCoat coat = {.tip = BrushTip(), .paint = paint};
   EXPECT_THAT(brush_internal::GetRequiredAttributeIds(coat),
               Not(Contains(MeshFormat::AttributeId::kSurfaceUv)));
 }
@@ -167,11 +129,11 @@ TEST(BrushCoatTest, GetRequiredAttributeIdsWithoutWindingTextures) {
 TEST(BrushCoatTest, GetRequiredAttributeIdsWithWindingTextures) {
   BrushPaint paint = {
       .texture_layers = {BrushPaint::TextureLayer{
-          .color_texture_uri = CreateTextureUri(),
+          .client_texture_id = std::string(kTestTextureId),
           .mapping = BrushPaint::TextureMapping::kWinding,
       }},
   };
-  BrushCoat coat = {.tips = {BrushTip()}, .paint = paint};
+  BrushCoat coat = {.tip = BrushTip(), .paint = paint};
   EXPECT_THAT(brush_internal::GetRequiredAttributeIds(coat),
               Contains(MeshFormat::AttributeId::kSurfaceUv));
 }

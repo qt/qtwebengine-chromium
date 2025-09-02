@@ -26,28 +26,16 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/utility/vk_safe_struct.hpp>
 
-#include "containers/custom_containers.h"
 #include "error_message/logging.h"
-#include "utils/vk_layer_utils.h"
+#include "containers/custom_containers.h"
 #include "layer_options.h"
 #include "gpuav/core/gpuav_settings.h"
 #include "sync/sync_settings.h"
-#include "generated/dispatch_vector.h"
+#include "generated/device_features.h"
 #include "generated/vk_api_version.h"
 #include "generated/vk_extension_helper.h"
 #include "generated/vk_layer_dispatch_table.h"
-
-// Layer object type identifiers
-enum LayerObjectTypeId {
-    LayerObjectTypeThreading,            // Instance or device threading layer object
-    LayerObjectTypeParameterValidation,  // Instance or device parameter validation layer object
-    LayerObjectTypeObjectTracker,        // Instance or device object tracker layer object
-    LayerObjectTypeCoreValidation,       // Instance or device core validation layer object
-    LayerObjectTypeBestPractices,        // Instance or device best practices layer object
-    LayerObjectTypeGpuAssisted,          // Instance or device gpu assisted validation layer object
-    LayerObjectTypeSyncValidation,       // Instance or device synchronization validation layer object
-    LayerObjectTypeMaxEnum,              // Max enum count
-};
+#include "layer_object_id.h"
 
 // To avoid re-hashing unique ids on each use, we precompute the hash and store the
 // hash's LSBs in the high 24 bits.
@@ -67,6 +55,93 @@ namespace base {
 class Instance;
 class Device;
 }  // namespace base
+namespace dispatch {
+class Instance;
+class Device;
+}  // namespace dispatch
+
+// Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2::pNext chain
+// TODO: this could be defined and initialized via generated code
+struct DeviceExtensionProperties {
+    VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props;
+    VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props_nv;
+    VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext;
+    VkPhysicalDeviceCooperativeMatrixPropertiesNV cooperative_matrix_props;
+    VkPhysicalDeviceCooperativeMatrixPropertiesKHR cooperative_matrix_props_khr;
+    VkPhysicalDeviceCooperativeMatrix2PropertiesNV cooperative_matrix_props2_nv;
+    VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback_props;
+    VkPhysicalDeviceRayTracingPropertiesNV ray_tracing_props_nv;
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_props_khr;
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props;
+    VkPhysicalDeviceFragmentDensityMapPropertiesEXT fragment_density_map_props;
+    VkPhysicalDeviceFragmentDensityMap2PropertiesEXT fragment_density_map2_props;
+    VkPhysicalDeviceFragmentDensityMapOffsetPropertiesQCOM fragment_density_map_offset_props;
+    VkPhysicalDevicePerformanceQueryPropertiesKHR performance_query_props;
+    VkPhysicalDeviceSampleLocationsPropertiesEXT sample_locations_props;
+    VkPhysicalDeviceCustomBorderColorPropertiesEXT custom_border_color_props;
+    VkPhysicalDeviceMultiviewProperties multiview_props;
+    VkPhysicalDevicePortabilitySubsetPropertiesKHR portability_props;
+    VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props;
+    VkPhysicalDeviceProvokingVertexPropertiesEXT provoking_vertex_props;
+    VkPhysicalDeviceMultiDrawPropertiesEXT multi_draw_props;
+    VkPhysicalDeviceDiscardRectanglePropertiesEXT discard_rectangle_props;
+    VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT blend_operation_advanced_props;
+    VkPhysicalDeviceConservativeRasterizationPropertiesEXT conservative_rasterization_props;
+    VkPhysicalDeviceSubgroupProperties subgroup_props;
+    VkPhysicalDeviceExtendedDynamicState3PropertiesEXT extended_dynamic_state3_props;
+    VkPhysicalDeviceImageProcessingPropertiesQCOM image_processing_props;
+    VkPhysicalDeviceImageAlignmentControlPropertiesMESA image_alignment_control_props;
+    VkPhysicalDeviceMaintenance7PropertiesKHR maintenance7_props;
+    VkPhysicalDeviceNestedCommandBufferPropertiesEXT nested_command_buffer_props;
+    VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_props;
+    VkPhysicalDeviceDescriptorBufferDensityMapPropertiesEXT descriptor_buffer_density_props;
+    VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props;
+    VkPhysicalDevicePipelineBinaryPropertiesKHR pipeline_binary_props;
+    VkPhysicalDeviceMapMemoryPlacedPropertiesEXT map_memory_placed_props;
+    VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR compute_shader_derivatives_props;
+    VkPhysicalDeviceCooperativeVectorPropertiesNV cooperative_vector_props_nv;
+    VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props;
+    VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+    VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
+#endif
+};
+
+// This object holds all static state for the device (device properties, enabled extensions/features, etc.)
+// It is initialized atomically in the constructor based on the provided physical device and device create info
+// and then used by all downstream users (state tracker, stateless SPIR-V validator, etc.).
+class StatelessDeviceData {
+  public:
+    StatelessDeviceData(vvl::dispatch::Instance* instance, VkPhysicalDevice physical_device, const VkDeviceCreateInfo* pCreateInfo);
+
+    APIVersion api_version;
+
+    DeviceExtensions extensions{};
+    DeviceFeatures enabled_features{};
+
+    VkPhysicalDeviceMemoryProperties phys_dev_mem_props{};
+    VkPhysicalDeviceProperties phys_dev_props{};
+    VkPhysicalDeviceVulkan11Properties phys_dev_props_core11{};
+    VkPhysicalDeviceVulkan12Properties phys_dev_props_core12{};
+    VkPhysicalDeviceVulkan13Properties phys_dev_props_core13{};
+    VkPhysicalDeviceVulkan14Properties phys_dev_props_core14{};
+    // To store the 2 lists from VkPhysicalDeviceHostImageCopyProperties
+    std::vector<VkImageLayout> host_image_copy_props_copy_src_layouts{};
+    std::vector<VkImageLayout> host_imape_copy_props_copy_dst_layouts{};
+    DeviceExtensionProperties phys_dev_ext_props = {};
+
+    // Some extensions/features changes the behavior of the app/layers/spec if present.
+    // So it needs its own special boolean unlike the enabled_fatures.
+    bool has_format_feature2;  // VK_KHR_format_feature_flags2
+    // VK_EXT_pipeline_robustness was designed to be a subset of robustness extensions
+    // Enabling the other robustness features can reduce performance on GPU, so just the
+    // support is needed to check
+    bool has_robust_image_access;  // VK_EXT_image_robustness
+    // Validation requires special handling for VkPhysicalDeviceRobustness2FeaturesEXT, because for some cases robustness features
+    // // need to only be supported, not enabled
+    bool has_robust_image_access2;   // VK_EXT_robustness2
+    bool has_robust_buffer_access2;  // VK_EXT_robustness2
+};
 
 namespace dispatch {
 
@@ -192,6 +267,23 @@ class Instance : public HandleWrapper {
     vvl::concurrent_unordered_map<VkDisplayKHR, uint64_t, 0> display_id_reverse_mapping;
 
 #include "generated/dispatch_object_instance_methods.h"
+
+    template <bool init = true, typename ExtProp>
+    void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtEnabled enabled, ExtProp* ext_prop) {
+        assert(ext_prop);
+        // Extensions that use two calls to get properties don't want to init on the second call
+        if constexpr (init) {
+            *ext_prop = vku::InitStructHelper();
+        }
+        if (IsExtEnabled(enabled)) {
+            VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
+            if (api_version >= VK_API_VERSION_1_1) {
+                GetPhysicalDeviceProperties2(gpu, &prop2);
+            } else {
+                GetPhysicalDeviceProperties2KHR(gpu, &prop2);
+            }
+        }
+    }
 };
 
 class Device : public HandleWrapper {
@@ -209,8 +301,23 @@ class Device : public HandleWrapper {
     Settings& settings;
     Instance* dispatch_instance;
 
-    APIVersion api_version;
-    DeviceExtensions extensions = {};
+    const StatelessDeviceData stateless_device_data;
+
+    const APIVersion api_version;
+
+    const DeviceExtensions& extensions;
+    const DeviceFeatures& enabled_features;
+
+    const VkPhysicalDeviceMemoryProperties& phys_dev_mem_props;
+    const VkPhysicalDeviceProperties& phys_dev_props;
+    const VkPhysicalDeviceVulkan11Properties& phys_dev_props_core11;
+    const VkPhysicalDeviceVulkan12Properties& phys_dev_props_core12;
+    const VkPhysicalDeviceVulkan13Properties& phys_dev_props_core13;
+    const VkPhysicalDeviceVulkan14Properties& phys_dev_props_core14;
+    // To store the 2 lists from VkPhysicalDeviceHostImageCopyProperties
+    const std::vector<VkImageLayout>& host_image_copy_props_copy_src_layouts;
+    const std::vector<VkImageLayout>& host_imape_copy_props_copy_dst_layouts;
+    const DeviceExtensionProperties& phys_dev_ext_props;
 
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;

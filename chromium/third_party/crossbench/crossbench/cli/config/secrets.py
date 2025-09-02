@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Self
+
+from typing_extensions import override
 
 from crossbench.config import ConfigObject, ConfigParser
 from crossbench.parse import ObjectParser
@@ -16,36 +18,43 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class Secrets(ConfigObject):
-  google: Optional[UsernamePassword] = None
-  bond: Optional[ServiceAccount] = None
+  google: UsernamePassword | None = None
+  bond: ServiceAccount | None = None
 
   @classmethod
-  def config_parser(cls) -> ConfigParser[Secrets]:
+  @override
+  def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument("google", type=GoogleUsernamePassword)
     parser.add_argument("bond", type=ServiceAccount)
     return parser
 
   @classmethod
-  def parse_str(cls, value: str) -> Secrets:
+  @override
+  def parse_str(cls, value: str) -> Self:
     if value[0] == "{":
       return cls.parse_inline_hjson(value)
     raise NotImplementedError("Cannot create secrets from string")
 
-  @classmethod
-  def parse_dict(cls, config: Dict) -> Secrets:
-    return cls.config_parser().parse(config)
+  def merge(self, fallback: Secrets) -> Self:
+    return type(self)(self.google or fallback.google, self.bond or
+                      fallback.bond)
 
-  def merge(self, fallback: Secrets) -> Secrets:
-    return Secrets(self.google or fallback.google, self.bond or fallback.bond)
+
+class Secret(ConfigObject):
+
+  @property
+  def is_interactive(self) -> bool:
+    return False
 
 @dataclasses.dataclass(frozen=True)
-class UsernamePassword(ConfigObject):
+class UsernamePassword(Secret):
   username: str
   password: str
 
   @classmethod
-  def config_parser(cls) -> ConfigParser[UsernamePassword]:
+  @override
+  def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument(
         "username",
@@ -60,13 +69,24 @@ class UsernamePassword(ConfigObject):
     return parser
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> UsernamePassword:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def parse_str(cls, value: str):
+  @override
+  def parse_str(cls, value: str) -> UsernamePassword:
+    if value == "interactive":
+      return InteractiveUsernamePassword()
     # TODO: maybe support passwd style string format
     raise NotImplementedError("Cannot support")
+
+
+class InteractiveUsernamePassword(UsernamePassword):
+  """Interactive secret that defers the input to the user so we can 
+  live test the login process. """
+
+  def __init__(self):
+    super().__init__("", "")
+
+  @property
+  def is_interactive(self) -> bool:
+    return True
 
 
 class GoogleUsernamePassword(UsernamePassword):
@@ -74,7 +94,7 @@ class GoogleUsernamePassword(UsernamePassword):
 
 
 @dataclasses.dataclass(frozen=True)
-class ServiceAccount(ConfigObject):
+class ServiceAccount(Secret):
   type: str
   project_id: str
   private_key_id: str
@@ -88,7 +108,8 @@ class ServiceAccount(ConfigObject):
   universe_domain: str
 
   @classmethod
-  def config_parser(cls) -> ConfigParser[ServiceAccount]:
+  @override
+  def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument("type", type=ObjectParser.non_empty_str, required=True)
     parser.add_argument(
@@ -116,11 +137,8 @@ class ServiceAccount(ConfigObject):
     return parser
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> ServiceAccount:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def parse_str(cls, value: str):
+  @override
+  def parse_str(cls, value: str) -> Self:
     del value
     raise NotImplementedError("ServiceAccount from string not supported")
 

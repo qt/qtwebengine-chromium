@@ -7,6 +7,8 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING, Optional
 
+from typing_extensions import override
+
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.splash_screen import SplashScreen
@@ -23,22 +25,26 @@ if TYPE_CHECKING:
 class Settings:
   """Container object for browser agnostic settings."""
 
-  def __init__(self,
-               flags: Optional[FlagsData] = None,
-               js_flags: Optional[FlagsData] = None,
-               cache_dir: Optional[pth.AnyPath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[pth.AnyPath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.Platform] = None,
-               secrets: Secrets = Secrets(),
-               driver_logging: bool = False,
-               wipe_system_user_data: bool = False,
-               http_request_timeout: dt.timedelta = dt.timedelta()):
+  def __init__(
+      self,
+      flags: Optional[FlagsData] = None,
+      js_flags: Optional[FlagsData] = None,
+      cache_dir: Optional[pth.AnyPath] = None,
+      clear_cache_dir: bool = True,
+      network: Optional[Network] = None,
+      driver_path: Optional[pth.AnyPath] = None,
+      viewport: Optional[Viewport] = None,
+      splash_screen: Optional[SplashScreen] = None,
+      platform: Optional[plt.Platform] = None,
+      secrets: Secrets = Secrets(),
+      driver_logging: bool = False,
+      wipe_system_user_data: bool = False,
+      http_request_timeout: dt.timedelta = dt.timedelta()
+  ) -> None:
     self._flags = self._convert_flags(flags, "flags")
     self._js_flags = self._extract_js_flags(self._flags, js_flags)
     self._cache_dir = cache_dir
+    self._clear_cache_dir = clear_cache_dir
     self._platform = platform or plt.PLATFORM
     self._driver_path = driver_path
     self._network: Network = network or LiveNetwork()
@@ -87,6 +93,10 @@ class Settings:
     return self._cache_dir
 
   @property
+  def clear_cache_dir(self) -> bool:
+    return self._clear_cache_dir
+
+  @property
   def driver_path(self) -> Optional[pth.AnyPath]:
     return self._driver_path
 
@@ -115,10 +125,12 @@ class Settings:
     return self._http_request_timeout
 
   @property
+  @override
   def viewport(self) -> Viewport:
     return self._viewport
 
   @viewport.setter
+  @override
   def viewport(self, value: Viewport) -> None:
     assert self._viewport.is_default
     self._viewport = value

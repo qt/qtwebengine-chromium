@@ -4,65 +4,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing_extensions import override
 
-from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
+from crossbench.browsers.edge.base import EdgeBaseMixin
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 
-if TYPE_CHECKING:
-  from crossbench.path import AnyPath
 
-
-class EdgePathMixin:
-  @classmethod
-  def default_path(cls, platform: plt.Platform) -> AnyPath:
-    return cls.stable_path(platform)
-
-  @classmethod
-  def stable_path(cls, platform: plt.Platform) -> AnyPath:
-    return platform.search_app_or_executable(
-        "Edge Stable",
-        macos=["Microsoft Edge.app"],
-        linux=["microsoft-edge"],
-        win=["Microsoft/Edge/Application/msedge.exe"])
-
-  @classmethod
-  def beta_path(cls, platform: plt.Platform) -> AnyPath:
-    return platform.search_app_or_executable(
-        "Edge Beta",
-        macos=["Microsoft Edge Beta.app"],
-        linux=["microsoft-edge-beta"],
-        win=["Microsoft/Edge Beta/Application/msedge.exe"])
-
-  @classmethod
-  def dev_path(cls, platform: plt.Platform) -> AnyPath:
-    return platform.search_app_or_executable(
-        "Edge Dev",
-        macos=["Microsoft Edge Dev.app"],
-        linux=["microsoft-edge-dev"],
-        win=["Microsoft/Edge Dev/Application/msedge.exe"])
-
-  @classmethod
-  def canary_path(cls, platform: plt.Platform) -> AnyPath:
-    return platform.search_app_or_executable(
-        "Edge Canary",
-        macos=["Microsoft Edge Canary.app"],
-        linux=[],
-        win=["Microsoft/Edge SxS/Application/msedge.exe"])
-
-  @property
-  def type_name(self) -> str:
-    return "edge"
-
-
-class Edge(EdgePathMixin, ChromiumBased):
+class Edge(EdgeBaseMixin, ChromiumBased):
   DEFAULT_FLAGS = (
       "--enable-benchmarking",
       "--disable-extensions",
       "--no-first-run",
   )
 
-  @property
-  def attributes(self) -> BrowserAttributes:
+  @classmethod
+  @override
+  def attributes(cls) -> BrowserAttributes:
     return BrowserAttributes.EDGE | BrowserAttributes.CHROMIUM_BASED

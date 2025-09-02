@@ -7,12 +7,13 @@ from __future__ import annotations
 import abc
 import os
 import shutil
-import urllib.parse
-from typing import (TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple, Type,
-                    Union)
+from typing import TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple, Type
+
+from typing_extensions import override
 
 from crossbench.browsers.downloader import DMGArchiveHelper, Downloader
 from crossbench.browsers.firefox.version import FirefoxVersion
+from crossbench.helper import url_helper
 
 if TYPE_CHECKING:
   from crossbench.browsers.version import BrowserVersion
@@ -36,6 +37,7 @@ class FirefoxDownloader(Downloader):
   STORAGE_URL: str = "https://ftp.mozilla.org/pub/firefox/releases/"
 
   @classmethod
+  @override
   def _get_loader_cls(cls,
                       browser_platform: Platform) -> Type[FirefoxDownloader]:
     if browser_platform.is_macos:
@@ -48,6 +50,7 @@ class FirefoxDownloader(Downloader):
                      f"{browser_platform.name} {browser_platform.machine}")
 
   @classmethod
+  @override
   def is_valid_version(cls, path_or_identifier: str) -> bool:
     return FirefoxVersion.is_valid_unique(path_or_identifier)
 
@@ -60,9 +63,8 @@ class FirefoxDownloader(Downloader):
     return (browser_platform.exists(path) and
             path.name.endswith(cls.ARCHIVE_SUFFIX))
 
-  def __init__(self, version_identifier: Union[str,
-                                               LocalPath], browser_type: str,
-               platform_name: str, browser_platform: Platform):
+  def __init__(self, version_identifier: str | LocalPath, browser_type: str,
+               platform_name: str, browser_platform: Platform) -> None:
     assert not browser_type
     assert not platform_name
     firefox_platform_name = _PLATFORM_NAME_LOOKUP.get(browser_platform.key)
@@ -73,12 +75,15 @@ class FirefoxDownloader(Downloader):
     super().__init__(version_identifier, "firefox", firefox_platform_name,
                      browser_platform)
 
+  @override
   def _parse_version(self, version_identifier: str) -> BrowserVersion:
     return FirefoxVersion.parse(version_identifier)
 
+  @override
   def _requested_version_validation(self) -> None:
     pass
 
+  @override
   def _find_archive_url(self) -> Tuple[BrowserVersion, Optional[str]]:
     # Quick probe for complete versions
     if self._requested_version.is_complete:
@@ -90,6 +95,7 @@ class FirefoxDownloader(Downloader):
         f"{self.STORAGE_URL}{self._requested_version.parts_str}/mac/en-GB")
     return tuple(self._archive_urls(folder_url, self._requested_version))[0]
 
+  @override
   def _download_archive(self, archive_url: str, tmp_dir: LocalPath) -> None:
     self._browser_platform.download_to(
         archive_url, tmp_dir / f"archive.{self.ARCHIVE_SUFFIX}")
@@ -103,6 +109,7 @@ class FirefoxDownloader(Downloader):
     shutil.move(os.fspath(candidate), os.fspath(self._archive_path))
 
   @abc.abstractmethod
+  @override
   def _install_archive(self, archive_path: LocalPath) -> None:
     pass
 
@@ -111,19 +118,23 @@ class FirefoxDownloaderLinux(FirefoxDownloader):
   ARCHIVE_SUFFIX: str = ".tar.bz2"
 
   @classmethod
+  @override
   def is_valid(cls, path_or_identifier: AnyPathLike,
                browser_platform: Platform) -> bool:
     return cls._is_valid(path_or_identifier, browser_platform)
 
+  @override
   def _installed_app_path(self) -> LocalPath:
     # TODO: support local vs remote
     return self._extracted_path() / "firefox-bin"
 
+  @override
   def _archive_urls(
       self, folder_url: str,
       version: BrowserVersion) -> Iterable[Tuple[BrowserVersion, str]]:
     return ((version, f"{folder_url}/firefox-{version.parts_str}.tar.bz2"),)
 
+  @override
   def _install_archive(self, archive_path: LocalPath) -> None:
     raise NotImplementedError("Missing linux support")
 
@@ -133,10 +144,12 @@ class FirefoxDownloaderMacOS(FirefoxDownloader):
   MIN_MAC_ARM64_MILESTONE: Final[int] = 84
 
   @classmethod
+  @override
   def is_valid(cls, path_or_identifier: AnyPathLike,
                browser_platform: Platform) -> bool:
     return cls._is_valid(path_or_identifier, browser_platform)
 
+  @override
   def _requested_version_validation(self) -> None:
     major_version: int = self._requested_version.major
     if (self._browser_platform.is_macos and self._browser_platform.is_arm64 and
@@ -145,6 +158,7 @@ class FirefoxDownloaderMacOS(FirefoxDownloader):
           "Native Mac arm64/m1 Firefox version is available with v84, "
           f"but requested {major_version}.")
 
+  @override
   def _download_archive(self, archive_url: str, tmp_dir: LocalPath) -> None:
     assert self._browser_platform.is_macos
     if self._browser_platform.is_arm64 and (self._requested_version
@@ -155,19 +169,23 @@ class FirefoxDownloaderMacOS(FirefoxDownloader):
           f"but requested {self._requested_version} is too old.")
     super()._download_archive(archive_url, tmp_dir)
 
+  @override
   def _archive_urls(
       self, folder_url: str,
       version: BrowserVersion) -> Iterable[Tuple[BrowserVersion, str]]:
-    archive_name = urllib.parse.quote(f"Firefox {version.parts_str}.dmg")
+    archive_name = url_helper.quote(f"firefox {version.parts_str}.dmg")
     return ((version, f"{folder_url}/{archive_name}"),)
 
+  @override
   def _extracted_path(self) -> LocalPath:
     # TODO: support local vs remote
     return self._installed_app_path()
 
+  @override
   def _installed_app_path(self) -> LocalPath:
     return self._out_dir / f"Firefox {self._requested_version}.app"
 
+  @override
   def _install_archive(self, archive_path: LocalPath) -> None:
     extracted_path = self._extracted_path()
     DMGArchiveHelper.extract(self.host_platform, archive_path, extracted_path)
@@ -177,9 +195,11 @@ class FirefoxDownloaderMacOS(FirefoxDownloader):
 class FirefoxDownloaderWin(FirefoxDownloader):
 
   @classmethod
+  @override
   def is_valid(cls, path_or_identifier: AnyPathLike,
                browser_platform: Platform) -> bool:
     return False
 
+  @override
   def _install_archive(self, archive_path: LocalPath) -> None:
     raise NotImplementedError("Missing windows support")

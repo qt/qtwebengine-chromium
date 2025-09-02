@@ -62,6 +62,7 @@ type CommonConfig struct {
 	httpPort, httpsPort, httpSecureProxyPort int
 	certConfig                               CertConfig
 	injectScripts                            string
+	paramToIgnoreInURLPath                   string
 
 	// Computed state.
 	root_certs   []tls.Certificate
@@ -71,6 +72,9 @@ type CommonConfig struct {
 type RecordCommand struct {
 	common CommonConfig
 	cmd    cli.Command
+
+	// Custom flags for record.
+	enableExperimentalTimedChunk bool
 }
 
 type ReplayCommand struct {
@@ -142,6 +146,17 @@ func (common *CommonConfig) Flags() []cli.Flag {
 				"CAUTION: Without deterministic.js, many pages will not replay.",
 			Destination: &common.injectScripts,
 		},
+		&cli.StringFlag{
+			Name:  "param-to-ignore-in-url-path",
+			Value: "",
+			Usage: "When recording and replaying, ignore a specific query parameter in" +
+				"a given url path. The input format is \"{Full URL path}::{parameter}\". " +
+				"e.g. input \"https://example.com/path::param1\" means WPR would remove " +
+				"param1 query key and values from when recording & replaying. Sequence " +
+				"of other parameteres are preserved. Only one parameter in one URL path " +
+				"is supported.",
+			Destination: &common.paramToIgnoreInURLPath,
+		},
 	)
 }
 
@@ -205,7 +220,28 @@ func (common *CommonConfig) ProcessInjectedScripts(timeSeedMs int64) error {
 }
 
 func (r *RecordCommand) Flags() []cli.Flag {
-	return r.common.Flags()
+	return append(r.common.Flags(),
+		&cli.BoolFlag{
+			Name: "enable_experimental_timed_chunk",
+			Usage: "When specified, record the precise timings of receiving " +
+				"response stream chunks.",
+			Destination: &r.enableExperimentalTimedChunk,
+		},
+	)
+}
+
+func (r *RecordCommand) CheckArgs(c *cli.Context) error {
+	if err := r.common.CheckArgs(c); err != nil {
+		return err
+	}
+
+	if r.enableExperimentalTimedChunk {
+		log.Printf("WARNING: Timed chunk recording is enabled. Note that the" +
+			"implementation is highly experimental at the moment and the " +
+			"format is subject to change.")
+	}
+
+	return nil
 }
 
 func (r *ReplayCommand) Flags() []cli.Flag {
@@ -404,8 +440,12 @@ func (r *RecordCommand) Run(c *cli.Context) error {
 	}
 	archive.DeterministicTimeSeedMs = timeSeedMs
 
-	httpHandler := webpagereplay.NewRecordingProxy(archive, "http", r.common.transformers)
-	httpsHandler := webpagereplay.NewRecordingProxy(archive, "https", r.common.transformers)
+	if r.enableExperimentalTimedChunk {
+		log.Printf("NOTIMPLEMENTED: Experimental Timed Chunk recording support")
+		os.Exit(1)
+	}
+	httpHandler := webpagereplay.NewRecordingProxy(archive, "http", r.common.transformers, r.common.paramToIgnoreInURLPath)
+	httpsHandler := webpagereplay.NewRecordingProxy(archive, "https", r.common.transformers, r.common.paramToIgnoreInURLPath)
 	tlsconfig, err := webpagereplay.RecordTLSConfig(r.common.root_certs, archive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
@@ -454,8 +494,8 @@ func (r *ReplayCommand) Run(c *cli.Context) error {
 		log.Printf("Loaded replay rules from %s", r.rulesFile)
 	}
 
-	httpHandler := webpagereplay.NewReplayingProxy(archive, "http", r.common.transformers, r.quietMode)
-	httpsHandler := webpagereplay.NewReplayingProxy(archive, "https", r.common.transformers, r.quietMode)
+	httpHandler := webpagereplay.NewReplayingProxy(archive, "http", r.common.transformers, r.quietMode, r.common.paramToIgnoreInURLPath)
+	httpsHandler := webpagereplay.NewReplayingProxy(archive, "https", r.common.transformers, r.quietMode, r.common.paramToIgnoreInURLPath)
 	tlsconfig, err := webpagereplay.ReplayTLSConfig(r.common.root_certs, archive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
@@ -491,7 +531,7 @@ func main() {
 		Name:   "record",
 		Usage:  "Record web pages to an archive",
 		Flags:  record.Flags(),
-		Before: record.common.CheckArgs,
+		Before: record.CheckArgs,
 		Action: record.Run,
 	}
 

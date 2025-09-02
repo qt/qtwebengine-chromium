@@ -148,13 +148,11 @@ class Pipeline : public StateObject {
         VkPipeline frag_out_lib = VK_NULL_HANDLE;
     } instrumentation_data;
 
-    // Executable or legacy pipeline
     Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
-             std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
+             std::shared_ptr<const vvl::PipelineCache> pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
              std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]);
 
-    // Compute pipeline
     Pipeline(const Device &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData *stateless_data);
@@ -690,7 +688,7 @@ struct LastBound {
         std::vector<uint32_t> dynamic_offsets;
         PipelineLayoutCompatId compat_id_for_set{0};
 
-        // Cache most recently validated descriptor state for ValidateActionState/UpdateDrawState
+        // Cache most recently validated descriptor state for ValidateActionState/UpdateImageLayoutDrawState
         const vvl::DescriptorSet *validated_set{nullptr};
         uint64_t validated_set_change_count{~0ULL};
         uint64_t validated_set_image_layout_change_count{~0ULL};
@@ -735,6 +733,8 @@ struct LastBound {
     bool IsShadingRateImageEnable() const;
     bool IsViewportWScalingEnable() const;
     bool IsPrimitiveRestartEnable() const;
+    bool IsAlphaToCoverageEnable() const;
+    bool IsAlphaToOneEnable() const;
     VkCoverageModulationModeNV GetCoverageModulationMode() const;
 
     bool ValidShaderObjectCombination(const VkPipelineBindPoint bind_point, const DeviceFeatures &device_features) const;
@@ -775,22 +775,32 @@ enum LvlBindPoint {
 
 static VkPipelineBindPoint inline ConvertToPipelineBindPoint(LvlBindPoint bind_point) {
     switch (bind_point) {
+        case BindPoint_Graphics:
+            return VK_PIPELINE_BIND_POINT_GRAPHICS;
+        case BindPoint_Compute:
+            return VK_PIPELINE_BIND_POINT_COMPUTE;
         case BindPoint_Ray_Tracing:
             return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
         default:
-            return static_cast<VkPipelineBindPoint>(bind_point);
+            break;
     }
-    return VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    assert(false);
+    return VK_PIPELINE_BIND_POINT_GRAPHICS;
 }
 
 static LvlBindPoint inline ConvertToLvlBindPoint(VkPipelineBindPoint bind_point) {
     switch (bind_point) {
+        case VK_PIPELINE_BIND_POINT_GRAPHICS:
+            return BindPoint_Graphics;
+        case VK_PIPELINE_BIND_POINT_COMPUTE:
+            return BindPoint_Compute;
         case VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR:
             return BindPoint_Ray_Tracing;
         default:
-            return static_cast<LvlBindPoint>(bind_point);
+            break;
     }
-    return BindPoint_Count;
+    assert(false);
+    return BindPoint_Graphics;
 }
 
 static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlagBits stage) {
@@ -813,9 +823,10 @@ static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlagBi
         case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
             return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
         default:
-            return static_cast<VkPipelineBindPoint>(stage);
+            break;
     }
-    return VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    assert(false);
+    return VK_PIPELINE_BIND_POINT_GRAPHICS;
 }
 
 static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlags stage) {
@@ -828,7 +839,7 @@ static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlags 
         return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
     } else {
         assert(false);
-        return VK_PIPELINE_BIND_POINT_MAX_ENUM;
+        return VK_PIPELINE_BIND_POINT_GRAPHICS;
     }
 }
 static LvlBindPoint inline ConvertToLvlBindPoint(VkShaderStageFlagBits stage) {
@@ -851,7 +862,8 @@ static LvlBindPoint inline ConvertToLvlBindPoint(VkShaderStageFlagBits stage) {
         case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
             return BindPoint_Ray_Tracing;
         default:
-            return static_cast<LvlBindPoint>(stage);
+            break;
     }
-    return BindPoint_Count;
+    assert(false);
+    return BindPoint_Graphics;
 }

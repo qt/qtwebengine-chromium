@@ -63,53 +63,49 @@ message Brush {
   optional float epsilon_stroke_space = 3;
 
   // The `BrushFamily` specifies the `BrushTip` and the `BrushPaint` for a given
-  // `brush` and can be specified directly or via its `uri`. If only the `uri`
-  // is given, the client application is repsonsible for constructing a full
-  // `BrushFamily` from the `uri`.
+  // `brush`.
   //
   // Updating the family will result in regenerating the stroke mesh if the
   // `BrushTip` has changed, but not if only the paint has changed.
   //
   // Client apps will typically want to provide a "brush picker" UI that
   // effectively allows the user to update this field.
-  oneof family {
-    BrushFamily brush_family = 4;
-    string brush_family_uri = 5;
-  }
+  optional BrushFamily brush_family = 4;
+  reserved 5;  // was brush_family_uri
 }
 
 // Specifies a list of `BrushCoat`s that determine the stroke shape and dynamic
 // input response and the shading of the stroke geometry. The `BrushFamily` can
-// optionally be identified by setting a non-empty `uri`.
-//
-// See ../../brush/brush_family.h for details of the URI handling.
+// optionally be identified by setting a non-empty `client_brush_family_id`.
 message BrushFamily {
-  message SpringModelV1 {}
-  message SpringModelV2 {}
+  message SpringModel {}
 
   message InputModel {
     oneof input_model {
-      SpringModelV1 spring_model_v1 = 1;
-      SpringModelV2 spring_model_v2 = 2;
+      SpringModel spring_model = 2;
     }
+    // Was legacy InputModel type, reserved needs to be outside oneof
+    reserved 1;
   }
 
   repeated BrushCoat coats = 4;
 
-  // Was `tips` and `paint`, use `coats[0].tips` and `coats[0].paint`
+  // Was `tip` and `paint`, use `coats[0].tip` and `coats[0].paint`
   // instead.
   reserved 1 to 2;
 
-  optional string uri = 3;
+  // The ID for this brush family specified by the client that originally
+  // created it. The meaning of this ID is determined by that client.
+  optional string client_brush_family_id = 3;
 
   optional InputModel input_model = 5;
 }
 
 // Specifies one coat of paint applied by a brush, including the paint itself,
-// and the tip(s) used to apply that paint.  For details, see
+// and the tip used to apply that paint.  For details, see
 // ../../brush/brush_coat.h
 message BrushCoat {
-  repeated BrushTip tips = 1;
+  optional BrushTip tip = 1;
   optional BrushPaint paint = 2;
 }
 
@@ -198,7 +194,7 @@ message BrushPaint {
     }
     // LINT.ThenChange(../../brush/brush_paint.h:blend_mode)
 
-    optional string color_texture_uri = 1;
+    optional string client_texture_id = 1;
     optional float size_x = 2 [default = 1];
     optional float size_y = 3 [default = 1];
     optional SizeUnit size_unit = 4 [default = SIZE_UNIT_STROKE_COORDINATES];
@@ -217,6 +213,7 @@ message BrushPaint {
     optional Origin origin = 17 [default = ORIGIN_STROKE_SPACE_ORIGIN];
     optional Wrap wrap_x = 18 [default = WRAP_REPEAT];
     optional Wrap wrap_y = 19 [default = WRAP_REPEAT];
+    optional int32 animation_frames = 20 [default = 1];
   }
 
   repeated TextureLayer texture_layers = 1;
@@ -292,8 +289,17 @@ message BrushBehavior {
     TARGET_POSITION_OFFSET_FORWARD_IN_MULTIPLES_OF_BRUSH_SIZE = 14;
     TARGET_POSITION_OFFSET_LATERAL_IN_MULTIPLES_OF_BRUSH_SIZE = 15;
     reserved 16;
+    TARGET_TEXTURE_ANIMATION_PROGRESS_OFFSET = 17;
   }
   // LINT.ThenChange(../../brush/brush_behavior.h:target)
+
+  // LINT.IfChange(polar_target)
+  enum PolarTarget {
+    POLAR_UNSPECIFIED = 0;
+    POLAR_POSITION_OFFSET_ABSOLUTE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE = 1;
+    POLAR_POSITION_OFFSET_RELATIVE_IN_RADIANS_AND_MULTIPLES_OF_BRUSH_SIZE = 2;
+  }
+  // LINT.ThenChange(../../brush/brush_behavior.h:polar_target)
 
   // LINT.IfChange(out_of_range)
   enum OutOfRange {
@@ -351,6 +357,7 @@ message BrushBehavior {
       TargetNode target_node = 8;
       InterpolationNode interpolation_node = 9;
       NoiseNode noise_node = 10;
+      PolarTargetNode polar_target_node = 11;
     }
   }
 
@@ -409,6 +416,14 @@ message BrushBehavior {
     optional Target target = 1;
     optional float target_modifier_range_start = 2;
     optional float target_modifier_range_end = 3;
+  }
+
+  message PolarTargetNode {
+    optional PolarTarget target = 1;
+    optional float angle_range_start = 2;
+    optional float angle_range_end = 3;
+    optional float magnitude_range_start = 4;
+    optional float magnitude_range_end = 5;
   }
 
   repeated Node nodes = 15;

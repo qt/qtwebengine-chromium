@@ -161,8 +161,9 @@ VkResult parse_layer_configurations(const struct loader_instance* inst, cJSON* s
     VkResult res = VK_SUCCESS;
 
     cJSON* layer_configurations = loader_cJSON_GetObjectItem(settings_object, "layers");
+    // If the layers object isn't present, return early with success to allow the settings file to still apply
     if (NULL == layer_configurations) {
-        return VK_ERROR_INITIALIZATION_FAILED;
+        return VK_SUCCESS;
     }
 
     uint32_t layer_configurations_count = loader_cJSON_GetArraySize(layer_configurations);
@@ -206,7 +207,8 @@ out:
     return res;
 }
 
-VkResult check_if_settings_path_exists(const struct loader_instance* inst, char* base, char* suffix, char** settings_file_path) {
+VkResult check_if_settings_path_exists(const struct loader_instance* inst, const char* base, const char* suffix,
+                                       char** settings_file_path) {
     if (NULL == base || NULL == suffix) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -278,14 +280,13 @@ void log_settings(const struct loader_instance* inst, loader_settings* settings)
     loader_log(inst, VULKAN_LOADER_INFO_BIT, 0, "Using layer configurations found in loader settings from %s",
                settings->settings_file_path);
 
-    char cmd_line_msg[64];
+    char cmd_line_msg[64] = {0};
     size_t cmd_line_size = sizeof(cmd_line_msg);
-    size_t num_used = 0;
 
     cmd_line_msg[0] = '\0';
 
-    generate_debug_flag_str(settings->debug_level, cmd_line_size, cmd_line_msg, &num_used);
-    if (num_used > 0) {
+    generate_debug_flag_str(settings->debug_level, cmd_line_size, cmd_line_msg);
+    if (strlen(cmd_line_msg)) {
         loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Loader Settings Filters for Logging to Standard Error: %s", cmd_line_msg);
     }
 

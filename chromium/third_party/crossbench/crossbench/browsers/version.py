@@ -9,7 +9,9 @@ import dataclasses
 import enum
 import functools
 import re
-from typing import Any, Final, Iterable, Optional, Tuple, Type, TypeVar
+from typing import Any, Final, Iterable, Optional, Self, Tuple
+
+from typing_extensions import override
 
 
 @dataclasses.dataclass
@@ -48,7 +50,7 @@ class BrowserVersionChannel(_BrowserVersionChannelMixin, enum.Enum):
 
 class BrowserVersionParseError(ValueError):
 
-  def __init__(self, name: str, msg: str, version: str):
+  def __init__(self, name: str, msg: str, version: str) -> None:
     self._version = version
     super().__init__(f"Invalid {name} {repr(version)}: {msg}")
 
@@ -61,9 +63,7 @@ class BrowserVersionNoChannelError(ValueError):
   pass
 
 
-BrowserVersionT = TypeVar("BrowserVersionT", bound="BrowserVersion")
-
-_VERSION_DIGITS_ONLY_RE = re.compile(r"\d+(\.\d+)*")
+_VERSION_DIGITS_ONLY_RE: re.Pattern[str] = re.compile(r"\d+(\.\d+)*")
 
 
 @functools.total_ordering
@@ -76,7 +76,7 @@ class BrowserVersion(abc.ABC):
   _version_str: str
 
   @classmethod
-  def parse_unique(cls: Type[BrowserVersionT], value: str) -> BrowserVersionT:
+  def parse_unique(cls, value: str) -> Self:
     """Parse a unique version identifier for a browser.
     Unlike the parse() method, this should only parse input values that can
     be unambiguously associated with a specific BrowserVersion."""
@@ -86,9 +86,9 @@ class BrowserVersion(abc.ABC):
     return cls.parse(value)
 
   @classmethod
-  def parse(cls: Type[BrowserVersionT],
+  def parse(cls,
             value: str,
-            channel: Optional[BrowserVersionChannel] = None) -> BrowserVersionT:
+            channel: Optional[BrowserVersionChannel] = None) -> Self:
     (parts, parsed_channel, version_str) = cls._parse(value)
     parts = cls._validate_parts(parts, value)
     return cls(parts, channel or parsed_channel, version_str)
@@ -123,39 +123,27 @@ class BrowserVersion(abc.ABC):
     return BrowserVersionParseError(cls.__name__, msg, version)
 
   @classmethod
-  def any(cls: Type[BrowserVersionT],
-          parts: Iterable[int],
-          version_str: str = "") -> BrowserVersionT:
+  def any(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.ANY, version_str)
 
   @classmethod
-  def lts(cls: Type[BrowserVersionT],
-          parts: Iterable[int],
-          version_str: str = "") -> BrowserVersionT:
+  def lts(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.LTS, version_str)
 
   @classmethod
-  def stable(cls: Type[BrowserVersionT],
-             parts: Iterable[int],
-             version_str: str = "") -> BrowserVersionT:
+  def stable(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.STABLE, version_str)
 
   @classmethod
-  def beta(cls: Type[BrowserVersionT],
-           parts: Iterable[int],
-           version_str: str = "") -> BrowserVersionT:
+  def beta(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.BETA, version_str)
 
   @classmethod
-  def alpha(cls: Type[BrowserVersionT],
-            parts: Iterable[int],
-            version_str: str = "") -> BrowserVersionT:
+  def alpha(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.ALPHA, version_str)
 
   @classmethod
-  def pre_alpha(cls: Type[BrowserVersionT],
-                parts: Iterable[int],
-                version_str: str = "") -> BrowserVersionT:
+  def pre_alpha(cls, parts: Iterable[int], version_str: str = "") -> Self:
     return cls(parts, BrowserVersionChannel.PRE_ALPHA, version_str)
 
   def __init__(self,
@@ -262,6 +250,11 @@ class BrowserVersion(abc.ABC):
   def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
     return (self._parts, self._channel)
 
+  def with_channel(self, channel: BrowserVersionChannel) -> Self:
+    if self.channel == channel:
+      return self
+    return type(self)(self.parts, channel, self.version_str)  # pytype: disable=not-instantiable
+
   def __str__(self) -> str:
     if not self._version_str:
       if not self._parts:
@@ -274,15 +267,19 @@ class BrowserVersion(abc.ABC):
         f"{self.__class__.__name__}"
         f"({self.parts_str}, {self.channel_name}, {repr(self._version_str)})")
 
+  def is_compatible_type(self, other: BrowserVersion) -> bool:
+    return isinstance(other, type(self)) or isinstance(self, type(other))
+
   def __eq__(self, other: Any) -> bool:
-    if not isinstance(other, type(self)):
+    if not self.is_compatible_type(other):
       return False
     return self.key == other.key
 
   def __le__(self, other: Any) -> bool:
-    if not isinstance(other, type(self)):
-      raise TypeError("Cannot compare versions from different browsers: "
-                      f"{self} vs. {other}.")
+    if not self.is_compatible_type(other):
+      raise TypeError("Cannot compare versions from unrelated browsers: "
+                      f"{type(self).__name__} vs. "
+                      f"{type(other).__name__}.")
     if self.is_channel_version and other.is_channel_version:
       return self._channel <= other._channel
     if self.is_channel_version:
@@ -320,18 +317,22 @@ class UnknownBrowserVersion(BrowserVersion):
     super().__init__(parts, BrowserVersionChannel.ANY, version_str)
 
   @classmethod
+  @override
   def _parse(
       cls,
       full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
     raise RuntimeError("UnknownBrowserVersion does not support parsing")
 
+  @override
   def _channel_name(self, channel: BrowserVersionChannel) -> str:
     return "unknown"
 
   @property
+  @override
   def has_complete_parts(self) -> bool:
     return False
 
   @property
+  @override
   def is_unknown(self) -> bool:
     return True

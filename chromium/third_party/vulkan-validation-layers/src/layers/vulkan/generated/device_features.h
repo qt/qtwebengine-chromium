@@ -442,7 +442,7 @@ struct DeviceFeatures {
     bool fragmentDensityMapDynamic;
     // VkPhysicalDeviceFragmentDensityMapFeaturesEXT
     bool fragmentDensityMapNonSubsampledImages;
-    // VkPhysicalDeviceFragmentDensityMapOffsetFeaturesQCOM
+    // VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT
     bool fragmentDensityMapOffset;
     // VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR
     bool fragmentShaderBarycentric;
@@ -654,6 +654,8 @@ struct DeviceFeatures {
     bool presentBarrier;
     // VkPhysicalDevicePresentIdFeaturesKHR
     bool presentId;
+    // VkPhysicalDevicePresentMeteringFeaturesNV
+    bool presentMetering;
     // VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT
     bool presentModeFifoLatestReady;
     // VkPhysicalDevicePresentWaitFeaturesKHR
@@ -790,6 +792,12 @@ struct DeviceFeatures {
     bool shaderBufferInt64Atomics;
     // VkPhysicalDeviceShaderAtomicInt64Features, VkPhysicalDeviceVulkan12Features
     bool shaderSharedInt64Atomics;
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    bool shaderBFloat16CooperativeMatrix;
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    bool shaderBFloat16DotProduct;
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    bool shaderBFloat16Type;
     // VkPhysicalDeviceShaderClockFeaturesKHR
     bool shaderDeviceClock;
     // VkPhysicalDeviceShaderClockFeaturesKHR

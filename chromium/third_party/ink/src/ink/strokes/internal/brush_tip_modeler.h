@@ -16,6 +16,7 @@
 #define INK_STROKES_INTERNAL_BRUSH_TIP_MODELER_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -79,7 +80,8 @@ class BrushTipModeler {
   // Calling `StartStroke()` is required before calling `UpdateStroke()`. The
   // `brush_tip` parameter must not be `nullptr` and must remain valid for the
   // duration of the stroke. `brush_size` must be finite and greater than 0.
-  void StartStroke(absl::Nonnull<const BrushTip*> brush_tip, float brush_size);
+  void StartStroke(absl::Nonnull<const BrushTip*> brush_tip, float brush_size,
+                   uint32_t noise_seed = 0);
 
   // Updates the tip modeler with the current `StrokeInputModeler::State` and
   // current inputs.
@@ -123,6 +125,7 @@ class BrushTipModeler {
   void AppendBehaviorNode(const BrushBehavior::BinaryOpNode& node);
   void AppendBehaviorNode(const BrushBehavior::InterpolationNode& node);
   void AppendBehaviorNode(const BrushBehavior::TargetNode& node);
+  void AppendBehaviorNode(const BrushBehavior::PolarTargetNode& node);
 
   // Returns the maximum values of distance traveled and time elapsed for
   // modeled inputs that can be used to generate fixed tip states.
@@ -176,6 +179,10 @@ class BrushTipModeler {
 
   absl::Nullable<const BrushTip*> brush_tip_ = nullptr;
   float brush_size_ = 0;
+  // Per-stroke random seed value for seeding generators for noise behaviors (if
+  // the brush tip has any). All tips/coats in the same brush use the same
+  // per-stroke seed for a given stroke.
+  uint32_t noise_seed_ = 0;
 
   // Cached values from `brush_tip_` that give the upper bounds on distance and
   // time remaining that are affected by the tip's behaviors.

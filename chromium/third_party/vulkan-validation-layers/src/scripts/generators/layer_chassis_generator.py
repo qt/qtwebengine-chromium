@@ -22,8 +22,8 @@
 # layers and interceptors.
 
 import os
-from generators.vulkan_object import Command
-from generators.base_generator import BaseGenerator
+from vulkan_object import Command
+from base_generator import BaseGenerator
 from generators.generator_utils import PlatformGuardHelper
 
 # This class is a container for any source code, data, or other behavior that is necessary to
@@ -103,14 +103,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkGetPhysicalDeviceToolPropertiesEXT',
     )
 
-    extended_query_exts = (
-        'VK_KHR_get_physical_device_properties2',
-        'VK_KHR_external_semaphore_capabilities',
-        'VK_KHR_external_fence_capabilities',
-        'VK_KHR_external_memory_capabilities',
-        'VK_KHR_get_memory_requirements2',
-    )
-
     def __init__(self):
         BaseGenerator.__init__(self)
 
@@ -171,14 +163,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
     def generateMethods(self, want_instance):
         out = []
 
-        out.append('// We make many internal dispatch calls to extended query functions which can depend on the API version\n')
-        for extended_query_ext in self.extended_query_exts:
-            for command in self.vk.extensions[extended_query_ext].commands:
-                if command.instance != want_instance:
-                    continue
-                parameters = (command.cPrototype.split('(')[1])[:-2] # leaves just the parameters
-                out.append(f'{command.returnType} Dispatch{command.alias[2:]}Helper({parameters}) const;\n')
-
         guard_helper = PlatformGuardHelper()
         for command in [x for x in self.vk.commands.values() if x.name not in self.ignore_functions and 'ValidationCache' not in x.name]:
             if command.instance != want_instance:
@@ -226,22 +210,8 @@ class LayerChassisOutputGenerator(BaseGenerator):
             namespace vvl::base {
             thread_local WriteLockGuard* Device::record_guard{};
 
-            ''')
-        for extended_query_ext in self.extended_query_exts:
-            for command in self.vk.extensions[extended_query_ext].commands:
-                parameters = (command.cPrototype.split('(')[1])[:-2] # leaves just the parameters
-                arguments = ','.join([x.name for x in command.params])
-                dispatch = 'dispatch_instance_' if command.instance else 'dispatch_device_'
-                dispatch_class = 'Instance' if command.instance else 'Device'
-                out.append(f'''\n{command.returnType} {dispatch_class}::Dispatch{command.alias[2:]}Helper({parameters}) const {{
-                    if (api_version >= VK_API_VERSION_1_1) {{
-                        return {dispatch}->{command.alias[2:]}({arguments});
-                    }} else {{
-                        return {dispatch}->{command.name[2:]}({arguments});
-                    }}
-                }}
-                ''')
-        out.append('} // namespace vvl::base\n')
+            } // namespace vvl::base
+        ''')
         self.write("".join(out))
 
 
@@ -251,14 +221,12 @@ class LayerChassisOutputGenerator(BaseGenerator):
             #include "chassis/chassis.h"
             #include <array>
             #include <cstring>
-            #include <mutex>
 
             #include "chassis/dispatch_object.h"
             #include "chassis/validation_object.h"
+            #include "generated/dispatch_vector.h"
+            #include "utils/vk_layer_extension_utils.h"
             #include "layer_options.h"
-            #include "state_tracker/descriptor_sets.h"
-            #include "chassis/chassis_modification_state.h"
-            #include "core_checks/core_validation.h"
 
             #include "profiling/profiling.h"
 
@@ -351,14 +319,19 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
             out.append(f'ErrorObject error_obj(vvl::Func::{command.name}, VulkanTypedHandle({command.params[0].name}, kVulkanObjectType{command.params[0].type[2:]}));\n')
 
             # Generate pre-call validation source code
-            out.append('''{
-                VVL_ZoneScopedN("PreCallValidate");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PreCallValidate_{command.name}");\n')
             if not command.instance:
                 out.append(f'for (const auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallValidate{command.name[2:]}]) {{\n')
+                out.append(f'   if (!vo) {{\n')
+                out.append(f'      continue;\n')
+                out.append(f'   }}\n')
                 out.append('    auto lock = vo->ReadLock();\n')
             else:
                 out.append(f'for (const auto& vo : {dispatch}->object_dispatch) {{\n')
+                out.append('    if (!vo) {\n')
+                out.append('        continue;\n')
+                out.append('    }\n')
+
             out.append(f'    skip |= vo->PreCallValidate{command.name[2:]}({paramsList}, error_obj);\n')
             out.append(f'    if (skip) {return_map[command.returnType]}\n')
             out.append('}\n')
@@ -366,14 +339,20 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
 
             # Generate pre-call state recording source code
             out.append(f'RecordObject record_obj(vvl::Func::{command.name});\n')
-            out.append('''{
-                VVL_ZoneScopedN("PreCallRecord");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PreCallRecord_{command.name}");\n')
+
             if not command.instance:
                 out.append(f'for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPreCallRecord{command.name[2:]}]) {{\n')
+                out.append(f'   if (!vo) {{\n')
+                out.append(f'      continue;\n')
+                out.append(f'   }}\n')
                 out.append('    auto lock = vo->WriteLock();\n')
             else:
                 out.append(f'for (auto& vo : {dispatch}->object_dispatch) {{\n')
+                out.append('    if (!vo) {\n')
+                out.append('        continue;\n')
+                out.append('    }\n')
+
             out.append(f'vo->PreCallRecord{command.name[2:]}({paramsList}, record_obj);\n')
             out.append('    }\n')
             out.append('}\n')
@@ -393,25 +372,21 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
                 out.append(f'{command.returnType} result;')
 
             # Tracy profiler
-            out.append('''{
-                VVL_ZoneScopedN("Dispatch");
-            ''')
-            gpu_begin_render_commands = ["BeginRender"]
-            if any(s in command.name for s in gpu_begin_render_commands):
-                out.append(f'VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), commandBuffer, "gpu_{command.name[10:]}");\n')
+            out.append(f'{{\nVVL_ZoneScopedN("Dispatch_{command.name}");\n')
 
+            if "QueueSubmit" in command.name:
+                out.append('''
+                    VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_QueueSubmit", submit_gpu_zone);
+                ''')
             assignResult = f'result = ' if (command.returnType != 'void') else ''
             method_name = command.name.replace('vk', f'{dispatch}->')
             out.append(f'        {assignResult}{method_name}({paramsList});\n')
 
             # Tracy profiler
-            gpu_end_render_commands = ["EndRender"]
-            if any(s in command.name for s in gpu_end_render_commands):
-                out.append(f'VVL_TracyVkNamedZoneEnd(commandBuffer);\n')
-
-
-            # Tracy submit GPU queries reset command buffer
             if "QueueSubmit" in command.name:
+                out.append('''
+                    VVL_TracyVkNamedZoneEnd(submit_gpu_zone, queue);
+                ''')
                 out.append('''#if defined(VVL_TRACY_GPU)
                     TracyVkCollector::TrySubmitCollectCb(queue);
                 #endif
@@ -435,14 +410,16 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
                 out.append('record_obj.device_address = result;\n')
 
             # Generate post-call object processing source code
-            out.append('''{
-                VVL_ZoneScopedN("PostCallRecord");
-            ''')
+            out.append(f'{{\nVVL_ZoneScopedN("PostCallRecord_{command.name}");\n')
 
             if not command.instance:
                 out.append(f'for (auto& vo : {dispatch}->intercept_vectors[InterceptIdPostCallRecord{command.name[2:]}]) {{\n')
             else:
                 out.append(f'for (auto& vo : {dispatch}->object_dispatch) {{\n')
+            out.append('    if (!vo) {\n')
+            out.append('        continue;\n')
+            out.append('    }\n')
+
 
             # These commands perform blocking operations during PostRecord phase. We might need to
             # release base::Device's lock for the period of blocking operation to avoid deadlocks.

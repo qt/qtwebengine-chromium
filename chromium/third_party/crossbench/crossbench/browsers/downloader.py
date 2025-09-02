@@ -12,7 +12,9 @@ import re
 import shutil
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Final, Iterable, Optional, Tuple, Type, Union
+from typing import TYPE_CHECKING, Final, Iterable, Optional, Tuple, Type
+
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.browsers.version import BrowserVersion, UnknownBrowserVersion
@@ -48,7 +50,7 @@ class Downloader(abc.ABC):
     pass
 
   @classmethod
-  def load(cls, archive_path_or_version_identifier: Union[str, pth.LocalPath],
+  def load(cls, archive_path_or_version_identifier: str | pth.LocalPath,
            browser_platform: Platform) -> pth.LocalPath:
     logging.debug("Downloading chrome %s binary for %s",
                   archive_path_or_version_identifier, browser_platform)
@@ -57,10 +59,9 @@ class Downloader(abc.ABC):
                                     browser_platform)
     return loader.app_path
 
-  def __init__(self, archive_path_or_version_identifier: Union[str,
-                                                               pth.LocalPath],
+  def __init__(self, archive_path_or_version_identifier: str | pth.LocalPath,
                browser_type: str, platform_name: str,
-               browser_platform: Platform):
+               browser_platform: Platform) -> None:
     assert browser_type, "Missing browser_type"
     self._browser_type = browser_type
     self._browser_platform = browser_platform
@@ -80,8 +81,8 @@ class Downloader(abc.ABC):
     self._validate()
 
   def find(
-      self, archive_path_or_version_identifier: Union[str, pth.LocalPath]
-  ) -> pth.LocalPath:
+      self,
+      archive_path_or_version_identifier: str | pth.LocalPath) -> pth.LocalPath:
     version_value = os.fspath(archive_path_or_version_identifier)
     if self.is_valid_version(version_value):
       self._requested_version = self._parse_version(version_value)
@@ -140,7 +141,7 @@ class Downloader(abc.ABC):
     self._install_archive(self._archive_path)
     return self._installed_app_path()
 
-  def _try_download_version_archive(self):
+  def _try_download_version_archive(self) -> bool:
     if self._archive_path.exists():
       return False
     archive_version, archive_url = self._find_archive_url()
@@ -268,6 +269,7 @@ class ArchiveHelper(abc.ABC):
 class RPMArchiveHelper(ArchiveHelper):
 
   @classmethod
+  @override
   def extract(cls, platform: Platform, archive_path: pth.LocalPath,
               dest_path: pth.LocalPath) -> pth.LocalPath:
     rpm2cpio = platform.which("rpm2cpio")
@@ -304,7 +306,7 @@ class DMGArchiveHelper:
     result = platform.sh_stdout("hdiutil", "attach", "-plist",
                                 archive_path).strip()
     data = plistlib.loads(str.encode(result))
-    dmg_path: Optional[pth.LocalPath] = None
+    dmg_path: pth.LocalPath | None = None
     for item in data["system-entities"]:
       mount_point = item.get("mount-point", None)
       if mount_point:

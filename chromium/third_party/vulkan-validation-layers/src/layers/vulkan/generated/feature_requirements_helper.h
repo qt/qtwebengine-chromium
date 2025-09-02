@@ -432,7 +432,7 @@ enum class Feature {
     fragmentDensityMapDynamic,
     // VkPhysicalDeviceFragmentDensityMapFeaturesEXT
     fragmentDensityMapNonSubsampledImages,
-    // VkPhysicalDeviceFragmentDensityMapOffsetFeaturesQCOM
+    // VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT
     fragmentDensityMapOffset,
     // VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR
     fragmentShaderBarycentric,
@@ -644,6 +644,8 @@ enum class Feature {
     presentBarrier,
     // VkPhysicalDevicePresentIdFeaturesKHR
     presentId,
+    // VkPhysicalDevicePresentMeteringFeaturesNV
+    presentMetering,
     // VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT
     presentModeFifoLatestReady,
     // VkPhysicalDevicePresentWaitFeaturesKHR
@@ -780,6 +782,12 @@ enum class Feature {
     shaderBufferInt64Atomics,
     // VkPhysicalDeviceShaderAtomicInt64Features, VkPhysicalDeviceVulkan12Features
     shaderSharedInt64Atomics,
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    shaderBFloat16CooperativeMatrix,
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    shaderBFloat16DotProduct,
+    // VkPhysicalDeviceShaderBfloat16FeaturesKHR
+    shaderBFloat16Type,
     // VkPhysicalDeviceShaderClockFeaturesKHR
     shaderDeviceClock,
     // VkPhysicalDeviceShaderClockFeaturesKHR

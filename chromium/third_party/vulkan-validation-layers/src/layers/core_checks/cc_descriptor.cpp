@@ -21,8 +21,8 @@
 #include <sstream>
 #include <valarray>
 
-#include "containers/custom_containers.h"
 #include "core_validation.h"
+#include "error_message/error_location.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
@@ -619,9 +619,10 @@ bool CoreChecks::ValidateDescriptorSetLayoutBindingFlags(const VkDescriptorSetLa
         if (flags_info->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT) {
             if (binding_info.binding != max_binding) {
                 skip |= LogError("VUID-VkDescriptorSetLayoutBindingFlagsCreateInfo-pBindingFlags-03004", device, binding_flags_loc,
-                                 "includes VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT "
-                                 "but %" PRIu32 " is the largest value of all the bindings.",
-                                 binding_info.binding);
+                                 "(binding %" PRIu32
+                                 ") includes VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT "
+                                 "but can only be on the last binding element (binding %" PRIu32 ").",
+                                 binding_info.binding, max_binding);
             }
 
             if (!enabled_features.descriptorBindingVariableDescriptorCount) {
@@ -824,14 +825,16 @@ bool CoreChecks::PreCallValidateGetDescriptorSetLayoutSupportKHR(VkDevice device
 // Return true if state is acceptable, or false and write an error message into error string
 bool CoreChecks::ValidateDrawState(const vvl::DescriptorSet &descriptor_set, uint32_t set_index,
                                    const BindingVariableMap &binding_req_map, const vvl::CommandBuffer &cb_state,
-                                   const Location &loc, const vvl::DrawDispatchVuid &vuids) const {
+                                   const vvl::DrawDispatchVuid &vuids, const VulkanTypedHandle &shader_handle) const {
     bool result = false;
+    const Location &loc = vuids.loc();
     const VkFramebuffer framebuffer = cb_state.activeFramebuffer ? cb_state.activeFramebuffer->VkHandle() : VK_NULL_HANDLE;
     // NOTE: GPU-AV needs non-const state objects to do lazy updates of descriptor state of only the dynamically used
     // descriptors, via the non-const version of ValidateBindingDynamic(), this code uses the const path only even it gives up
     // non-const versions of its state objects here.
     const vvl::DescriptorValidator desc_val(const_cast<CoreChecks &>(*this), const_cast<vvl::CommandBuffer &>(cb_state),
-                                            const_cast<vvl::DescriptorSet &>(descriptor_set), set_index, framebuffer, loc);
+                                            const_cast<vvl::DescriptorSet &>(descriptor_set), set_index, framebuffer,
+                                            &shader_handle, loc);
 
     for (const auto &[binding_index, desc_set_reqs] : binding_req_map) {
         ASSERT_AND_CONTINUE(desc_set_reqs.variable);
@@ -845,7 +848,7 @@ bool CoreChecks::ValidateDrawState(const vvl::DescriptorSet &descriptor_set, uin
             return result;
         }
 
-        if (descriptor_set.ValidateBindingOnGPU(*binding, resource_variable.is_runtime_descriptor_array)) {
+        if (descriptor_set.ValidateBindingOnGPU(*binding, resource_variable)) {
             continue;
         }
 
@@ -1212,7 +1215,7 @@ bool CoreChecks::ValidateImageUpdate(const vvl::ImageView &view_state, VkImageLa
     const LogObjectList objlist(view_state.Handle(), image_node->Handle());
     // KHR_maintenance1 allows rendering into 2D or 2DArray views which slice a 3D image,
     // but not binding them to descriptor sets.
-    if (view_state.IsDepthSliced() && image_node->create_info.imageType == VK_IMAGE_TYPE_3D) {
+    if (view_state.is_depth_sliced && image_node->create_info.imageType == VK_IMAGE_TYPE_3D) {
         // VK_EXT_image_2d_view_of_3d allows use of VIEW_TYPE_2D in descriptor
         if (view_state.create_info.viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
             skip |= LogError("VUID-VkDescriptorImageInfo-imageView-06712", objlist, image_info_loc.dot(Field::imageView),
@@ -1283,7 +1286,8 @@ bool CoreChecks::ValidateImageUpdate(const vvl::ImageView &view_state, VkImageLa
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
             if (view_state.samplerConversion != VK_NULL_HANDLE) {
                 skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-01946", objlist, image_info_loc.dot(Field::imageView),
-                                 "is used as VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, but was created with %s",
+                                 "is used as VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, but was created with %s. (YCbCr Conversion Sampler "
+                                 "must be done with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)",
                                  FormatHandle(view_state.samplerConversion).c_str());
             }
             [[fallthrough]];
@@ -2090,36 +2094,19 @@ bool CoreChecks::VerifyWriteUpdateContents(const vvl::DescriptorSet &dst_set, co
                     }
                 }
             }
+            break;
         }
-            [[fallthrough]];
         case VK_DESCRIPTOR_TYPE_SAMPLER: {
-            if (!update.pImageInfo) break;
             auto iter = dst_set.FindDescriptor(update.dstBinding, update.dstArrayElement);
-            for (uint32_t di = 0; di < update.descriptorCount && !iter.AtEnd(); ++di, ++iter) {
-                const Location image_info_loc = write_loc.dot(Field::pImageInfo, di);
-                const vvl::SamplerDescriptor &desc = (const vvl::SamplerDescriptor &)*iter;
-                // Because we need the descriptor state, can't use the ValidateObject() in ObjectTracker
-                if (!desc.IsImmutableSampler()) {
-                    const VkSampler sampler_handle = update.pImageInfo[di].sampler;
-                    if (Get<vvl::Sampler>(sampler_handle).get() == nullptr) {
-                        if (sampler_handle == VK_NULL_HANDLE) {
-                            const LogObjectList objlist(update.dstSet);
-                            skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-00325", objlist,
-                                             image_info_loc.dot(Field::sampler),
-                                             "is VK_NULL_HANDLE but must be valid for a descriptorType of %s.",
-                                             string_VkDescriptorType(update.descriptorType));
-                        } else {
-                            const LogObjectList objlist(update.dstSet, update.pImageInfo[di].sampler);
-                            skip |= LogError("VUID-vkUpdateDescriptorSets-pDescriptorWrites-06238", objlist,
-                                             image_info_loc.dot(Field::sampler),
-                                             "(%s) is an invalid sampler, most likely was created from a different VkDevice.",
-                                             FormatHandle(update.pImageInfo[di].sampler).c_str());
-                        }
-                    }
-                } else if (update.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER && !is_push_descriptor) {
-                    skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02752", update.dstSet, image_info_loc,
-                                     "Attempted write update to an immutable sampler descriptor.");
-                }
+            const vvl::SamplerDescriptor *desc = dynamic_cast<const vvl::SamplerDescriptor *>(&(*iter));
+            if (desc == nullptr) {
+                break;
+            }
+            if (desc->IsImmutableSampler() && !is_push_descriptor) {
+                skip |=
+                    LogError("VUID-VkWriteDescriptorSet-descriptorType-02752", update.dstSet, write_loc.dot(Field::descriptorType),
+                             "is VK_DESCRIPTOR_TYPE_SAMPLER but can't update the immutable sampler from %s.",
+                             FormatHandle(dst_set.GetLayout().get()->Handle()).c_str());
             }
             break;
         }
@@ -2159,7 +2146,7 @@ bool CoreChecks::VerifyWriteUpdateContents(const vvl::DescriptorSet &dst_set, co
                 if (!buffer_state) {
                     skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02994", buffer_view_handle,
                                      write_loc.dot(Field::pTexelBufferView, di),
-                                     "was craated with an invalid buffer %s (while trying to update a descriptorType of %s).",
+                                     "was created with an invalid buffer %s (while trying to update a descriptorType of %s).",
                                      FormatHandle(buffer_handle).c_str(), string_VkDescriptorType(update.descriptorType));
                     break;
                 }
@@ -2259,17 +2246,17 @@ bool CoreChecks::ValidateCmdSetDescriptorBufferOffsets(const vvl::CommandBuffer 
 
                 if (!buffer_state_starts.empty()) {
                     const auto bindings = set_layout->GetBindings();
-                    const auto pSetLayoutSize = set_layout->GetLayoutSizeInBytes();
-                    VkDeviceSize setLayoutSize = 0;
 
-                    if (pSetLayoutSize == nullptr) {
-                        const auto pool = cb_state.command_pool;
-                        DispatchGetDescriptorSetLayoutSizeEXT(pool->dev_data.device, set_layout->VkHandle(), &setLayoutSize);
+                    VkDeviceSize set_layout_size = 0;
+                    if (VkDeviceSize cached_set_layout_size = set_layout->GetLayoutSizeInBytes(); cached_set_layout_size == 0) {
+                        DispatchGetDescriptorSetLayoutSizeEXT(cb_state.dev_data.device, set_layout->VkHandle(), &set_layout_size);
+                        auto set_layout_ptr = const_cast<vvl::DescriptorSetLayout *>(set_layout.get());
+                        set_layout_ptr->SetLayoutSizeInBytes(&set_layout_size);
                     } else {
-                        setLayoutSize = *pSetLayoutSize;
+                        set_layout_size = cached_set_layout_size;
                     }
 
-                    if (setLayoutSize > 0) {
+                    if (set_layout_size > 0) {
                         // It looks like enough to check last binding in set
                         for (uint32_t j = 0; j < set_layout->GetBindingCount(); j++) {
                             const VkDescriptorBindingFlags flags = set_layout->GetDescriptorBindingFlagsFromIndex(j);
@@ -2281,13 +2268,13 @@ bool CoreChecks::ValidateCmdSetDescriptorBufferOffsets(const vvl::CommandBuffer 
                                 const auto pool = cb_state.command_pool;
                                 uint32_t binding = set_layout->GetDescriptorSetLayoutBindingPtrFromIndex(j)->binding;
                                 DispatchGetDescriptorSetLayoutBindingOffsetEXT(pool->dev_data.device, set_layout->VkHandle(),
-                                                                               binding, &setLayoutSize);
+                                                                               binding, &set_layout_size);
 
                                 // If the descriptor set only consists of VARIABLE_DESCRIPTOR_COUNT bindings, the
                                 // offset may be 0. In this case, treat the descriptor set layout as size 1,
                                 // so we validate that the offset is sensible.
                                 if (set_layout->GetBindingCount() == 1) {
-                                    setLayoutSize = 1;
+                                    set_layout_size = 1;
                                 }
 
                                 // There can only be one binding with VARIABLE_COUNT.
@@ -2296,8 +2283,8 @@ bool CoreChecks::ValidateCmdSetDescriptorBufferOffsets(const vvl::CommandBuffer 
                         }
                     }
 
-                    if (setLayoutSize > 0) {
-                        const auto buffer_state_ends = GetBuffersByAddress(start + offset + setLayoutSize - 1);
+                    if (set_layout_size > 0) {
+                        const auto buffer_state_ends = GetBuffersByAddress(start + offset + set_layout_size - 1);
                         if (!buffer_state_ends.empty()) {
                             valid_binding = true;
                         }
@@ -2904,7 +2891,7 @@ bool CoreChecks::ValidateDescriptorAddressInfoEXT(const VkDescriptorAddressInfoE
                    if (address_info->range >
                        buffer_state->create_info.size - (address_info->address - buffer_state->deviceAddress)) {
                        if (out_error_msg) {
-                           const sparse_container::range<VkDeviceAddress> buffer_address_range{
+                           const vvl::range<VkDeviceAddress> buffer_address_range{
                                buffer_state->deviceAddress, buffer_state->deviceAddress + buffer_state->create_info.size};
                            *out_error_msg += "buffer has range " + string_range_hex(buffer_address_range);
                        }
@@ -2913,8 +2900,8 @@ bool CoreChecks::ValidateDescriptorAddressInfoEXT(const VkDescriptorAddressInfoE
                    return true;
                },
                [&address_info]() {
-                   const sparse_container::range<VkDeviceAddress> address_range{address_info->address,
-                                                                                address_info->address + address_info->range};
+                   const vvl::range<VkDeviceAddress> address_range{address_info->address,
+                                                                   address_info->address + address_info->range};
                    return "The following buffers do not contain address range " + string_range_hex(address_range) + ":";
                }}}}};
 
@@ -3022,8 +3009,8 @@ bool CoreChecks::ValidateGetDescriptorDataSize(const VkDescriptorGetInfoEXT &des
                 image_format_info.flags = image_info.flags;
                 VkSamplerYcbcrConversionImageFormatProperties sampler_ycbcr_image_format_info = vku::InitStructHelper();
                 VkImageFormatProperties2 image_format_properties = vku::InitStructHelper(&sampler_ycbcr_image_format_info);
-                instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(physical_device, &image_format_info,
-                                                                                      &image_format_properties);
+                DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &image_format_info,
+                                                                      &image_format_properties);
                 size *= static_cast<size_t>(sampler_ycbcr_image_format_info.combinedImageSamplerDescriptorCount);
                 if (size != data_size) {
                     skip |= LogError("VUID-vkGetDescriptorEXT-descriptorType-09469", device, descriptor_info_loc.dot(Field::type),
@@ -3378,20 +3365,45 @@ bool CoreChecks::PreCallValidateAllocateDescriptorSets(VkDevice device, const Vk
                              string_VkDescriptorSetLayoutCreateFlags(ds_layout_state->GetCreateFlags()).c_str(),
                              string_VkDescriptorPoolCreateFlags(ds_pool_state->create_info.flags).c_str());
         }
+
+        if (IsExtEnabled(extensions.vk_khr_maintenance1)) {
+            // Discussed in https://gitlab.khronos.org/vulkan/vulkan/-/issues/3347
+            // The issue if users see VK_ERROR_OUT_OF_POOL_MEMORY (or any error) they think they over-allocated, but if they instead
+            // allocated type not avaiable (so the pool size is zero), they will just keep getting this error mistakenly thinking
+            // they ran out. It was decided that this deserves to be a Core Validation check. From
+            // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9662 found this will crash real drivers
+            const uint32_t binding_count = ds_layout_state->GetBindingCount();
+            for (uint32_t j = 0; j < binding_count; ++j) {
+                const VkDescriptorType type = ds_layout_state->GetTypeFromIndex(j);
+                if (!ds_pool_state->IsAvailableType(type)) {
+                    const LogObjectList objlist(pAllocateInfo->descriptorPool, pAllocateInfo->pSetLayouts[i]);
+                    skip |=
+                        LogWarning("WARNING-CoreValidation-AllocateDescriptorSets-WrongType", objlist, set_layout_loc,
+                                   "binding %" PRIu32
+                                   " was created with %s but %s was not created with any VkDescriptorPoolSize::type with %s (Some "
+                                   "implementations will not VK_ERROR_OUT_OF_POOL_MEMORY as they should with VK_KHR_maintenance1).",
+                                   j, string_VkDescriptorType(type), FormatHandle(pAllocateInfo->descriptorPool).c_str(),
+                                   string_VkDescriptorType(type));
+                    break;  // only need to report once
+                }
+            }
+        }
     }
+
     if (!IsExtEnabled(extensions.vk_khr_maintenance1)) {
         // Track number of descriptorSets allowable in this pool
         if (ds_pool_state->GetAvailableSets() < pAllocateInfo->descriptorSetCount) {
-            skip |= LogError("VUID-VkDescriptorSetAllocateInfo-apiVersion-07895", ds_pool_state->Handle(), error_obj.location,
-                             "Unable to allocate %" PRIu32
-                             " descriptorSets from %s"
-                             ". This pool only has %" PRIu32 " descriptorSets remaining.",
+            skip |= LogError("VUID-VkDescriptorSetAllocateInfo-apiVersion-07895", ds_pool_state->Handle(),
+                             allocate_info_loc.dot(Field::descriptorSetCount),
+                             "is %" PRIu32 " which is not enough as %s only has %" PRIu32
+                             " descriptorSets remaining. (With VK_KHR_maintenance1 enabled, the driver will return "
+                             "VK_ERROR_OUT_OF_POOL_MEMORY_KHR in this situation).",
                              pAllocateInfo->descriptorSetCount, FormatHandle(*ds_pool_state).c_str(),
                              ds_pool_state->GetAvailableSets());
         }
         // Determine whether descriptor counts are satisfiable
         for (auto it = ds_data.required_descriptors_by_type.begin(); it != ds_data.required_descriptors_by_type.end(); ++it) {
-            auto available_count = ds_pool_state->GetAvailableCount(it->first);
+            const uint32_t available_count = ds_pool_state->GetAvailableCount(it->first);
 
             if (ds_data.required_descriptors_by_type.at(it->first) > available_count) {
                 skip |= LogError("VUID-VkDescriptorSetAllocateInfo-apiVersion-07896", ds_pool_state->Handle(), error_obj.location,
@@ -3401,6 +3413,40 @@ bool CoreChecks::PreCallValidateAllocateDescriptorSets(VkDevice device, const Vk
                                  ds_data.required_descriptors_by_type.at(it->first),
                                  string_VkDescriptorType(VkDescriptorType(it->first)), FormatHandle(*ds_pool_state).c_str(),
                                  available_count);
+            }
+        }
+    } else {
+        // Part of VK_KHR_maintenance1 is that the driver will return VK_ERROR_OUT_OF_POOL_MEMORY_KHR when you run out.
+        // What we want to warn about is when the app tried to allocate more sets then there ever was in the pool.
+        // We do this here (instead of PostCallRecordAllocateDescriptorSets) because some drivers will just return VK_SUCCESS
+        // and when people try on another driver, it suddenly fails.
+        if (pAllocateInfo->descriptorSetCount > ds_pool_state->maxSets) {
+            skip |= LogWarning("WARNING-VkDescriptorSetAllocateInfo-maxSet", ds_pool_state->Handle(),
+                               allocate_info_loc.dot(Field::descriptorSetCount),
+                               "(%" PRIu32 ") is larger than the %s maxSets (%" PRIu32
+                               ") so you will likely get VK_ERROR_OUT_OF_POOL_MEMORY_KHR. While this might succeed on some "
+                               "implementations, it will fail on others.",
+                               pAllocateInfo->descriptorSetCount, FormatHandle(*ds_pool_state).c_str(),
+                               ds_pool_state->GetAvailableSets());
+        } else {
+            // Same idea but if they are trying to allocate more descriptors of one type then possible in the whole pool
+            for (auto it = ds_data.required_descriptors_by_type.begin(); it != ds_data.required_descriptors_by_type.end(); ++it) {
+                auto max_iter = ds_pool_state->max_descriptor_type_count.find(it->first);
+                if (max_iter == ds_pool_state->max_descriptor_type_count.end()) continue;
+                const uint32_t max_available_count = max_iter->second;
+                // TODO - consider combining PostCallRecordAllocateDescriptorSets check here (needs more testing)
+                if (max_available_count == 0) continue;
+                const uint32_t attempt_allocate = ds_data.required_descriptors_by_type.at(it->first);
+
+                if (attempt_allocate > max_available_count) {
+                    skip |= LogWarning(
+                        "WARNING-VkDescriptorSetAllocateInfo-descriptorCount", ds_pool_state->Handle(), error_obj.location,
+                        "Trying to allocate %" PRIu32 " of %s descriptors from %s, but this pool only has a total of %" PRIu32
+                        " descriptors for this type so you will likely get VK_ERROR_OUT_OF_POOL_MEMORY_KHR. While this might "
+                        "succeed on some implementations, it will fail on others.",
+                        attempt_allocate, string_VkDescriptorType(VkDescriptorType(it->first)),
+                        FormatHandle(*ds_pool_state).c_str(), max_available_count);
+                }
             }
         }
     }
@@ -3437,41 +3483,6 @@ bool CoreChecks::PreCallValidateAllocateDescriptorSets(VkDevice device, const Vk
     return skip;
 }
 
-void CoreChecks::PostCallRecordAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo *pAllocateInfo,
-                                                      VkDescriptorSet *pDescriptorSets, const RecordObject &record_obj,
-                                                      vvl::AllocateDescriptorSetsData &ads_state) {
-    // Discussed in https://gitlab.khronos.org/vulkan/vulkan/-/issues/3347
-    // The issue if users see VK_ERROR_OUT_OF_POOL_MEMORY they think they over-allocated, but if they instead allocated type not
-    // avaiable (so the pool size is zero), they will just keep getting this error mistakenly thinking they ran out. It was decided
-    // that this deserves to be a Core Validation check
-    if (record_obj.result == VK_ERROR_OUT_OF_POOL_MEMORY && pAllocateInfo) {
-        // result type added in VK_KHR_maintenance1
-        auto ds_pool_state = Get<vvl::DescriptorPool>(pAllocateInfo->descriptorPool);
-        ASSERT_AND_RETURN(ds_pool_state);
-
-        for (uint32_t i = 0; i < pAllocateInfo->descriptorSetCount; i++) {
-            auto ds_layout_state = Get<vvl::DescriptorSetLayout>(pAllocateInfo->pSetLayouts[i]);
-            ASSERT_AND_CONTINUE(ds_layout_state);
-
-            const uint32_t binding_count = ds_layout_state->GetBindingCount();
-            for (uint32_t j = 0; j < binding_count; ++j) {
-                const VkDescriptorType type = ds_layout_state->GetTypeFromIndex(j);
-                if (!ds_pool_state->IsAvailableType(type)) {
-                    // This check would be caught by validation if VK_KHR_maintenance1 was not enabled
-                    LogWarning("WARNING-CoreValidation-AllocateDescriptorSets-WrongType", ds_pool_state->Handle(),
-                               record_obj.location.dot(Field::pAllocateInfo).dot(Field::pSetLayouts, i),
-                               "binding %" PRIu32
-                               " was created with %s but the "
-                               "Descriptor Pool was not created with this type and returned VK_ERROR_OUT_OF_POOL_MEMORY",
-                               j, string_VkDescriptorType(type));
-                }
-            }
-        }
-    }
-
-    BaseClass::PostCallRecordAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, record_obj, ads_state);
-}
-
 // Validate that given set is valid and that it's not being used by an in-flight CmdBuffer
 // func_str is the name of the calling function
 // Return false if no errors occur
@@ -3500,7 +3511,7 @@ bool CoreChecks::PreCallValidateFreeDescriptorSets(VkDevice device, VkDescriptor
     if (!(VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT & ds_pool_state->create_info.flags)) {
         // Can't Free from a NON_FREE pool
         skip |= LogError("VUID-vkFreeDescriptorSets-descriptorPool-00312", descriptorPool,
-                         error_obj.location.dot(Field::descriptorPool), "with a pool created with %s.",
+                         error_obj.location.dot(Field::descriptorPool), "was created with %s (missing FREE_DESCRIPTOR_SET_BIT).",
                          string_VkDescriptorPoolCreateFlags(ds_pool_state->create_info.flags).c_str());
     }
     return skip;

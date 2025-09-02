@@ -9,9 +9,11 @@ import multiprocessing
 import os
 import re
 import subprocess
-from typing import TYPE_CHECKING, Iterable, List, Optional, Type, cast
+from typing import TYPE_CHECKING, Iterable, List, Optional, Self, Type, cast
 
-from crossbench import compat, plt
+from typing_extensions import override
+
+from crossbench import plt
 from crossbench.flags.js_flags import JSFlags
 from crossbench.helper import fs_helper
 from crossbench.helper.path_finder import V8ToolsFinder
@@ -48,7 +50,8 @@ class V8LogProbe(ChromiumProbe):
   _FLAG_RE = re.compile("^--(prof|log-|no-log-).*$")
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "log_all",
@@ -98,8 +101,8 @@ class V8LogProbe(ChromiumProbe):
     super().__init__()
     self._profview: bool = profview
     self._js_flags = JSFlags()
-    self._d8_binary: Optional[LocalPath] = d8_binary
-    self._v8_checkout: Optional[LocalPath] = v8_checkout
+    self._d8_binary: LocalPath | None = d8_binary
+    self._v8_checkout: LocalPath | None = v8_checkout
     assert isinstance(log_all,
                       bool), (f"Expected bool value, got log_all={log_all}")
     assert isinstance(prof, bool), f"Expected bool value, got log_all={prof}"
@@ -119,6 +122,7 @@ class V8LogProbe(ChromiumProbe):
       raise ValueError(f"{self}: V8LogProbe has no effect")
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("profview", self._profview),
@@ -131,27 +135,30 @@ class V8LogProbe(ChromiumProbe):
   def js_flags(self) -> JSFlags:
     return self._js_flags.copy()
 
+  @override
   def validate_env(self, env: HostEnvironment) -> None:
     super().validate_env(env)
     if env.repetitions != 1:
       env.handle_warning(f"Probe({self.NAME}) cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     super().validate_browser(env, browser)
     # --prof sometimes causes issues on enterprise chrome on linux.
     if _PROF_FLAG not in self._js_flags:
       return
-    if not browser.platform.is_linux or browser.major_version <= 106:
+    if not browser.platform.is_linux or browser.version.major <= 106:
       return
     for search_path in cast(plt.LinuxPlatform, browser.platform).SEARCH_PATHS:
-      if compat.is_relative_to(browser.path, search_path):
+      if browser.path.is_relative_to(search_path):
         logging.error(
             "Probe with V8 --prof might not work with enterprise profiles")
 
+  @override
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
-    assert browser.attributes.is_chromium_based, (
+    assert browser.attributes().is_chromium_based, (
         f"Expected chromium-based browser, but got {browser}")
     browser.flags.set("--no-sandbox")
     browser.js_flags.update(self._js_flags)
@@ -182,9 +189,11 @@ class V8LogProbe(ChromiumProbe):
                        [(finder.d8_binary, finder.tick_processor, log_file)
                         for log_file in log_files]))
 
+  @override
   def get_context_cls(self) -> Type[V8LogProbeContext]:
     return V8LogProbeContext
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     runs: List[Run] = list(run for run in group.runs if self in run.results)
     if not runs:
@@ -221,11 +230,13 @@ class V8LogProbe(ChromiumProbe):
 
 class V8LogProbeContext(ProbeContext[V8LogProbe]):
 
+  @override
   def get_default_result_path(self) -> AnyPath:
     log_dir = super().get_default_result_path()
     self.browser_platform.mkdir(log_dir)
     return log_dir / self.probe.result_path_name
 
+  @override
   def setup(self) -> None:
     self.session.extra_js_flags["--logfile"] = str(self.result_path)
 

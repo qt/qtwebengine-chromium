@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Final, Iterable, Iterator, Optional, Tuple
 
 from ordered_set import OrderedSet
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.flags.base import Flags, FlagsData, Freezable
@@ -75,10 +76,11 @@ class ChromeFlags(Flags):
       return self._blink_features.disabled_str()
     return super().__getitem__(key)
 
+  @override
   def _set(self,
            flag_name: str,
            flag_value: Optional[str] = None,
-           override: bool = False) -> None:
+           should_override: bool = False) -> None:
     self.assert_not_frozen()
     # pylint: disable=signature-differs
     if flag_name == ChromeFeatures.ENABLE_FLAG:
@@ -104,15 +106,16 @@ class ChromeFlags(Flags):
     elif flag_name == self._JS_FLAG:
       if flag_value is None:
         raise ValueError(f"{self._JS_FLAG} cannot be None")
-      self._set_js_flag(flag_value, override)
+      self._set_js_flag(flag_value, should_override)
     else:
       flag_value = self._verify_flag(flag_name, flag_value)
-      super()._set(flag_name, flag_value, override)
+      super()._set(flag_name, flag_value, should_override)
 
-  def _set_js_flag(self, raw_js_flags: str, override: bool) -> None:
+  def _set_js_flag(self, raw_js_flags: str, should_override: bool) -> None:
     new_js_flags = JSFlags(self._js_flags)
     for js_flag_name, js_flag_value in JSFlags.parse(raw_js_flags).items():
-      new_js_flags.set(js_flag_name, js_flag_value, override=override)
+      new_js_flags.set(
+          js_flag_name, js_flag_value, should_override=should_override)
     self._js_flags.update(new_js_flags)
 
   def _verify_flag(self, name: str, value: Optional[str]) -> Optional[str]:
@@ -197,12 +200,13 @@ class ChromeFlags(Flags):
       del filtered["--enable-benchmarking"]
     return filtered
 
-  def enable_benchmarking_extension(self):
+  def enable_benchmarking_extension(self) -> None:
     if self.field_trial_flags:
       self.set("--enable-benchmarking", "enable-field-trial-config")
     else:
       self.set("--enable-benchmarking")
 
+  @override
   def merge(self, other: FlagsData) -> None:
     if not isinstance(other, ChromeFlags):
       other = ChromeFlags(other)
@@ -215,6 +219,7 @@ class ChromeFlags(Flags):
   def base_items(self) -> Iterable[Tuple[str, Optional[str]]]:
     yield from super().items()
 
+  @override
   def items(self) -> Iterable[Tuple[str, Optional[str]]]:  # type: ignore
     yield from self.base_items()
     if self._js_flags:
@@ -233,7 +238,7 @@ class ChromeBaseFeatures(Freezable, abc.ABC):
 
   def __init__(self) -> None:
     super().__init__()
-    self._enabled: Dict[str, Optional[str]] = {}
+    self._enabled: Dict[str, str | None] = {}
     self._disabled: OrderedSet[str] = OrderedSet()
 
   @property
@@ -314,7 +319,7 @@ class ChromeBaseFeatures(Freezable, abc.ABC):
     for flag_name, features_str in self.items():
       yield f"{flag_name}={features_str}"
 
-  def __bool__(self):
+  def __bool__(self) -> bool:
     return bool(self._enabled) or bool(self._disabled)
 
   def __str__(self) -> str:
@@ -335,6 +340,7 @@ class ChromeFeatures(ChromeBaseFeatures):
   ENABLE_FLAG: str = "--enable-features"
   DISABLE_FLAG: str = "--disable-features"
 
+  @override
   def _parse_feature_parts(self, feature: str) -> Tuple[str, Optional[str]]:
     parts = feature.split("<")
     if len(parts) == 2:
@@ -361,6 +367,7 @@ class ChromeBlinkFeatures(ChromeBaseFeatures):
   ENABLE_FLAG: str = "--enable-blink-features"
   DISABLE_FLAG: str = "--disable-blink-features"
 
+  @override
   def _parse_feature_parts(self, feature: str) -> Tuple[str, Optional[str]]:
     if "<" in feature or ":" in feature:
       raise ValueError("blink features do not have params, "

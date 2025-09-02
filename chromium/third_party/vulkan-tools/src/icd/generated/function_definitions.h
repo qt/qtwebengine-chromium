@@ -4643,6 +4643,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilities2KHR(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL GetImageMemoryRequirements2KHR(
     VkDevice                                    device,
     const VkImageMemoryRequirementsInfo2*       pInfo,
@@ -6981,6 +6982,7 @@ static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(
 
 
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateCudaModuleNV(
     VkDevice                                    device,
@@ -7036,6 +7038,7 @@ static VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(
 {
 //Not a CREATE or DESTROY function
 }
+#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -8378,6 +8381,17 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetMemoryMetalHandlePropertiesEXT(
 }
 #endif /* VK_USE_PLATFORM_METAL_EXT */
 
+
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif /* VK_ENABLE_BETA_EXTENSIONS */
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkRenderingEndInfoEXT*                pRenderingEndInfo)
+{
+//Not a CREATE or DESTROY function
+}
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(

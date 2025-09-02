@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -41,7 +41,7 @@ struct CreateShaderModule {
     // We build a spirv::Module at PreCallRecord time were we can do basic validation of the SPIR-V (which can crash drivers
     // if passed in the Dispatch). It is then passed to PostCallRecord to save in state tracking so it can be used at Pipeline
     // creation time where the rest of the information is needed to do the remaining SPIR-V validation.
-    std::shared_ptr<spirv::Module> module_state;  // contains SPIR-V to validate
+    std::shared_ptr<spirv::Module> module_state = nullptr;  // contains SPIR-V to validate
     spirv::StatelessData stateless_data;
 };
 
@@ -63,6 +63,8 @@ struct ShaderObject {
     std::vector<std::shared_ptr<spirv::Module>> module_states;  // contains SPIR-V to validate
     std::vector<spirv::StatelessData> stateless_data;
 
+    // When using GPU-AV the pCreateInfo is modified on the user
+    bool is_modified = false;
     std::vector<VkShaderCreateInfoEXT> modified_create_infos;
     const VkShaderCreateInfoEXT* pCreateInfos = nullptr;
 
@@ -87,6 +89,8 @@ struct ShaderInstrumentationMetadata {
 };
 
 struct CreateGraphicsPipelines {
+    // When using GPU-AV the pCreateInfo is modified on the user
+    bool is_modified = false;
     std::vector<vku::safe_VkGraphicsPipelineCreateInfo> modified_create_infos;
     const VkGraphicsPipelineCreateInfo* pCreateInfos = nullptr;
     spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages];
@@ -97,6 +101,8 @@ struct CreateGraphicsPipelines {
 };
 
 struct CreateComputePipelines {
+    // When using GPU-AV the pCreateInfo is modified on the user
+    bool is_modified = false;
     std::vector<vku::safe_VkComputePipelineCreateInfo> modified_create_infos;
     const VkComputePipelineCreateInfo* pCreateInfos = nullptr;
     spirv::StatelessData stateless_data;
@@ -106,16 +112,9 @@ struct CreateComputePipelines {
     CreateComputePipelines(const VkComputePipelineCreateInfo* create_info) { pCreateInfos = create_info; }
 };
 
-struct CreateRayTracingPipelinesNV {
-    std::vector<vku::safe_VkRayTracingPipelineCreateInfoCommon> modified_create_infos;
-    const VkRayTracingPipelineCreateInfoNV* pCreateInfos = nullptr;
-    // 2D array for [pipelineCount][stageCount]
-    std::vector<std::vector<ShaderInstrumentationMetadata>> shader_instrumentations_metadata;
-
-    CreateRayTracingPipelinesNV(const VkRayTracingPipelineCreateInfoNV* create_info) { pCreateInfos = create_info; }
-};
-
 struct CreateRayTracingPipelinesKHR {
+    // When using GPU-AV the pCreateInfo is modified on the user
+    bool is_modified = false;
     std::vector<vku::safe_VkRayTracingPipelineCreateInfoKHR> modified_create_infos;
     const VkRayTracingPipelineCreateInfoKHR* pCreateInfos = nullptr;
     // 2D array for [pipelineCount][stageCount]

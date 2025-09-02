@@ -2,14 +2,19 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import contextlib
 import datetime as dt
 import logging
 import sys
 import threading
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Type
 
 import colorama
+
+if TYPE_CHECKING:
+  from types import TracebackType
 
 colorama.init()
 
@@ -38,10 +43,14 @@ class ColoredLogFormatter(logging.Formatter):
     formatter = logging.Formatter(log_fmt)
     return formatter.format(record)
 
-  def formatException(self, ei) -> str:
+  def formatException(
+      self,
+      ei: Tuple[Type[BaseException], BaseException, Optional[TracebackType]]
+      | Tuple[None, ...]
+  ) -> str:
     return ""
 
-  def formatStack(self, stack_info) -> str:
+  def formatStack(self, stack_info: str) -> str:
     return ""
 
 
@@ -64,8 +73,8 @@ class RepeatTimer(threading.Timer):
     while not self.finished.wait(self.interval):
       self.function(*self.args, **self.kwargs)
 
-  def __enter__(self, *args, **kwargs):
+  def __enter__(self, *args, **kwargs) -> None:
     self.start()
 
-  def __exit__(self, *args, **kwargs):
+  def __exit__(self, *args, **kwargs) -> None:
     self.cancel()

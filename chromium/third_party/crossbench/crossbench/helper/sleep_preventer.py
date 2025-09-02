@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import atexit
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
   from subprocess import Popen
@@ -19,7 +19,7 @@ class SystemSleepPreventer:
   """
 
   def __init__(self, platform: plt.Platform) -> None:
-    self._process: Optional[Popen] = None
+    self._process: Popen | None = None
     self._platform = platform
 
   def __enter__(self) -> None:

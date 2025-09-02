@@ -34,3 +34,7 @@ class BondActionRunner:
   def meet_create(self, run: Run, action: i_action.MeetCreateAction):
     del run
     raise BondActionNotImplementedError(self, action)
+
+  def meet_script(self, run: Run, action: i_action.MeetScriptAction):
+    del run
+    raise BondActionNotImplementedError(self, action)

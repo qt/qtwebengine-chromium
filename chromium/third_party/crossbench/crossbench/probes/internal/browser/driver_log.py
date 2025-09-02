@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Type
 
+from typing_extensions import override
+
 from crossbench.probes.internal.base import InternalProbe
 from crossbench.probes.probe_context import ProbeContext
 
@@ -19,12 +21,14 @@ class BrowserDriverLogProbe(InternalProbe):
   """
   NAME = "browser.driver.log"
 
+  @override
   def get_context_cls(self) -> Type[BrowserDriverLogProbeContext]:
     return BrowserDriverLogProbeContext
 
 
 class BrowserDriverLogProbeContext(ProbeContext[BrowserDriverLogProbe]):
 
+  @override
   def setup(self) -> None:
     pass
 

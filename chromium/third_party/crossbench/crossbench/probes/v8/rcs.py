@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import TYPE_CHECKING, Optional, Type, Union
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe import ProbeContext
@@ -20,7 +22,6 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.repetitions import (
       CacheTemperatureRepetitionsRunGroup, RepetitionsRunGroup)
   from crossbench.runner.groups.stories import StoriesRunGroup
-  from crossbench.runner.run import Run
 
 
 class V8RCSProbe(ChromiumProbe):
@@ -31,16 +32,17 @@ class V8RCSProbe(ChromiumProbe):
   """
   NAME = "v8.rcs"
 
+  @override
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
     browser.js_flags.update(("--runtime-call-stats", "--allow-natives-syntax"))
 
+  @override
   def get_context_cls(self) -> Type[V8RCSProbeContext]:
     return V8RCSProbeContext
 
-  def concat_group_files(self,
-                         group: Union[RepetitionsRunGroup,
-                                      CacheTemperatureRepetitionsRunGroup],
+  def concat_group_files(self, group: RepetitionsRunGroup
+                         | CacheTemperatureRepetitionsRunGroup,
                          file_name: str) -> LocalPath:
     result_dir = group.get_local_probe_result_dir(self)
     result_files = (run.results[self].file for run in group.runs)
@@ -50,6 +52,7 @@ class V8RCSProbe(ChromiumProbe):
         prefix=f"\n== Page: {group.story.name}\n")
     return result_file
 
+  @override
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     all_file = self.concat_group_files(group, "all.rcs.txt")
     result_files = [all_file]
@@ -63,6 +66,7 @@ class V8RCSProbe(ChromiumProbe):
                                        result_dir.with_suffix(".rcs.txt"))
     return LocalProbeResult(file=tuple(result_files))
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     name_groups = collections.defaultdict(list)
     for repetition_group in group.repetitions_groups:
@@ -80,6 +84,7 @@ class V8RCSProbe(ChromiumProbe):
                                        result_dir.with_suffix(".rcs.txt"))
     return LocalProbeResult(file=(src_file,))
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     # We put all the fils by in a toplevel v8.rcs folder
     result_dir = group.get_local_probe_result_dir(self)
@@ -96,6 +101,7 @@ class V8RCSProbe(ChromiumProbe):
       files.append(dest_file)
     return LocalProbeResult(file=files)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     if self not in group.results:
       return
@@ -108,8 +114,9 @@ class V8RCSProbe(ChromiumProbe):
 
 
 class V8RCSProbeContext(ProbeContext[V8RCSProbe]):
-  _rcs_table: Optional[str] = None
+  _rcs_table: str | None = None
 
+  @override
   def setup(self) -> None:
     pass
 

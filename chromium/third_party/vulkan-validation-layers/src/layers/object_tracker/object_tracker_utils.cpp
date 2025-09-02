@@ -17,6 +17,7 @@
  */
 #include "object_lifetime_validation.h"
 #include "chassis/dispatch_object.h"
+#include "containers/small_vector.h"
 
 namespace object_lifetimes {
 
@@ -168,8 +169,9 @@ bool Device::ValidateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer c
             const auto parent_pool = CastFromUint64<VkCommandPool>(node->parent_object);
             const LogObjectList objlist(command_buffer, parent_pool, command_pool);
             skip |= LogError("VUID-vkFreeCommandBuffers-pCommandBuffers-parent", objlist, loc,
-                             "attempting to free %s belonging to %s from %s.", FormatHandle(command_buffer).c_str(),
-                             FormatHandle(parent_pool).c_str(), FormatHandle(command_pool).c_str());
+                             "attempting to use %s to free %s, but the command buffer belongs to %s.",
+                             FormatHandle(command_pool).c_str(), FormatHandle(command_buffer).c_str(),
+                             FormatHandle(parent_pool).c_str());
         }
     } else {
         skip |= LogError("VUID-vkFreeCommandBuffers-pCommandBuffers-00048", command_buffer, loc, "Invalid %s.",
@@ -224,7 +226,7 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPu
                 skip |= ValidateObject(desc->pTexelBufferView[i], kVulkanObjectTypeBufferView, true,
                                        "VUID-VkWriteDescriptorSet-descriptorType-02994",
                                        "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06236", loc.dot(Field::pTexelBufferView, i));
-                if (!null_descriptor_enabled && desc->pTexelBufferView[i] == VK_NULL_HANDLE) {
+                if (!enabled_features.nullDescriptor && desc->pTexelBufferView[i] == VK_NULL_HANDLE) {
                     skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02995", desc->dstSet,
                                      loc.dot(Field::pTexelBufferView, i), "is VK_NULL_HANDLE.");
                 }
@@ -236,12 +238,11 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPu
         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
             if (desc->pImageInfo) {
                 for (uint32_t i = 0; i < desc->descriptorCount; ++i) {
-                    // Only validate image here, we have to validate Sampler state tracker object
                     skip |= ValidateObject(desc->pImageInfo[i].imageView, kVulkanObjectTypeImageView, true,
                                            "VUID-VkWriteDescriptorSet-descriptorType-02996",
                                            "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06239",
                                            loc.dot(Field::pImageInfo, i).dot(Field::imageView));
-                    if (!null_descriptor_enabled && desc->pImageInfo[i].imageView == VK_NULL_HANDLE) {
+                    if (!enabled_features.nullDescriptor && desc->pImageInfo[i].imageView == VK_NULL_HANDLE) {
                         skip |= LogError("VUID-VkWriteDescriptorSet-descriptorType-02997", desc->dstSet,
                                          loc.dot(Field::pImageInfo, i).dot(Field::imageView), "is VK_NULL_HANDLE.");
                     }
@@ -270,7 +271,7 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPu
                     skip |= ValidateObject(
                         desc->pBufferInfo[i].buffer, kVulkanObjectTypeBuffer, true, "VUID-VkDescriptorBufferInfo-buffer-parameter",
                         "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06237", loc.dot(Field::pBufferInfo, i).dot(Field::buffer));
-                    if (!null_descriptor_enabled && desc->pBufferInfo[i].buffer == VK_NULL_HANDLE) {
+                    if (!enabled_features.nullDescriptor && desc->pBufferInfo[i].buffer == VK_NULL_HANDLE) {
                         skip |= LogError("VUID-VkDescriptorBufferInfo-buffer-02998", desc->dstSet,
                                          loc.dot(Field::pBufferInfo, i).dot(Field::buffer), "is VK_NULL_HANDLE.");
                     }
@@ -300,8 +301,23 @@ bool Device::ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPu
             }
             break;
         }
-        // handled in core check because need to know if using immutable samplers or not
-        case VK_DESCRIPTOR_TYPE_SAMPLER:
+
+        case VK_DESCRIPTOR_TYPE_SAMPLER: {
+            // These VUs talk about immutable samplers, we currently don't track the VkDescriptorSetLayout here to know if it uses
+            // it or not, but for VK_DESCRIPTOR_TYPE_SAMPLER there is  VUID-VkWriteDescriptorSet-descriptorType-02752 which guards
+            // from it containing an immutable sampler. So we are safe to validate the lifetime here. In theory this should be
+            // checked for COMBINED_IMAGE_SAMPLER as well, but being discussed in
+            // https://gitlab.khronos.org/vulkan/vulkan/-/issues/4177
+            if (desc->pImageInfo) {
+                for (uint32_t i = 0; i < desc->descriptorCount; ++i) {
+                    skip |= ValidateObject(desc->pImageInfo[i].sampler, kVulkanObjectTypeSampler, false,
+                                           "VUID-VkWriteDescriptorSet-descriptorType-00325",
+                                           "VUID-vkUpdateDescriptorSets-pDescriptorWrites-06238",
+                                           loc.dot(Field::pImageInfo, i).dot(Field::sampler));
+                }
+            }
+            break;
+        }
 
         // VkWriteDescriptorSetPartitionedAccelerationStructureNV contains no VkObjects to validate
         case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
@@ -381,12 +397,25 @@ bool Instance::ReportLeakedObjects(VulkanObjectType object_type, const std::stri
                                            const Location &loc) const {
     bool skip = false;
 
-    auto snapshot = tracker.object_map[object_type].snapshot();
+    // The state tracker also tracks implicit images created for swapchains and reports them as leak.
+    // This is entirely incorrect and unfortunately the machinery does not allow distinguishing between
+    // implicitly and explicitly created swapchain images, so the best we can do is to ignore any leaked
+    // images that have swapchain parents.
+    auto snapshot =
+        (object_type == kVulkanObjectTypeImage)
+            ? tracker.object_map[object_type].snapshot(
+                  [swapchain_snapshot =
+                       tracker.object_map[kVulkanObjectTypeSwapchainKHR].snapshot()](const std::shared_ptr<ObjTrackState> &pNode) {
+                      return std::find_if(swapchain_snapshot.begin(), swapchain_snapshot.end(), [&](const auto &swapchain_item) {
+                                 return pNode->parent_object == swapchain_item.second->handle;
+                             }) == swapchain_snapshot.end();
+                  })
+            : tracker.object_map[object_type].snapshot();
     for (const auto &item : snapshot) {
         const auto object_info = item.second;
         const LogObjectList objlist(instance, ObjTrackStateTypedHandle(*object_info));
-        skip |= LogError(error_code, objlist, loc, "OBJ ERROR : For %s, %s has not been destroyed.", FormatHandle(instance).c_str(),
-                         FormatHandle(ObjTrackStateTypedHandle(*object_info)).c_str());
+        skip |= LogError(error_code, objlist, loc, "Object Tracking - For %s, %s has not been destroyed.",
+                         FormatHandle(instance).c_str(), FormatHandle(ObjTrackStateTypedHandle(*object_info)).c_str());
     }
     return skip;
 }
@@ -399,8 +428,8 @@ bool Device::ReportLeakedObjects(VulkanObjectType object_type, const std::string
     for (const auto &item : snapshot) {
         const auto object_info = item.second;
         const LogObjectList objlist(device, ObjTrackStateTypedHandle(*object_info));
-        skip |= LogError(error_code, objlist, loc, "OBJ ERROR : For %s, %s has not been destroyed.", FormatHandle(device).c_str(),
-                         FormatHandle(ObjTrackStateTypedHandle(*object_info)).c_str());
+        skip |= LogError(error_code, objlist, loc, "Object Tracking - For %s, %s has not been destroyed.",
+                         FormatHandle(device).c_str(), FormatHandle(ObjTrackStateTypedHandle(*object_info)).c_str());
     }
     return skip;
 }
@@ -685,12 +714,6 @@ void Instance::PostCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const
                                           const RecordObject &record_obj) {
     if (record_obj.result < VK_SUCCESS) return;
     tracker.CreateObject(*pDevice, kVulkanObjectTypeDevice, pAllocator, record_obj.location, physicalDevice);
-
-    auto device_data = vvl::dispatch::GetData(*pDevice);
-    auto object_tracking = static_cast<Device *>(device_data->GetValidationObject(container_type));
-
-    const auto *robustness2_features = vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(pCreateInfo->pNext);
-    object_tracking->null_descriptor_enabled = robustness2_features && robustness2_features->nullDescriptor;
 }
 
 bool Device::PreCallValidateAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *pAllocateInfo,

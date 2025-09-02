@@ -3,7 +3,7 @@ Short Name: crossbench
 URL: https://chromium.googlesource.com/crossbench
 Version: N/A
 Revision: DEPS
-License: BSD
+License: BSD-3-Clause, MIT
 License File: LICENSE
 Security Critical: No
 Shipped: no

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Type
 
+from typing_extensions import override
+
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
 from crossbench.probes.metric import MetricsMerger
@@ -25,6 +27,7 @@ class DurationsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.durations"
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         (repetitions_group.results[self].json
@@ -32,17 +35,20 @@ class DurationsProbe(InternalJsonResultProbe):
         merge_duplicate_paths=True)
     return self.write_group_result(group, merged, csv_formatter=None)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         (story_group.results[self].json for story_group in group.story_groups),
         merge_duplicate_paths=True)
     return self.write_group_result(group, merged, csv_formatter=None)
 
+  @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
     return DurationsProbeContext
 
 
 class DurationsProbeContext(InternalJsonResultProbeContext):
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     return self.run.durations.to_json()

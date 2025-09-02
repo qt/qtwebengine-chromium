@@ -201,7 +201,7 @@ static bool VerifyImageLayoutRange(const Validator &gpuav, const vvl::CommandBuf
             const bool matches = ImageLayoutMatches(aspect_mask, image_layout, initial_layout);
             if (!matches) {
                 // We can report all the errors for the intersected range directly
-                for (auto index : sparse_container::range_view<decltype(intersected_range)>(intersected_range)) {
+                for (auto index : vvl::range_view<decltype(intersected_range)>(intersected_range)) {
                     const auto subresource = image_state.subresource_encoder.Decode(index);
                     const LogObjectList objlist(cb_state.Handle(), image_state.Handle());
                     // TODO - We need a way to map the action command to which caused this error
@@ -558,7 +558,7 @@ void Validator::PreCallRecordCmdCopyBufferToImage(VkCommandBuffer commandBuffer,
     BaseClass::PreCallRecordCmdCopyBufferToImage(commandBuffer, srcBuffer, dstImage, dstImageLayout, regionCount, pRegions,
                                                  record_obj);
 
-    auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
 
     if (auto dst_image_state = Get<vvl::Image>(dstImage)) {
         // Make sure that all image slices are record referenced layout
@@ -584,7 +584,7 @@ void Validator::PreCallRecordCmdCopyBufferToImage(VkCommandBuffer commandBuffer,
     copy_buffer_to_image_info.regionCount = regionCount;
     copy_buffer_to_image_info.pRegions = regions_2.data();
 
-    InsertCopyBufferToImageValidation(*this, record_obj.location, *cb_state, &copy_buffer_to_image_info);
+    InsertCopyBufferToImageValidation(*this, record_obj.location, SubState(*cb_state), &copy_buffer_to_image_info);
 }
 
 void Validator::PreCallRecordCmdCopyBufferToImage2KHR(VkCommandBuffer commandBuffer,
@@ -598,7 +598,7 @@ void Validator::PreCallRecordCmdCopyBufferToImage2(VkCommandBuffer commandBuffer
                                                    const RecordObject &record_obj) {
     BaseClass::PreCallRecordCmdCopyBufferToImage2(commandBuffer, pCopyBufferToImageInfo, record_obj);
 
-    auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
 
     if (auto dst_image_state = Get<vvl::Image>(pCopyBufferToImageInfo->dstImage)) {
         // Make sure that all image slices are record referenced layout
@@ -608,7 +608,7 @@ void Validator::PreCallRecordCmdCopyBufferToImage2(VkCommandBuffer commandBuffer
         }
     }
 
-    InsertCopyBufferToImageValidation(*this, record_obj.location, *cb_state, pCopyBufferToImageInfo);
+    InsertCopyBufferToImageValidation(*this, record_obj.location, SubState(*cb_state), pCopyBufferToImageInfo);
 }
 
 void Validator::PreCallRecordCmdBlitImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,

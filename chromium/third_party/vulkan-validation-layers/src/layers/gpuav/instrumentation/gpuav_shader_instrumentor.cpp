@@ -34,7 +34,6 @@
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/shader_object_state.h"
-#include "state_tracker/shader_instruction.h"
 
 #include "gpuav/spirv/module.h"
 #include "gpuav/spirv/descriptor_indexing_oob_pass.h"
@@ -69,21 +68,40 @@ WriteLockGuard GpuShaderInstrumentor::WriteLock() {
 }
 
 // In charge of getting things for shader instrumentation that both GPU-AV and DebugPrintF will need
-void GpuShaderInstrumentor::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
-    BaseClass::PostCreateDevice(pCreateInfo, loc);
+void GpuShaderInstrumentor::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
+    BaseClass::FinishDeviceSetup(pCreateInfo, loc);
 
-    VkPhysicalDeviceFeatures supported_features{};
-    DispatchGetPhysicalDeviceFeatures(physical_device, &supported_features);
-    if (!supported_features.fragmentStoresAndAtomics) {
+    // Update feature and extension state based on changes made to the create info.
+    GetEnabledDeviceFeatures(pCreateInfo, &modified_features, api_version);
+    modified_extensions = DeviceExtensions(extensions, api_version, pCreateInfo);
+
+    // Check hard requirements for GPU-AV against what we enabled.
+    if (!modified_features.fragmentStoresAndAtomics) {
         InternalError(
             device, loc,
             "GPU Shader Instrumentation requires fragmentStoresAndAtomics to allow writting out data inside the fragment shader.");
         return;
     }
-    if (!supported_features.vertexPipelineStoresAndAtomics) {
+    if (!modified_features.vertexPipelineStoresAndAtomics) {
         InternalError(device, loc,
                       "GPU Shader Instrumentation requires vertexPipelineStoresAndAtomics to allow writting out data inside the "
                       "vertex shader.");
+        return;
+    }
+    if (!modified_features.timelineSemaphore) {
+        InternalError(device, loc,
+                      "GPU Shader Instrumentation requires timelineSemaphore to manage when command buffers are submitted at queue "
+                      "submit time.");
+        return;
+    }
+    if (!modified_features.bufferDeviceAddress) {
+        InternalError(device, loc, "GPU Shader Instrumentation requires bufferDeviceAddress to manage writting out of the shader.");
+        return;
+    }
+    if (modified_features.vulkanMemoryModel && !modified_features.vulkanMemoryModelDeviceScope) {
+        InternalError(device, loc,
+                      "GPU Shader Instrumentation requires vulkanMemoryModelDeviceScope feature (if vulkanMemoryModel is enabled) "
+                      "to let us call atomicAdd to the output buffer.");
         return;
     }
 
@@ -337,6 +355,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateShadersEXT(VkDevice device, uint3
         chassis_state.modified_create_infos.emplace_back(std::move(new_create_info));
     }
 
+    chassis_state.is_modified = true;
     chassis_state.pCreateInfos = reinterpret_cast<VkShaderCreateInfoEXT *>(chassis_state.modified_create_infos.data());
 }
 
@@ -347,7 +366,8 @@ void GpuShaderInstrumentor::PostCallRecordCreateShadersEXT(VkDevice device, uint
     BaseClass::PostCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders, record_obj,
                                               chassis_state);
     if (!gpuav_settings.IsSpirvModified()) return;
-
+    // This can occur if the driver failed to compile the instrumented shader or if a PreCall step failed
+    if (!chassis_state.is_modified) return;
     for (uint32_t i = 0; i < createInfoCount; ++i) {
         auto &instrumentation_data = chassis_state.instrumentations_data[i];
 
@@ -412,6 +432,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateGraphicsPipelines(VkDevice device
         }
     }
 
+    chassis_state.is_modified = true;
     chassis_state.pCreateInfos = reinterpret_cast<VkGraphicsPipelineCreateInfo *>(chassis_state.modified_create_infos.data());
 }
 
@@ -448,44 +469,8 @@ void GpuShaderInstrumentor::PreCallRecordCreateComputePipelines(VkDevice device,
         }
     }
 
+    chassis_state.is_modified = true;
     chassis_state.pCreateInfos = reinterpret_cast<VkComputePipelineCreateInfo *>(chassis_state.modified_create_infos.data());
-}
-
-void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
-                                                                     const VkRayTracingPipelineCreateInfoNV *pCreateInfos,
-                                                                     const VkAllocationCallbacks *pAllocator,
-                                                                     VkPipeline *pPipelines, const RecordObject &record_obj,
-                                                                     PipelineStates &pipeline_states,
-                                                                     chassis::CreateRayTracingPipelinesNV &chassis_state) {
-    BaseClass::PreCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, count, pCreateInfos, pAllocator, pPipelines,
-                                                        record_obj, pipeline_states, chassis_state);
-    if (!gpuav_settings.IsSpirvModified()) return;
-
-    chassis_state.shader_instrumentations_metadata.resize(count);
-    chassis_state.modified_create_infos.resize(count);
-
-    for (uint32_t i = 0; i < count; ++i) {
-        const auto &pipeline_state = pipeline_states[i];
-        const Location create_info_loc = record_obj.location.dot(vvl::Field::pCreateInfos, i);
-
-        // Need to make a deep copy so if SPIR-V is inlined, user doesn't see it after the call
-        auto &new_pipeline_ci = chassis_state.modified_create_infos[i];
-        new_pipeline_ci = pipeline_state->RayTracingCreateInfo();  // use copy operation to fight the Common vs NV
-
-        if (!NeedPipelineCreationShaderInstrumentation(*pipeline_state, create_info_loc)) {
-            continue;
-        }
-
-        auto &shader_instrumentation_metadata = chassis_state.shader_instrumentations_metadata[i];
-
-        bool success = PreCallRecordPipelineCreationShaderInstrumentation(pAllocator, *pipeline_state, new_pipeline_ci,
-                                                                          create_info_loc, shader_instrumentation_metadata);
-        if (!success) {
-            return;
-        }
-    }
-
-    chassis_state.pCreateInfos = reinterpret_cast<VkRayTracingPipelineCreateInfoNV *>(chassis_state.modified_create_infos.data());
 }
 
 void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesKHR(
@@ -520,6 +505,7 @@ void GpuShaderInstrumentor::PreCallRecordCreateRayTracingPipelinesKHR(
         }
     }
 
+    chassis_state.is_modified = true;
     chassis_state.pCreateInfos = reinterpret_cast<VkRayTracingPipelineCreateInfoKHR *>(chassis_state.modified_create_infos.data());
 }
 
@@ -546,6 +532,8 @@ void GpuShaderInstrumentor::PostCallRecordCreateGraphicsPipelines(VkDevice devic
     // VK_PIPELINE_COMPILE_REQUIRED means that the current pipeline creation call was used to poke the driver cache,
     // no pipeline is created in this case
     if (record_obj.result == VK_PIPELINE_COMPILE_REQUIRED) return;
+    // This can occur if the driver failed to compile the instrumented shader or if a PreCall step failed
+    if (!chassis_state.is_modified) return;
 
     for (uint32_t i = 0; i < count; ++i) {
         UtilCopyCreatePipelineFeedbackData(pCreateInfos[i], chassis_state.modified_create_infos[i]);
@@ -576,27 +564,8 @@ void GpuShaderInstrumentor::PostCallRecordCreateComputePipelines(VkDevice device
     // VK_PIPELINE_COMPILE_REQUIRED means that the current pipeline creation call was used to poke the driver cache,
     // no pipeline is created in this case
     if (record_obj.result == VK_PIPELINE_COMPILE_REQUIRED) return;
-
-    for (uint32_t i = 0; i < count; ++i) {
-        UtilCopyCreatePipelineFeedbackData(pCreateInfos[i], chassis_state.modified_create_infos[i]);
-
-        auto pipeline_state = Get<vvl::Pipeline>(pPipelines[i]);
-        ASSERT_AND_CONTINUE(pipeline_state);
-        auto &shader_instrumentation_metadata = chassis_state.shader_instrumentations_metadata[i];
-        PostCallRecordPipelineCreationShaderInstrumentation(*pipeline_state, shader_instrumentation_metadata);
-    }
-}
-
-void GpuShaderInstrumentor::PostCallRecordCreateRayTracingPipelinesNV(
-    VkDevice device, VkPipelineCache pipelineCache, uint32_t count, const VkRayTracingPipelineCreateInfoNV *pCreateInfos,
-    const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines, const RecordObject &record_obj,
-    PipelineStates &pipeline_states, chassis::CreateRayTracingPipelinesNV &chassis_state) {
-    BaseClass::PostCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, count, pCreateInfos, pAllocator, pPipelines,
-                                                         record_obj, pipeline_states, chassis_state);
-    if (!gpuav_settings.IsSpirvModified()) return;
-    // VK_PIPELINE_COMPILE_REQUIRED means that the current pipeline creation call was used to poke the driver cache,
-    // no pipeline is created in this case
-    if (record_obj.result == VK_PIPELINE_COMPILE_REQUIRED) return;
+    // This can occur if the driver failed to compile the instrumented shader or if a PreCall step failed
+    if (!chassis_state.is_modified) return;
 
     for (uint32_t i = 0; i < count; ++i) {
         UtilCopyCreatePipelineFeedbackData(pCreateInfos[i], chassis_state.modified_create_infos[i]);
@@ -615,6 +584,9 @@ void GpuShaderInstrumentor::PostCallRecordCreateRayTracingPipelinesKHR(
     std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state) {
     BaseClass::PostCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, count, pCreateInfos, pAllocator,
                                                           pPipelines, record_obj, pipeline_states, chassis_state);
+    // This can occur if the driver failed to compile the instrumented shader or if a PreCall step failed
+    if (!chassis_state->is_modified) return;
+
     if (!gpuav_settings.IsSpirvModified()) return;
     // VK_PIPELINE_COMPILE_REQUIRED means that the current pipeline creation call was used to poke the driver cache,
     // no pipeline is created in this case
@@ -1151,21 +1123,28 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
                                              std::vector<uint32_t> &out_instrumented_spirv) {
     if (input_spirv[0] != spv::MagicNumber) return false;
 
+    if (unique_shader_id >= glsl::kMaxInstrumentedShaders) {
+        InternalWarning(device, loc, "kMaxInstrumentedShaders limit has been hit, no shaders can be instrumented.");
+        return false;
+    }
+
     if (gpuav_settings.debug_dump_instrumented_shaders) {
-        std::string file_name = "dump_" + std::to_string(unique_shader_id) + "_before.spv";
-        DumpSpirvToFile(file_name, reinterpret_cast<const char *>(input_spirv.data()), input_spirv.size() * sizeof(uint32_t));
+        const auto non_instrumented_spirv_file = fs::absolute("dump_" + std::to_string(unique_shader_id) + "_before.spv");
+        DumpSpirvToFile(non_instrumented_spirv_file, input_spirv.data(), input_spirv.size());
     }
 
     spirv::Settings module_settings{};
     // Use the unique_shader_id as a shader ID so we can look up its handle later in the shader_map.
     module_settings.shader_id = unique_shader_id;
     module_settings.output_buffer_descriptor_set = instrumentation_desc_set_bind_index_;
+    module_settings.unsafe_mode = gpuav_settings.unsafe_mode;
     module_settings.print_debug_info = gpuav_settings.debug_print_instrumentation_info;
     module_settings.max_instrumentations_count = gpuav_settings.debug_max_instrumentations_count;
-    module_settings.support_non_semantic_info = IsExtEnabled(extensions.vk_khr_shader_non_semantic_info);
+    module_settings.support_non_semantic_info =
+        IsExtEnabled(extensions.vk_khr_shader_non_semantic_info) && !IsExtEnabled(extensions.vk_khr_portability_subset);
     module_settings.has_bindless_descriptors = instrumentation_dsl.has_bindless_descriptors;
 
-    spirv::Module module(input_spirv, debug_report, module_settings, enabled_features,
+    spirv::Module module(input_spirv, debug_report, module_settings, modified_features,
                          instrumentation_dsl.set_index_to_bindings_layout_lut);
 
     bool modified = false;
@@ -1177,10 +1156,16 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
         modified |= oob_pass.Run();
 
         // Depending on the DescriptorClass, will add dedicated check
-        spirv::DescriptorClassGeneralBufferPass general_buffer_pass(module);
-        modified |= general_buffer_pass.Run();
-        spirv::DescriptorClassTexelBufferPass texel_buffer_pass(module);
-        modified |= texel_buffer_pass.Run();
+        if (!modified_features.robustBufferAccess) {
+            // This check is for catching OOB in a UBO/SSBO which is caught with robustBufferAccess
+            spirv::DescriptorClassGeneralBufferPass general_buffer_pass(module);
+            modified |= general_buffer_pass.Run();
+
+            // Details being worked out in https://gitlab.khronos.org/vulkan/vulkan/-/issues/3977
+            // But for what we are checking for, can rely on robustBufferAccess
+            spirv::DescriptorClassTexelBufferPass texel_buffer_pass(module);
+            modified |= texel_buffer_pass.Run();
+        }
     }
 
     if (gpuav_settings.shader_instrumentation.buffer_device_address) {
@@ -1195,14 +1180,16 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
 
     // Post Process instrumentation passes assume the things inside are valid, but putting at the end, things above will wrap checks
     // in a if/else, this means they will be gaurded as if they were inside the above passes
-    if (gpuav_settings.shader_instrumentation.post_process_descriptor_index) {
+    if (gpuav_settings.shader_instrumentation.post_process_descriptor_indexing) {
         spirv::PostProcessDescriptorIndexingPass pass(module);
         modified |= pass.Run();
     }
 
     if (gpuav_settings.shader_instrumentation.vertex_attribute_fetch_oob) {
-        spirv::VertexAttributeFetchOob pass(module);
-        modified |= pass.Run();
+        if (!modified_features.robustBufferAccess) {
+            spirv::VertexAttributeFetchOob pass(module);
+            modified |= pass.Run();
+        }
     }
 
     // If there were GLSL written function injected, we will grab them and link them in here
@@ -1229,24 +1216,34 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
     // translate internal representation of SPIR-V into legal SPIR-V binary
     module.ToBinary(out_instrumented_spirv);
 
-    if (gpuav_settings.debug_dump_instrumented_shaders) {
-        std::string file_name = "dump_" + std::to_string(unique_shader_id) + "_after.spv";
-        DumpSpirvToFile(file_name, reinterpret_cast<const char *>(out_instrumented_spirv.data()),
-                        out_instrumented_spirv.size() * sizeof(uint32_t));
-    }
-
     spv_target_env target_env = PickSpirvEnv(api_version, IsExtEnabled(extensions.vk_khr_spirv_1_4));
     // (Maybe) validate the instrumented and linked shader
+    bool is_instrumented_spirv_valid = true;
     if (gpuav_settings.debug_validate_instrumented_shaders) {
         std::string spirv_val_error;
-        if (!GpuValidateShader(out_instrumented_spirv, extensions.vk_khr_relaxed_block_layout,
-                               extensions.vk_ext_scalar_block_layout, target_env, spirv_val_error)) {
+
+        is_instrumented_spirv_valid = GpuValidateShader(out_instrumented_spirv, extensions.vk_khr_relaxed_block_layout,
+                                                        extensions.vk_ext_scalar_block_layout, target_env, spirv_val_error);
+        if (!is_instrumented_spirv_valid) {
+            if (!gpuav_settings.debug_dump_instrumented_shaders) {
+                const auto non_instrumented_spirv_file = fs::absolute("dump_" + std::to_string(unique_shader_id) + "_before.spv");
+                DumpSpirvToFile(non_instrumented_spirv_file, input_spirv.data(), input_spirv.size());
+            }
+
+            const auto instrumented_spirv_file = fs::absolute("dump_" + std::to_string(unique_shader_id) + "_after_invalid.spv");
+            DumpSpirvToFile(instrumented_spirv_file, out_instrumented_spirv.data(), out_instrumented_spirv.size());
+
             std::ostringstream strm;
             strm << "Instrumented shader (id " << unique_shader_id << ") is invalid, spirv-val error:\n"
-                 << spirv_val_error << " Proceeding with non instrumented shader.";
+                 << spirv_val_error << "\nInvalid spirv dumped to " << instrumented_spirv_file
+                 << "\nProceeding with non instrumented shader.";
             InternalError(device, loc, strm.str().c_str());
             return false;
         }
+    }
+    if (is_instrumented_spirv_valid && gpuav_settings.debug_dump_instrumented_shaders) {
+        const auto instrumented_spirv_file = fs::absolute("dump_" + std::to_string(unique_shader_id) + "_after.spv");
+        DumpSpirvToFile(instrumented_spirv_file, out_instrumented_spirv.data(), out_instrumented_spirv.size());
     }
 
     return true;
@@ -1289,92 +1286,84 @@ static std::string LookupDebugUtilsNameNoLock(const DebugReport *debug_report, c
 }
 
 // Generate the stage-specific part of the message.
-static void GenerateStageMessage(std::ostringstream &ss, uint32_t stage_id, uint32_t stage_info_0, uint32_t stage_info_1,
-                                 uint32_t stage_info_2, const std::vector<Instruction> &instructions) {
-    switch (stage_id) {
-        case glsl::kHeaderStageIdMultiEntryPoint: {
+static void GenerateStageMessage(std::ostringstream &ss, const GpuShaderInstrumentor::ShaderMessageInfo &shader_info,
+                                 const std::vector<uint32_t> &instrumented_spirv) {
+    switch (shader_info.stage_id) {
+        case glsl::kExecutionModelMultiEntryPoint: {
             ss << "Stage has multiple OpEntryPoint (";
-            bool first_stage = true;
-            for (const auto &insn : instructions) {
-                if (insn.Opcode() == spv::OpFunction) break;  // early exit when possible
-                if (insn.Opcode() == spv::OpEntryPoint) {
-                    if (first_stage) {
-                        first_stage = false;
-                    } else {
-                        ss << ", ";
-                    }
-                    ss << string_SpvExecutionModel(insn.Word(1));
-                }
-            }
+            ::spirv::GetExecutionModelNames(instrumented_spirv, ss);
             ss << ") and could not detect stage. ";
         } break;
-        case spv::ExecutionModelVertex: {
-            ss << "Stage = Vertex. Vertex Index = " << stage_info_0 << " Instance Index = " << stage_info_1 << ". ";
+        case glsl::kExecutionModelVertex: {
+            ss << "Stage = Vertex. Vertex Index = " << shader_info.stage_info_0 << " Instance Index = " << shader_info.stage_info_1
+               << ". ";
         } break;
-        case spv::ExecutionModelTessellationControl: {
-            ss << "Stage = Tessellation Control.  Invocation ID = " << stage_info_0 << ", Primitive ID = " << stage_info_1;
+        case glsl::kExecutionModelTessellationControl: {
+            ss << "Stage = Tessellation Control.  Invocation ID = " << shader_info.stage_info_0
+               << ", Primitive ID = " << shader_info.stage_info_1;
         } break;
-        case spv::ExecutionModelTessellationEvaluation: {
-            ss << "Stage = Tessellation Eval.  Primitive ID = " << stage_info_0 << ", TessCoord (u, v) = (" << stage_info_1 << ", "
-               << stage_info_2 << "). ";
+        case glsl::kExecutionModelTessellationEvaluation: {
+            ss << "Stage = Tessellation Eval.  Primitive ID = " << shader_info.stage_info_0 << ", TessCoord (u, v) = ("
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelGeometry: {
-            ss << "Stage = Geometry.  Primitive ID = " << stage_info_0 << " Invocation ID = " << stage_info_1 << ". ";
+        case glsl::kExecutionModelGeometry: {
+            ss << "Stage = Geometry.  Primitive ID = " << shader_info.stage_info_0
+               << " Invocation ID = " << shader_info.stage_info_1 << ". ";
         } break;
-        case spv::ExecutionModelFragment: {
+        case glsl::kExecutionModelFragment: {
             // Should use std::bit_cast but requires c++20
             float x_coord;
             float y_coord;
-            std::memcpy(&x_coord, &stage_info_0, sizeof(float));
-            std::memcpy(&y_coord, &stage_info_1, sizeof(float));
+            std::memcpy(&x_coord, &shader_info.stage_info_0, sizeof(float));
+            std::memcpy(&y_coord, &shader_info.stage_info_1, sizeof(float));
             ss << "Stage = Fragment.  Fragment coord (x,y) = (" << x_coord << ", " << y_coord << "). ";
         } break;
-        case spv::ExecutionModelGLCompute: {
-            ss << "Stage = Compute.  Global invocation ID (x, y, z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << ")";
+        case glsl::kExecutionModelGLCompute: {
+            ss << "Stage = Compute.  Global invocation ID (x, y, z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << ")";
         } break;
-        case spv::ExecutionModelRayGenerationKHR: {
-            ss << "Stage = Ray Generation.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << "). ";
+        case glsl::kExecutionModelRayGenerationKHR: {
+            ss << "Stage = Ray Generation.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelIntersectionKHR: {
-            ss << "Stage = Intersection.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << "). ";
+        case glsl::kExecutionModelIntersectionKHR: {
+            ss << "Stage = Intersection.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelAnyHitKHR: {
-            ss << "Stage = Any Hit.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", " << stage_info_2
-               << "). ";
+        case glsl::kExecutionModelAnyHitKHR: {
+            ss << "Stage = Any Hit.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", " << shader_info.stage_info_1
+               << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelClosestHitKHR: {
-            ss << "Stage = Closest Hit.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << "). ";
+        case glsl::kExecutionModelClosestHitKHR: {
+            ss << "Stage = Closest Hit.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelMissKHR: {
-            ss << "Stage = Miss.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", " << stage_info_2
-               << "). ";
+        case glsl::kExecutionModelMissKHR: {
+            ss << "Stage = Miss.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", " << shader_info.stage_info_1
+               << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelCallableKHR: {
-            ss << "Stage = Callable.  Global Launch ID (x,y,z) = (" << stage_info_0 << ", " << stage_info_1 << ", " << stage_info_2
-               << "). ";
+        case glsl::kExecutionModelCallableKHR: {
+            ss << "Stage = Callable.  Global Launch ID (x,y,z) = (" << shader_info.stage_info_0 << ", " << shader_info.stage_info_1
+               << ", " << shader_info.stage_info_2 << "). ";
         } break;
-        case spv::ExecutionModelTaskEXT: {
-            ss << "Stage = TaskEXT. Global invocation ID (x, y, z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << " )";
+        case glsl::kExecutionModelTaskEXT: {
+            ss << "Stage = TaskEXT. Global invocation ID (x, y, z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << " )";
         } break;
-        case spv::ExecutionModelMeshEXT: {
-            ss << "Stage = MeshEXT. Global invocation ID (x, y, z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << " )";
+        case glsl::kExecutionModelMeshEXT: {
+            ss << "Stage = MeshEXT. Global invocation ID (x, y, z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << " )";
         } break;
-        case spv::ExecutionModelTaskNV: {
-            ss << "Stage = TaskNV. Global invocation ID (x, y, z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << " )";
+        case glsl::kExecutionModelTaskNV: {
+            ss << "Stage = TaskNV. Global invocation ID (x, y, z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << " )";
         } break;
-        case spv::ExecutionModelMeshNV: {
-            ss << "Stage = MeshNV. Global invocation ID (x, y, z) = (" << stage_info_0 << ", " << stage_info_1 << ", "
-               << stage_info_2 << " )";
+        case glsl::kExecutionModelMeshNV: {
+            ss << "Stage = MeshNV. Global invocation ID (x, y, z) = (" << shader_info.stage_info_0 << ", "
+               << shader_info.stage_info_1 << ", " << shader_info.stage_info_2 << " )";
         } break;
         default: {
-            ss << "Internal Error (unexpected stage = " << stage_id << "). ";
+            ss << "Internal Error (unexpected stage = " << shader_info.stage_id << "). ";
             assert(false);
         } break;
     }
@@ -1384,41 +1373,15 @@ static void GenerateStageMessage(std::ostringstream &ss, uint32_t stage_id, uint
 // There are 2 ways to inject source into a shader:
 // 1. The "old" way using OpLine/OpSource
 // 2. The "new" way using NonSemantic Shader DebugInfo
-static std::string FindShaderSource(std::ostringstream &ss, const std::vector<Instruction> &instructions,
+static std::string FindShaderSource(std::ostringstream &ss, const std::vector<uint32_t> &instrumented_spirv,
                                     uint32_t instruction_position, bool debug_printf_only) {
     ss << "SPIR-V Instruction Index = " << instruction_position << '\n';
 
-    // Find the OpLine/DebugLine just before the failing instruction indicated by the debug info.
-    // SPIR-V can only be iterated in the forward direction due to its opcode/length encoding.
-    uint32_t index = 0;
-    uint32_t shader_debug_info_set_id = 0;
-    const Instruction *last_line_inst = nullptr;
-    for (const auto &insn : instructions) {
-        const uint32_t opcode = insn.Opcode();
-        if (opcode == spv::OpExtInstImport) {
-            if (strcmp(insn.GetAsString(2), "NonSemantic.Shader.DebugInfo.100") == 0) {
-                shader_debug_info_set_id = insn.ResultId();
-            }
-        }
-
-        if (opcode == spv::OpExtInst && insn.Word(3) == shader_debug_info_set_id &&
-            insn.Word(4) == NonSemanticShaderDebugInfo100DebugLine) {
-            last_line_inst = &insn;
-        } else if (opcode == spv::OpLine) {
-            last_line_inst = &insn;
-        } else if (opcode == spv::OpFunctionEnd) {
-            last_line_inst = nullptr;  // debug lines can't cross functions boundaries
-        }
-
-        if (index == instruction_position) {
-            break;
-        }
-        index++;
-    }
-
-    if (last_line_inst) {
-        ss << (debug_printf_only ? "Debug shader printf message generated " : "Shader validation error occurred ");
-        GetShaderSourceInfo(ss, instructions, *last_line_inst);
+    const uint32_t last_line_inst_offset = ::spirv::GetDebugLineOffset(instrumented_spirv, instruction_position);
+    if (last_line_inst_offset != 0) {
+        Instruction last_line_inst(instrumented_spirv.data() + last_line_inst_offset);
+        ss << (debug_printf_only ? "Debug shader printf message generated at " : "Shader validation error occurred at ");
+        GetShaderSourceInfo(ss, instrumented_spirv, last_line_inst);
     } else {
         ss << "Unable to source. Build shader with debug info to get source information.\n";
     }
@@ -1427,17 +1390,17 @@ static std::string FindShaderSource(std::ostringstream &ss, const std::vector<In
 }
 
 // Where we build up the error message with all the useful debug information about where the error occured
-std::string GpuShaderInstrumentor::GenerateDebugInfoMessage(
-    VkCommandBuffer commandBuffer, const std::vector<Instruction> &instructions, uint32_t stage_id, uint32_t stage_info_0,
-    uint32_t stage_info_1, uint32_t stage_info_2, uint32_t instruction_position, const InstrumentedShader *instrumented_shader,
-    uint32_t shader_id, VkPipelineBindPoint pipeline_bind_point, uint32_t operation_index) const {
+std::string GpuShaderInstrumentor::GenerateDebugInfoMessage(VkCommandBuffer commandBuffer, const ShaderMessageInfo &shader_info,
+                                                            const InstrumentedShader *instrumented_shader,
+                                                            VkPipelineBindPoint pipeline_bind_point,
+                                                            uint32_t operation_index) const {
     std::ostringstream ss;
-    if (instructions.empty() || !instrumented_shader) {
+    if (!instrumented_shader || instrumented_shader->instrumented_spirv.empty()) {
         ss << "[Internal Error] - Can't get instructions from shader_map\n";
         return ss.str();
     }
 
-    GenerateStageMessage(ss, stage_id, stage_info_0, stage_info_1, stage_info_2, instructions);
+    GenerateStageMessage(ss, shader_info, instrumented_shader->instrumented_spirv);
 
     ss << std::hex << std::showbase;
     if (instrumented_shader->shader_module == VK_NULL_HANDLE && instrumented_shader->shader_object == VK_NULL_HANDLE) {
@@ -1467,23 +1430,24 @@ std::string GpuShaderInstrumentor::GenerateDebugInfoMessage(
 
         if (instrumented_shader->shader_module == VK_NULL_HANDLE) {
             ss << "Shader Object " << LookupDebugUtilsNameNoLock(debug_report, HandleToUint64(instrumented_shader->shader_object))
-               << "(" << HandleToUint64(instrumented_shader->shader_object) << ") (internal ID " << shader_id << ")\n";
+               << "(" << HandleToUint64(instrumented_shader->shader_object) << ") (internal ID " << shader_info.shader_id << ")\n";
         } else {
             ss << "Pipeline " << LookupDebugUtilsNameNoLock(debug_report, HandleToUint64(instrumented_shader->pipeline)) << "("
                << HandleToUint64(instrumented_shader->pipeline) << ")";
             if (instrumented_shader->shader_module == kPipelineStageInfoHandle) {
-                ss << " (internal ID " << shader_id
+                ss << " (internal ID " << shader_info.shader_id
                    << ")\nShader Module was passed in via VkPipelineShaderStageCreateInfo::pNext\n";
             } else {
                 ss << "\nShader Module "
                    << LookupDebugUtilsNameNoLock(debug_report, HandleToUint64(instrumented_shader->shader_module)) << "("
-                   << HandleToUint64(instrumented_shader->shader_module) << ") (internal ID " << shader_id << ")\n";
+                   << HandleToUint64(instrumented_shader->shader_module) << ") (internal ID " << shader_info.shader_id << ")\n";
             }
         }
     }
     ss << std::dec << std::noshowbase;
 
-    FindShaderSource(ss, instructions, instruction_position, gpuav_settings.debug_printf_only);
+    FindShaderSource(ss, instrumented_shader->instrumented_spirv, shader_info.instruction_position,
+                     gpuav_settings.debug_printf_only);
 
     return ss.str();
 }

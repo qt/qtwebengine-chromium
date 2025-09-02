@@ -342,7 +342,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void CreateFrameSink(
       mojo::PendingReceiver<viz::mojom::CompositorFrameSink>
           compositor_frame_sink_receiver,
-      mojo::PendingRemote<viz::mojom::CompositorFrameSinkClient>) override;
+      mojo::PendingRemote<viz::mojom::CompositorFrameSinkClient>
+          compositor_frame_sink_client,
+      mojo::PendingRemote<blink::mojom::RenderInputRouterClient>
+          viz_rir_client_remote) override;
   void RegisterRenderFrameMetadataObserver(
       mojo::PendingReceiver<cc::mojom::RenderFrameMetadataObserverClient>
           render_frame_metadata_observer_client_receiver,
@@ -553,11 +556,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // navigations, this is called before the renderer is shown.
   void DidNavigate();
 
-  // Called after every cross-document navigation. The displayed graphics of
-  // the renderer is cleared after a certain timeout if it does not produce a
-  // new CompositorFrame after navigation. This is called after either
-  // navigation (for non-prerender pages) or activation (for prerender pages).
-  void StartNewContentRenderingTimeout();
+  // Called after every cross-document navigation.  When `active` is true, the
+  // displayed graphics of the renderer is cleared after a certain timeout if it
+  // does not produce a new CompositorFrame after navigation.
+  //
+  // This is called after either navigation (for non-prerender pages) or
+  // activation (for prerender pages).
+  // TODO(mustaq@chromium.org): Is this still correct for prerendered pages?
+  void InitializePaintHolding(bool active);
 
   // Customize the value of `new_content_rendering_delay_` for testing.
   void SetNewContentRenderingTimeoutForTesting(base::TimeDelta timeout);
@@ -734,6 +740,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                      const gfx::Size& min_size,
                      const gfx::Size& max_size);
 
+  // Generates a filled in VisualProperties struct representing the current
+  // properties of this widget.
+  blink::VisualProperties GetVisualProperties();
+
   // Returns the result of GetVisualProperties(), resetting and storing that
   // value as what has been sent to the renderer. This should be called when
   // getting VisualProperties that will be sent in order to create a
@@ -810,8 +820,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // RenderInputRouterClient overrides.
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::optional<std::vector<gfx::Rect>>& character_bounds,
-      const std::optional<std::vector<gfx::Rect>>& line_bounds) override;
+      const std::optional<std::vector<gfx::Rect>>& character_bounds) override;
   void OnImeCancelComposition() override;
   void OnStartStylusWriting() override;
   void UpdateElementFocusForStylusWriting(
@@ -922,11 +931,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // widget Mojo interfaces and rebinds them, passing the new endpoints in the
   // returned params.
   mojom::CreateFrameWidgetParamsPtr BindAndGenerateCreateFrameWidgetParams();
-  // TODO(danakj): This is a CreateNewWindow()-specific version of the above
-  // helper to work around the fact that things are in a weird state. Figure out
-  // why that's happening and remove this.
-  mojom::CreateFrameWidgetParamsPtr
-  BindAndGenerateCreateFrameWidgetParamsForNewWindow();
 
   // RenderFrameMetadataProvider::Observer implementation.
   void OnRenderFrameMetadataChangedBeforeActivation(
@@ -980,6 +984,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     void DidStartNavigationCommit();
     void DidSwap();
     void DidRequestFrameSink();
+
+    base::TimeTicks CommitNavigationTime();
 
    private:
     void TryToRecordMetrics();
@@ -1131,10 +1137,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // browser to match the clean start for the renderer side.
   void ResetStateForCreatedRenderWidget(
       const blink::VisualProperties& initial_props);
-
-  // Generates a filled in VisualProperties struct representing the current
-  // properties of this widget.
-  blink::VisualProperties GetVisualProperties();
 
   // Returns true if the |new_visual_properties| differs from
   // |old_page_visual_properties| in a way that indicates a size changed.
@@ -1449,6 +1451,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   std::unique_ptr<input::TimeoutMonitor> new_content_rendering_timeout_;
 
+  bool paint_holding_activated_ = false;
+
   int next_browser_snapshot_id_ = 1;
   using PendingSnapshotMap = std::map<int, GetSnapshotFromBrowserCallback>;
   PendingSnapshotMap pending_browser_snapshots_;
@@ -1551,9 +1555,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool view_is_frame_sink_id_owner_{false};
 
   std::unique_ptr<CompositorMetricRecorder> compositor_metric_recorder_;
-
-  std::optional<mojo::PendingRemote<blink::mojom::RenderInputRouterClient>>
-      viz_rir_client_remote_;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_{this};
 };

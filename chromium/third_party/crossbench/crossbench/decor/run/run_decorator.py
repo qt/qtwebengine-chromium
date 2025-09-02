@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import abc
-from typing import Set, TypeVar
+from typing import Self, Set, TypeVar
 
 from crossbench.decor import base
 from crossbench.runner.run import Run
@@ -19,8 +19,7 @@ class RunDecorator(base.Decorator[Run]):
     return self._targets
 
   @abc.abstractmethod
-  def get_context(self: RunDecoratorT,
-                  target: Run) -> RunDecoratorContext[RunDecoratorT]:
+  def get_context(self: Self, target: Run) -> RunDecoratorContext[Self]:
     pass
 
 

@@ -147,3 +147,21 @@ OpBranchConditional %compare %L2 %L3
 %L3 = OpLabel
 OpReturn
 ```
+
+## Unsafe Mode
+
+The `Unsafe Mode` was designed as a way to improve performance. Every time we instrument a shader, if the driver doesn't support the SPIR-V `DontInline` (which there is no way to test), it gets exponentially slower to compile.
+
+To illustrate the idea, take the simple shader
+
+```glsl
+layout (set = 0, binding = 0) uniform sampler2D imageArray[];
+
+sample(imageArray[8], a);  // access 1
+sample(imageArray[8], b);  // access 2
+sample(imageArray[8], c);  // access 3
+```
+
+Here we normally check all 3 access for being valid and safely wrap it in a `if` statement so the application will not crash. With `unsafe mode` we will only check the first access to `imageArray[8]` because it is valid, it will save the exponential cost of compiling to check the rest.
+
+The goal with `unsafe mode` is to help people get going with GPU-AV by making it faster, If they are still finding a crash with `unsafe mode`, it hopefully can be isolated so they can then turn off `unsafe mode` to do the full validaition without crashing. A future extension will hopefully provide another mechanism to stop the shader upon the first invalid access.

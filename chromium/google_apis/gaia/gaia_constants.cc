@@ -133,6 +133,10 @@ const char kDriveOAuth2Scope[] = "https://www.googleapis.com/auth/drive";
 const char kExperimentsAndConfigsOAuth2Scope[] =
     "https://www.googleapis.com/auth/experimentsandconfigs";
 
+// OAuth2 scope for access for DriveFS to use client-side notifications.
+const char kClientChannelOAuth2Scope[] =
+    "https://www.googleapis.com/auth/client_channel";
+
 // The scope required for an access token in order to query ItemSuggest.
 const char kDriveReadOnlyOAuth2Scope[] =
     "https://www.googleapis.com/auth/drive.readonly";
@@ -197,6 +201,10 @@ const char kPasskeysEnclaveOAuth2Scope[] =
 const char kCloudSearchQueryOAuth2Scope[] =
     "https://www.googleapis.com/auth/cloud_search.query";
 
+// OAuth2 scope for Discovery Engine suggestion API.
+const char kDiscoveryEngineCompleteQueryOAuth2Scope[] =
+    "https://www.googleapis.com/auth/discoveryengine.complete_query";
+
 // OAuth 2 scopes for Google Tasks API.
 const char kTasksReadOnlyOAuth2Scope[] =
     "https://www.googleapis.com/auth/tasks.readonly";
@@ -210,6 +218,8 @@ const char kClassroomReadOnlyCoursesOAuth2Scope[] =
     "https://www.googleapis.com/auth/classroom.courses.readonly";
 const char kClassroomReadOnlyCourseWorkSelfOAuth2Scope[] =
     "https://www.googleapis.com/auth/classroom.coursework.me.readonly";
+const char kClassroomReadOnlyCourseWorkStudentsOAuth2Scope[] =
+    "https://www.googleapis.com/auth/classroom.coursework.students.readonly";
 const char kClassroomReadOnlyStudentSubmissionsSelfOAuth2Scope[] =
     "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly";
 const char kClassroomReadOnlyRostersOAuth2Scope[] =

@@ -148,6 +148,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME, VK_KHR_VARIABLE_POINTERS_SPEC_VERSION},
     {VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION},
     {VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_SPEC_VERSION},
+    {VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME, VK_KHR_SHADER_BFLOAT16_SPEC_VERSION},
     {VK_KHR_RELAXED_BLOCK_LAYOUT_EXTENSION_NAME, VK_KHR_RELAXED_BLOCK_LAYOUT_SPEC_VERSION},
     {VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_SPEC_VERSION},
     {VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, VK_KHR_IMAGE_FORMAT_LIST_SPEC_VERSION},
@@ -365,7 +366,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_SPEC_VERSION},
     {VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME, VK_NV_DEVICE_DIAGNOSTICS_CONFIG_SPEC_VERSION},
     {VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME, VK_QCOM_RENDER_PASS_STORE_OPS_SPEC_VERSION},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {VK_NV_CUDA_KERNEL_LAUNCH_EXTENSION_NAME, VK_NV_CUDA_KERNEL_LAUNCH_SPEC_VERSION},
+#endif  // VK_ENABLE_BETA_EXTENSIONS
     {VK_NV_LOW_LATENCY_EXTENSION_NAME, VK_NV_LOW_LATENCY_SPEC_VERSION},
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {VK_EXT_METAL_OBJECTS_EXTENSION_NAME, VK_EXT_METAL_OBJECTS_SPEC_VERSION},
@@ -492,6 +495,10 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {VK_EXT_EXTERNAL_MEMORY_METAL_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_METAL_SPEC_VERSION},
 #endif  // VK_USE_PLATFORM_METAL_EXT
     {VK_EXT_VERTEX_ATTRIBUTE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_VERTEX_ATTRIBUTE_ROBUSTNESS_SPEC_VERSION},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    {VK_NV_PRESENT_METERING_EXTENSION_NAME, VK_NV_PRESENT_METERING_SPEC_VERSION},
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+    {VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME, VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION},
     {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION},
     {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_RAY_QUERY_SPEC_VERSION},
@@ -1699,6 +1706,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL SetPrivateDataEXT(VkDevice device, VkObjec
                                                         VkPrivateDataSlot privateDataSlot, uint64_t data);
 static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle,
                                                     VkPrivateDataSlot privateDataSlot, uint64_t* pData);
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 static VKAPI_ATTR VkResult VKAPI_CALL CreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                          const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule);
 static VKAPI_ATTR VkResult VKAPI_CALL GetCudaModuleCacheNV(VkDevice device, VkCudaModuleNV module, size_t* pCacheSize,
@@ -1710,6 +1718,7 @@ static VKAPI_ATTR void VKAPI_CALL DestroyCudaModuleNV(VkDevice device, VkCudaMod
 static VKAPI_ATTR void VKAPI_CALL DestroyCudaFunctionNV(VkDevice device, VkCudaFunctionNV function,
                                                         const VkAllocationCallbacks* pAllocator);
 static VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, const VkCudaLaunchInfoNV* pLaunchInfo);
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo);
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -2024,6 +2033,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL
 GetMemoryMetalHandlePropertiesEXT(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, const void* pHandle,
                                   VkMemoryMetalHandlePropertiesEXT* pMemoryMetalHandleProperties);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuffer,
+                                                      const VkRenderingEndInfoEXT* pRenderingEndInfo);
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                                      const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                                      const VkAllocationCallbacks* pAllocator,
@@ -2695,12 +2706,14 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkDestroyPrivateDataSlotEXT", (void*)DestroyPrivateDataSlotEXT},
     {"vkSetPrivateDataEXT", (void*)SetPrivateDataEXT},
     {"vkGetPrivateDataEXT", (void*)GetPrivateDataEXT},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCreateCudaModuleNV", (void*)CreateCudaModuleNV},
     {"vkGetCudaModuleCacheNV", (void*)GetCudaModuleCacheNV},
     {"vkCreateCudaFunctionNV", (void*)CreateCudaFunctionNV},
     {"vkDestroyCudaModuleNV", (void*)DestroyCudaModuleNV},
     {"vkDestroyCudaFunctionNV", (void*)DestroyCudaFunctionNV},
     {"vkCmdCudaLaunchKernelNV", (void*)CmdCudaLaunchKernelNV},
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"vkExportMetalObjectsEXT", (void*)ExportMetalObjectsEXT},
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -2857,6 +2870,7 @@ static const std::unordered_map<std::string, void*> name_to_func_ptr_map = {
     {"vkGetMemoryMetalHandleEXT", (void*)GetMemoryMetalHandleEXT},
     {"vkGetMemoryMetalHandlePropertiesEXT", (void*)GetMemoryMetalHandlePropertiesEXT},
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    {"vkCmdEndRendering2EXT", (void*)CmdEndRendering2EXT},
     {"vkCreateAccelerationStructureKHR", (void*)CreateAccelerationStructureKHR},
     {"vkDestroyAccelerationStructureKHR", (void*)DestroyAccelerationStructureKHR},
     {"vkCmdBuildAccelerationStructuresKHR", (void*)CmdBuildAccelerationStructuresKHR},
@@ -4988,6 +5002,7 @@ static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(VkDevice device, VkObjectTyp
     GetPrivateData(device, objectType, objectHandle, privateDataSlot, pData);
 }
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 static VKAPI_ATTR VkResult VKAPI_CALL CreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                          const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule) {
     unique_lock_t lock(global_lock);
@@ -5015,6 +5030,7 @@ static VKAPI_ATTR void VKAPI_CALL DestroyCudaFunctionNV(VkDevice device, VkCudaF
 
 static VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, const VkCudaLaunchInfoNV* pLaunchInfo) {}
 
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {}
 
@@ -5587,6 +5603,9 @@ GetMemoryMetalHandlePropertiesEXT(VkDevice device, VkExternalMemoryHandleTypeFla
 }
 
 #endif  // VK_USE_PLATFORM_METAL_EXT
+static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuffer,
+                                                      const VkRenderingEndInfoEXT* pRenderingEndInfo) {}
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                                      const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                                      const VkAllocationCallbacks* pAllocator,

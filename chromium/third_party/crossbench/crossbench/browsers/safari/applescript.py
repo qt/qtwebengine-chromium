@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing_extensions import override
+
 from crossbench.browsers.applescript import AppleScriptBrowser
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.safari.safari import Safari
@@ -17,6 +19,7 @@ class SafariAppleScript(Safari, AppleScriptBrowser):
   APPLE_SCRIPT_SET_URL: str = (
       "set URL of the current tab of front window to %(url)s")
 
+  @override
   def _setup_window(self) -> None:
     self._exec_apple_script(f"""
       tell application "System Events"
@@ -41,6 +44,7 @@ class SafariAppleScript(Safari, AppleScriptBrowser):
       self._exec_apple_script("set the bounds of the first window to {%s}" %
                               bounds)
 
+  @override
   def quit(self) -> None:
     super().quit()
     # Safari doesn't react to "quit" when using the full app path.
@@ -49,6 +53,7 @@ class SafariAppleScript(Safari, AppleScriptBrowser):
           quit
         end tell""")
 
-  @property
-  def attributes(self) -> BrowserAttributes:
+  @classmethod
+  @override
+  def attributes(cls) -> BrowserAttributes:
     return BrowserAttributes.SAFARI | BrowserAttributes.APPLESCRIPT

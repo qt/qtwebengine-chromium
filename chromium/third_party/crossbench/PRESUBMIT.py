@@ -22,7 +22,7 @@ def CheckChange(input_api, output_api, on_commit):
   testing_env["PYTHONPATH"] = input_api.os_path.pathsep.join(
       map(str, [root_path, crossbench_test_path]))
   # ---------------------------------------------------------------------------
-  modified_py_files: Optional[List[str]] = ModifiedFiles(input_api, on_commit)
+  modified_py_files: List[str] | None = ModifiedFiles(input_api, on_commit)
 
   # ---------------------------------------------------------------------------
   # Validate the vpython spec:
@@ -45,7 +45,7 @@ def CheckChange(input_api, output_api, on_commit):
       output_api,
       files_to_check=pylint_file_patterns_to_check,
       pylintrc=".pylintrc",
-      version="2.17")
+      version="3.2")
 
   # ---------------------------------------------------------------------------
   # MyPy:

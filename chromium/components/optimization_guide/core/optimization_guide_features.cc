@@ -179,7 +179,7 @@ BASE_FEATURE(kOnDeviceModelFetchPerformanceClassEveryStartup,
 // Enable the "Synapse" refreshed AI settings page.
 BASE_FEATURE(kAiSettingsPageRefresh,
              "AiSettingsPageRefresh",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 const base::FeatureParam<bool> kShowAiSettingsForTesting{
     &kAiSettingsPageRefresh, "show_ai_settings_for_testing", false};
@@ -196,6 +196,10 @@ BASE_FEATURE(kAiSettingsPageEnterpriseDisabledUi,
 BASE_FEATURE(kOnDeviceModelPerformanceParams,
              "OnDeviceModelPerformanceParams",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAnnotatedPageContentWithActionableElements,
+             "AnnotatedPageContentWithActionableElements",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 const base::FeatureParam<std::string> kPerformanceClassListForOnDeviceModel{
     &kOnDeviceModelPerformanceParams,
@@ -654,7 +658,7 @@ int GetOnDeviceModelMinTokensForContext() {
 int GetOnDeviceModelMaxTokensForContext() {
   static const base::FeatureParam<int> kOnDeviceModelMaxTokensForContext{
       &kOptimizationGuideOnDeviceModel,
-      "on_device_model_max_tokens_for_context", 4096};
+      "on_device_model_max_tokens_for_context", 8192};
   return kOnDeviceModelMaxTokensForContext.Get();
 }
 
@@ -841,6 +845,13 @@ std::vector<uint32_t> GetOnDeviceModelAllowedAdaptationRanks() {
     }
   }
   return ranks;
+}
+
+bool ForceCpuBackendForOnDeviceModel() {
+  static const base::FeatureParam<bool> kForceCpuBackend{
+      &kOptimizationGuideOnDeviceModel, "on_device_model_force_cpu_backend",
+      false};
+  return kForceCpuBackend.Get();
 }
 
 bool IsOnDeviceModelValidationEnabled() {

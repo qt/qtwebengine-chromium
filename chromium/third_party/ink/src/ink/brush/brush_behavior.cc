@@ -17,7 +17,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <optional>
 #include <string>
 #include <variant>
 
@@ -25,9 +24,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
-#include "absl/types/span.h"
 #include "ink/brush/easing_function.h"
-#include "ink/types/duration.h"
 
 namespace ink {
 
@@ -152,6 +149,17 @@ bool operator==(const BrushBehavior::TargetNode& lhs,
 
 bool operator!=(const BrushBehavior::TargetNode& lhs,
                 const BrushBehavior::TargetNode& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator==(const BrushBehavior::PolarTargetNode& lhs,
+                const BrushBehavior::PolarTargetNode& rhs) {
+  return lhs.target == rhs.target && lhs.angle_range == rhs.angle_range &&
+         lhs.magnitude_range == rhs.magnitude_range;
+}
+
+bool operator!=(const BrushBehavior::PolarTargetNode& lhs,
+                const BrushBehavior::PolarTargetNode& rhs) {
   return !(lhs == rhs);
 }
 
@@ -296,10 +304,22 @@ bool IsValidBehaviorTarget(BrushBehavior::Target target) {
     case BrushBehavior::Target::kPositionOffsetYInMultiplesOfBrushSize:
     case BrushBehavior::Target::kPositionOffsetForwardInMultiplesOfBrushSize:
     case BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize:
+    case BrushBehavior::Target::kTextureAnimationProgressOffset:
     case BrushBehavior::Target::kHueOffsetInRadians:
     case BrushBehavior::Target::kSaturationMultiplier:
     case BrushBehavior::Target::kLuminosity:
     case BrushBehavior::Target::kOpacityMultiplier:
+      return true;
+  }
+  return false;
+}
+
+bool IsValidBehaviorPolarTarget(BrushBehavior::PolarTarget target) {
+  switch (target) {
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize:
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize:
       return true;
   }
   return false;
@@ -371,15 +391,17 @@ int NodeInputCount(const BrushBehavior::ResponseNode& node) { return 1; }
 int NodeInputCount(const BrushBehavior::BinaryOpNode& node) { return 2; }
 int NodeInputCount(const BrushBehavior::InterpolationNode& node) { return 3; }
 int NodeInputCount(const BrushBehavior::TargetNode& node) { return 1; }
+int NodeInputCount(const BrushBehavior::PolarTargetNode& node) { return 2; }
 int NodeInputCount(const BrushBehavior::Node& node) {
   return std::visit([](const auto& node) { return NodeInputCount(node); },
                     node);
 }
 
-// Returns the number of output values that a given Node produces (0 for
-// `TargetNode`s, 1 for all other `Node`s).
+// Returns the number of output values that a given `Node` produces (0 for
+// terminal nodes, 1 for value nodes).
 int NodeOutputCount(const BrushBehavior::Node& node) {
-  if (std::holds_alternative<BrushBehavior::TargetNode>(node)) {
+  if (std::holds_alternative<BrushBehavior::TargetNode>(node) ||
+      std::holds_alternative<BrushBehavior::PolarTargetNode>(node)) {
     return 0;
   }
   return 1;
@@ -445,8 +467,8 @@ absl::Status ValidateNode(const BrushBehavior::FallbackFilterNode& node) {
 absl::Status ValidateNode(const BrushBehavior::ToolTypeFilterNode& node) {
   if (!node.enabled_tool_types.HasAnyTypes()) {
     return absl::InvalidArgumentError(
-        "`BrushBehavior::enabled_tool_types` must contain at least one true "
-        "value.");
+        "`BrushBehavior::enabled_tool_types` must enable at least one tool "
+        "type.");
   }
   return absl::OkStatus();
 }
@@ -503,18 +525,37 @@ absl::Status ValidateNode(const BrushBehavior::TargetNode& node) {
   return absl::OkStatus();
 }
 
+absl::Status ValidateNode(const BrushBehavior::PolarTargetNode& node) {
+  if (!IsValidBehaviorPolarTarget(node.target)) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "`PolarTargetNode::target` holds non-enumerator value %d",
+        static_cast<int>(node.target)));
+  }
+  if (!IsRangeValid(node.angle_range)) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("`PolarTargetNode::angle_range` must hold 2 finite and "
+                        "distinct values. Got {%f, %f}",
+                        node.angle_range[0], node.angle_range[1]));
+  }
+  if (!IsRangeValid(node.magnitude_range)) {
+    return absl::InvalidArgumentError(absl::StrFormat(
+        "`PolarTargetNode::magnitude_range` must hold 2 finite and "
+        "distinct values. Got {%f, %f}",
+        node.magnitude_range[0], node.magnitude_range[1]));
+  }
+  return absl::OkStatus();
+}
+
 }  // namespace
 
 absl::Status ValidateBrushBehaviorNode(const BrushBehavior::Node& node) {
   return std::visit([](const auto& node) { return ValidateNode(node); }, node);
 }
 
-absl::Status ValidateBrushBehavior(const BrushBehavior& behavior) {
+absl::Status ValidateBrushBehaviorTopLevel(const BrushBehavior& behavior) {
   int stack_depth = 0;
   for (size_t i = 0; i < behavior.nodes.size(); ++i) {
     const BrushBehavior::Node& node = behavior.nodes[i];
-    absl::Status status = ValidateBrushBehaviorNode(node);
-    if (!status.ok()) return status;
     int input_count = NodeInputCount(node);
     if (stack_depth < input_count) {
       return absl::InvalidArgumentError(
@@ -530,6 +571,20 @@ absl::Status ValidateBrushBehavior(const BrushBehavior& behavior) {
         absl::StrCat("A `BrushBehavior::Node` list must consume all generated "
                      "values, but there were ",
                      stack_depth, " values remaining."));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status ValidateBrushBehavior(const BrushBehavior& behavior) {
+  for (size_t i = 0; i < behavior.nodes.size(); ++i) {
+    if (absl::Status status = ValidateBrushBehaviorNode(behavior.nodes[i]);
+        !status.ok()) {
+      return status;
+    }
+  }
+  if (absl::Status status = ValidateBrushBehaviorTopLevel(behavior);
+      !status.ok()) {
+    return status;
   }
   return absl::OkStatus();
 }
@@ -650,6 +705,8 @@ std::string ToFormattedString(BrushBehavior::Target target) {
       return "kPositionOffsetForwardInMultiplesOfBrushSize";
     case BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize:
       return "kPositionOffsetLateralInMultiplesOfBrushSize";
+    case BrushBehavior::Target::kTextureAnimationProgressOffset:
+      return "kTextureAnimationProgressOffset";
     case BrushBehavior::Target::kHueOffsetInRadians:
       return "kHueOffsetInRadians";
     case BrushBehavior::Target::kSaturationMultiplier:
@@ -660,6 +717,18 @@ std::string ToFormattedString(BrushBehavior::Target target) {
       return "kOpacityMultiplier";
   }
   return absl::StrCat("Target(", static_cast<int>(target), ")");
+}
+
+std::string ToFormattedString(BrushBehavior::PolarTarget target) {
+  switch (target) {
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize:
+      return "kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize";
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize:
+      return "kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize";
+  }
+  return absl::StrCat("PolarTarget(", static_cast<int>(target), ")");
 }
 
 std::string ToFormattedString(BrushBehavior::OutOfRange out_of_range) {
@@ -799,6 +868,13 @@ std::string ToFormattedString(const BrushBehavior::TargetNode& node) {
   return absl::StrCat(
       "TargetNode{target=", node.target, ", target_modifier_range={",
       node.target_modifier_range[0], ", ", node.target_modifier_range[1], "}}");
+}
+
+std::string ToFormattedString(const BrushBehavior::PolarTargetNode& node) {
+  return absl::StrCat("PolarTargetNode{target=", node.target, ", angle_range={",
+                      node.angle_range[0], ", ", node.angle_range[1],
+                      "}, magnitude_range={", node.magnitude_range[0], ", ",
+                      node.magnitude_range[1], "}}");
 }
 
 }  // namespace

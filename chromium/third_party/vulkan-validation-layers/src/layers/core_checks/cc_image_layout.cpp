@@ -248,7 +248,7 @@ bool CoreChecks::ValidateCmdBufImageLayouts(const Location &loc, const vvl::Comm
                 const bool matches = ImageLayoutMatches(aspect_mask, image_layout, initial_layout);
                 if (!matches) {
                     // We can report all the errors for the intersected range directly
-                    for (auto index : sparse_container::range_view<decltype(intersected_range)>(intersected_range)) {
+                    for (auto index : vvl::range_view<decltype(intersected_range)>(intersected_range)) {
                         const auto subresource = image_state->subresource_encoder.Decode(index);
                         const LogObjectList objlist(cb_state.Handle(), image_state->Handle());
                         // TODO - We need a way to map the action command to which caused this error
@@ -421,7 +421,7 @@ bool CoreChecks::ValidateRenderPassLayoutAgainstFramebufferImageUsage(VkImageLay
                !(image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
         vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2-initialLayout-03096" : "VUID-vkCmdBeginRenderPass-initialLayout-01758";
         skip = true;
-    } else if (layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ && !IsShaderTileImageUsageValid(image_usage)) {
+    } else if (layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ && !IsDynamicRenderingImageUsageValid(image_usage)) {
         vuid = use_rp2 ? "VUID-vkCmdBeginRenderPass2-initialLayout-09538" : "VUID-vkCmdBeginRenderPass-initialLayout-09537";
         skip = true;
     } else if ((IsImageLayoutDepthOnly(layout) || IsImageLayoutStencilOnly(layout)) &&
@@ -830,62 +830,139 @@ bool CoreChecks::VerifyClearImageLayout(const vvl::CommandBuffer &cb_state, cons
     return skip;
 }
 
-bool CoreChecks::UpdateCommandBufferImageLayoutMap(const vvl::CommandBuffer &cb_state, const Location &image_loc,
-                                                   const ImageBarrier &img_barrier, const vvl::CommandBuffer::ImageLayoutMap &current_map,
-                                                   vvl::CommandBuffer::ImageLayoutMap &layout_updates) const {
+bool CoreChecks::VerifyImageBarrierLayouts(const vvl::CommandBuffer &cb_state, const vvl::Image &image_state,
+                                           const Location &image_loc, const ImageBarrier &image_barrier,
+                                           vvl::CommandBuffer::ImageLayoutMap &local_layout_map) const {
     bool skip = false;
-    auto image_state = Get<vvl::Image>(img_barrier.image);
-    ASSERT_AND_RETURN_SKIP(image_state);
+
+    const vvl::CommandBuffer::ImageLayoutMap &cb_layout_map = cb_state.GetImageLayoutMap();
 
     std::shared_ptr<ImageLayoutRegistry> image_layout_registry;
-    auto iter = layout_updates.find(image_state->VkHandle());
+    auto iter = local_layout_map.find(image_state.VkHandle());
     bool new_write = false;
-    if (iter == layout_updates.end()) {
-        image_layout_registry = std::make_shared<ImageLayoutRegistry>(*image_state);
+    if (iter == local_layout_map.end()) {
+        image_layout_registry = std::make_shared<ImageLayoutRegistry>(image_state);
         new_write = true;
-        layout_updates.emplace(image_state->VkHandle(), image_layout_registry);
-    } else if (iter->second->GetImageId() != image_state->GetId()) {
-        image_layout_registry = std::make_shared<ImageLayoutRegistry>(*image_state);
+        local_layout_map.emplace(image_state.VkHandle(), image_layout_registry);
+    } else if (iter->second->GetImageId() != image_state.GetId()) {
+        image_layout_registry = std::make_shared<ImageLayoutRegistry>(image_state);
         iter->second = image_layout_registry;
         new_write = true;
     } else {
         image_layout_registry = iter->second;
     }
-    const auto &current_subresource_map = current_map.find(image_state->VkHandle());
+    const auto &current_subresource_map = cb_layout_map.find(image_state.VkHandle());
     const auto read_subresource_map =
-        (new_write && current_subresource_map != current_map.end()) ? current_subresource_map->second : image_layout_registry;
+        (new_write && current_subresource_map != cb_layout_map.end()) ? current_subresource_map->second : image_layout_registry;
     // Validate aspects in isolation.
     // This is required when handling separate depth-stencil layouts.
     for (uint32_t aspect_index = 0; aspect_index < 32; aspect_index++) {
         VkImageAspectFlags test_aspect = 1u << aspect_index;
-        if ((img_barrier.subresourceRange.aspectMask & test_aspect) == 0) {
+        if ((image_barrier.subresourceRange.aspectMask & test_aspect) == 0) {
             continue;
         }
-        auto old_layout = NormalizeSynchronization2Layout(img_barrier.subresourceRange.aspectMask, img_barrier.oldLayout);
+        auto old_layout = NormalizeSynchronization2Layout(image_barrier.subresourceRange.aspectMask, image_barrier.oldLayout);
 
         LayoutUseCheckAndMessage layout_check(old_layout, test_aspect);
-        auto normalized_isr = image_state->NormalizeSubresourceRange(img_barrier.subresourceRange);
+        auto normalized_isr = image_state.NormalizeSubresourceRange(image_barrier.subresourceRange);
         normalized_isr.aspectMask = test_aspect;
         skip |=
             read_subresource_map->AnyInRange(normalized_isr, [this, read_subresource_map, &cb_state, &layout_check, &image_loc,
-                                                              &img_barrier](const LayoutRange &range, const LayoutEntry &state) {
+                                                              &image_barrier](const LayoutRange &range, const LayoutEntry &state) {
                 bool subres_skip = false;
                 if (!layout_check.Check(state)) {
                     const auto &vuid = GetImageBarrierVUID(image_loc, sync_vuid_maps::ImageError::kConflictingLayout);
                     auto subres = read_subresource_map->Decode(range.begin);
-                    const LogObjectList objlist(cb_state.Handle(), img_barrier.image);
+                    const LogObjectList objlist(cb_state.Handle(), image_barrier.image);
                     subres_skip =
                         LogError(vuid, objlist, image_loc,
                                  "(%s) cannot transition the layout of aspect=%" PRIu32 ", level=%" PRIu32 ", layer=%" PRIu32
                                  " from %s when the "
                                  "%s layout is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), subres.aspectMask, subres.mipLevel, subres.arrayLayer,
-                                 string_VkImageLayout(img_barrier.oldLayout), layout_check.message,
+                                 FormatHandle(image_barrier.image).c_str(), subres.aspectMask, subres.mipLevel, subres.arrayLayer,
+                                 string_VkImageLayout(image_barrier.oldLayout), layout_check.message,
                                  string_VkImageLayout(layout_check.layout));
                 }
                 return subres_skip;
             });
-        image_layout_registry->SetSubresourceRangeLayout(cb_state, normalized_isr, img_barrier.newLayout);
+
+        // This updates only local layout map. This is a validation phase and it's not possible to modify command buffer
+        // layout map. Use common technique that introduces local helper object that can be modified (local_layout_map).
+        image_layout_registry->SetSubresourceRangeLayout(cb_state, normalized_isr, image_barrier.newLayout);
+    }
+    return skip;
+}
+
+static std::vector<uint32_t> GetUsedAttachments(const vvl::CommandBuffer &cb_state) {
+    vvl::unordered_set<uint32_t> unique;
+
+    for (size_t i = 0; i < cb_state.rendering_attachments.color_locations.size(); ++i) {
+        const uint32_t unmapped_color_attachment = cb_state.rendering_attachments.color_locations[i];
+        if (unmapped_color_attachment != VK_ATTACHMENT_UNUSED) {
+            unique.insert(unmapped_color_attachment);
+        }
+    }
+
+    for (size_t i = 0; i < cb_state.rendering_attachments.color_indexes.size(); ++i) {
+        const uint32_t unmapped_color_index = cb_state.rendering_attachments.color_indexes[i];
+        if (unmapped_color_index != VK_ATTACHMENT_UNUSED) {
+            unique.insert(unmapped_color_index);
+        }
+    }
+
+    if (cb_state.rendering_attachments.depth_index) {
+        unique.insert(*cb_state.rendering_attachments.depth_index);
+    }
+    if (cb_state.rendering_attachments.stencil_index) {
+        unique.insert(*cb_state.rendering_attachments.stencil_index);
+    }
+
+    std::vector<uint32_t> attachments;
+    for (auto x : unique) {
+        attachments.push_back(x);
+    }
+    return attachments;
+}
+
+bool CoreChecks::VerifyDynamicRenderingImageBarrierLayouts(const vvl::CommandBuffer &cb_state, const vvl::Image &image_state,
+                                                           const VkRenderingInfo &rendering_info,
+                                                           const Location &barrier_loc) const {
+    bool skip = false;
+    std::vector<uint32_t> used_attachments(GetUsedAttachments(cb_state));
+
+    const vvl::CommandBuffer::ImageLayoutMap &cb_layout_map = cb_state.GetImageLayoutMap();
+    auto it = cb_layout_map.find(image_state.VkHandle());
+    if (it == cb_layout_map.end()) {
+        return skip;
+    }
+    ImageLayoutRegistry &cb_image_layouts = *it->second;
+
+    for (auto color_attachment_idx : used_attachments) {
+        if (color_attachment_idx >= rendering_info.colorAttachmentCount) {
+            continue;
+        }
+        const auto &color_attachment = rendering_info.pColorAttachments[color_attachment_idx];
+        if (color_attachment.imageView == VK_NULL_HANDLE) {
+            continue;
+        }
+        const auto image_view_state = Get<vvl::ImageView>(color_attachment.imageView);
+        ASSERT_AND_CONTINUE(image_view_state);
+
+        if (image_state.VkHandle() == image_view_state->image_state->VkHandle()) {
+            skip |= cb_image_layouts.AnyInRange(
+                image_view_state->normalized_subresource_range,
+                [this, &image_state, &barrier_loc](const LayoutRange &range, const LayoutEntry &state) {
+                    bool local_skip = false;
+                    if (state.current_layout != VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ &&
+                        state.current_layout != VK_IMAGE_LAYOUT_GENERAL) {
+                        const auto &vuid = sync_vuid_maps::GetDynamicRenderingBarrierVUID(
+                            barrier_loc, sync_vuid_maps::DynamicRenderingBarrierError::kImageLayout);
+                        local_skip |= LogError(vuid, image_state.VkHandle(), barrier_loc, "image layout is %s.",
+                                               string_VkImageLayout(state.current_layout));
+                    }
+                    return local_skip;
+                });
+        }
     }
     return skip;
 }

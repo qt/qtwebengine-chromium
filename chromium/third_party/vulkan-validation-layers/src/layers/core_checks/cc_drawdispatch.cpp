@@ -19,6 +19,7 @@
 
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "core_validation.h"
+#include "generated/vk_extension_helper.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/shader_object_state.h"
 #include "state_tracker/descriptor_sets.h"
@@ -33,8 +34,9 @@ bool CoreChecks::ValidateGraphicsIndexedCmd(const vvl::CommandBuffer &cb_state, 
     const DrawDispatchVuid &vuid = GetDrawDispatchVuid(loc.function);
     const auto buffer_state = Get<vvl::Buffer>(cb_state.index_buffer_binding.buffer);
     if (!buffer_state && !enabled_features.maintenance6 && !enabled_features.nullDescriptor) {
-        skip |= LogError(vuid.index_binding_07312, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
-                         "Index buffer object has not been bound to this command buffer.");
+        skip |=
+            LogError(vuid.index_binding_07312, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                     "no vkCmdBindIndexBuffer call has bound an index buffer to this command buffer prior to this indexed draw.");
     }
     return skip;
 }
@@ -57,40 +59,45 @@ bool CoreChecks::ValidateCmdDrawInstance(const vvl::CommandBuffer &cb_state, uin
                          phys_dev_props_core11.maxMultiviewInstanceIndex, instanceCount, firstInstance);
     }
 
-    if (pipeline_state && pipeline_state->GraphicsCreateInfo().pVertexInputState) {
-        const auto *vertex_input_divisor_state = vku::FindStructInPNextChain<VkPipelineVertexInputDivisorStateCreateInfo>(
-            pipeline_state->GraphicsCreateInfo().pVertexInputState->pNext);
-        if (vertex_input_divisor_state && phys_dev_props_core14.supportsNonZeroFirstInstance == VK_FALSE && firstInstance != 0u) {
-            for (uint32_t i = 0; i < vertex_input_divisor_state->vertexBindingDivisorCount; ++i) {
-                if (vertex_input_divisor_state->pVertexBindingDivisors[i].divisor != 1u) {
-                    const LogObjectList objlist(cb_state.Handle(), pipeline_state->Handle());
-                    skip |= LogError(vuid.vertex_input_09461, objlist, loc,
-                                     "VkPipelineVertexInputDivisorStateCreateInfo::pVertexBindingDivisors[%" PRIu32
-                                     "].divisor is %" PRIu32 " and firstInstance is %" PRIu32
-                                     ", but supportsNonZeroFirstInstance is VK_FALSE.",
-                                     i, vertex_input_divisor_state->pVertexBindingDivisors[i].divisor, firstInstance);
-                    break;  // only report first instance of the error
+    // supportsNonZeroFirstInstance was added from the EXT to KHR (not 1.4) version of VK_KHR_vertex_attribute_divisor
+    // If not using the KHR or 1.4 version, we don't check for these VUs
+    if (IsExtEnabled(extensions.vk_khr_vertex_attribute_divisor)) {
+        if (pipeline_state && pipeline_state->GraphicsCreateInfo().pVertexInputState) {
+            const auto *vertex_input_divisor_state = vku::FindStructInPNextChain<VkPipelineVertexInputDivisorStateCreateInfo>(
+                pipeline_state->GraphicsCreateInfo().pVertexInputState->pNext);
+            if (vertex_input_divisor_state && phys_dev_props_core14.supportsNonZeroFirstInstance == VK_FALSE &&
+                firstInstance != 0u) {
+                for (uint32_t i = 0; i < vertex_input_divisor_state->vertexBindingDivisorCount; ++i) {
+                    if (vertex_input_divisor_state->pVertexBindingDivisors[i].divisor != 1u) {
+                        const LogObjectList objlist(cb_state.Handle(), pipeline_state->Handle());
+                        skip |= LogError(vuid.vertex_input_09461, objlist, loc,
+                                         "VkPipelineVertexInputDivisorStateCreateInfo::pVertexBindingDivisors[%" PRIu32
+                                         "].divisor is %" PRIu32 " and firstInstance is %" PRIu32
+                                         ", but supportsNonZeroFirstInstance is VK_FALSE.",
+                                         i, vertex_input_divisor_state->pVertexBindingDivisors[i].divisor, firstInstance);
+                        break;  // only report first instance of the error
+                    }
                 }
             }
         }
-    }
 
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
-            phys_dev_props_core14.supportsNonZeroFirstInstance == VK_FALSE && firstInstance != 0u) {
-            for (const auto &binding_state : cb_state.dynamic_state_value.vertex_bindings) {
-                const auto &desc = binding_state.second.desc;
-                if (desc.divisor != 1u) {
-                    LogObjectList objlist(cb_state.Handle());
-                    if (pipeline_state) {
-                        objlist.add(pipeline_state->Handle());
+        if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
+            if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
+                phys_dev_props_core14.supportsNonZeroFirstInstance == VK_FALSE && firstInstance != 0u) {
+                for (const auto &binding_state : cb_state.dynamic_state_value.vertex_bindings) {
+                    const auto &desc = binding_state.second.desc;
+                    if (desc.divisor != 1u) {
+                        LogObjectList objlist(cb_state.Handle());
+                        if (pipeline_state) {
+                            objlist.add(pipeline_state->Handle());
+                        }
+                        skip |= LogError(vuid.vertex_input_09462, objlist, loc,
+                                         "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "] (binding %" PRIu32
+                                         ") divisor as %" PRIu32 ", but firstInstance is %" PRIu32
+                                         " and supportsNonZeroFirstInstance is VK_FALSE.",
+                                         binding_state.second.index, desc.binding, desc.divisor, firstInstance);
+                        break;
                     }
-                    skip |= LogError(vuid.vertex_input_09462, objlist, loc,
-                                     "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "] (binding %" PRIu32
-                                     ") divisor as %" PRIu32 ", but firstInstance is %" PRIu32
-                                     " and supportsNonZeroFirstInstance is VK_FALSE.",
-                                     binding_state.second.index, desc.binding, desc.divisor, firstInstance);
-                    break;
                 }
             }
         }
@@ -267,17 +274,24 @@ bool CoreChecks::PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBu
     skip |= ValidateActionState(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS, error_obj.location);
     skip |= ValidateVTGShaderStages(cb_state, error_obj.location);
 
+    bool invalid_stride = false;
     if (drawCount > 1) {
-        skip |= ValidateCmdDrawStrideWithStruct(cb_state, "VUID-vkCmdDrawMultiIndexedEXT-drawCount-09629", stride,
-                                                Struct::VkMultiDrawIndexedInfoEXT, sizeof(VkMultiDrawIndexedInfoEXT),
-                                                error_obj.location);
+        invalid_stride = ValidateCmdDrawStrideWithStruct(cb_state, "VUID-vkCmdDrawMultiIndexedEXT-drawCount-09629", stride,
+                                                         Struct::VkMultiDrawIndexedInfoEXT, sizeof(VkMultiDrawIndexedInfoEXT),
+                                                         error_obj.location);
     }
+    skip |= invalid_stride;
 
     // only index into pIndexInfo if we know parameters are sane
     if (drawCount != 0 && !pIndexInfo) {
         skip |= LogError("VUID-vkCmdDrawMultiIndexedEXT-drawCount-04940", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
                          error_obj.location.dot(Field::drawCount), "is %" PRIu32 " but pIndexInfo is NULL.", drawCount);
     } else {
+        // Continuing on from this point invokes undefined behavior due to invalid stride size.
+        if (invalid_stride) {
+            return skip;
+        }
+
         const auto info_bytes = reinterpret_cast<const char *>(pIndexInfo);
         for (uint32_t i = 0; i < drawCount; i++) {
             const auto info_ptr = reinterpret_cast<const VkMultiDrawIndexedInfoEXT *>(info_bytes + i * stride);
@@ -901,6 +915,13 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const vvl::Command
                                                             : "VUID-vkCmdTraceRaysKHR-pRayGenShaderBindingTable-03680";
         const char *vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pRayGenShaderBindingTable-03681"
                                                           : "VUID-vkCmdTraceRaysKHR-pRayGenShaderBindingTable-03681";
+        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9368
+        // TODO - waiting for https://gitlab.khronos.org/vulkan/vulkan/-/issues/4173
+        if (const auto buffers = GetBuffersByAddress(pRaygenShaderBindingTable->deviceAddress); buffers.empty()) {
+            skip |= LogError("UNASSIGNED-TraceRays-InvalidRayGenSBTAddress", cb_state.Handle(), table_loc.dot(Field::deviceAddress),
+                             "(0x%" PRIx64 ") does not belong to a valid VkBuffer.",
+                             pRaygenShaderBindingTable->deviceAddress);
+        }
         skip |= ValidateRaytracingShaderBindingTable(cb_state.VkHandle(), table_loc, vuid_single_device_memory,
                                                      vuid_binding_table_flag, *pRaygenShaderBindingTable);
     }
@@ -1263,6 +1284,10 @@ bool CoreChecks::ValidateActionState(const vvl::CommandBuffer &cb_state, const V
         skip |= ValidateDrawProtectedMemory(last_bound_state, vuid);
         skip |= ValidateDrawDualSourceBlend(last_bound_state, vuid);
 
+        if (cb_state.active_render_pass && cb_state.active_render_pass->UsesDynamicRendering()) {
+            skip |= ValidateDrawDynamicRenderingFsOutputs(last_bound_state, pipeline, *cb_state.active_render_pass, loc);
+        }
+
         if (pipeline) {
             skip |= ValidateDrawPipeline(last_bound_state, *pipeline, vuid);
         } else {
@@ -1398,7 +1423,7 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
                 const bool need_validate =
                     NeedDrawStateValidated(cb_state, descriptor_set, ds_slot, disabled[image_layout_validation]);
                 if (need_validate) {
-                    skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid.loc(), vuid);
+                    skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid, pipeline.Handle());
                 }
             }
         }
@@ -1450,7 +1475,8 @@ bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound &las
                     const bool need_validate =
                         NeedDrawStateValidated(cb_state, descriptor_set, ds_slot, disabled[image_layout_validation]);
                     if (need_validate) {
-                        skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid.loc(), vuid);
+                        skip |=
+                            ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid, shader_state->Handle());
                     }
                 }
             }

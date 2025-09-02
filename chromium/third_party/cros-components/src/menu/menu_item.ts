@@ -153,6 +153,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     shortcutText: {type: String},
     typeaheadText: {type: String, attribute: 'typeahead-text'},
     selected: {type: Boolean},
+    switchSelected: {type: Boolean},
     type: {type: String},
   };
 
@@ -301,6 +302,7 @@ export class MenuItem extends LitElement implements MenuItemType {
   /**
    * The text that is selectable via typeahead. If not set, defaults to the
    * `headline` property.
+   * @export
    */
   get typeaheadText() {
     const item = this.renderRoot?.querySelector('md-menu-item');
@@ -310,6 +312,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     return this.missedPropertySets.typeaheadText ?? '';
   }
 
+  /** @export */
   set typeaheadText(text: string) {
     const item = this.renderRoot?.querySelector('md-menu-item');
     if (!item) {
@@ -321,6 +324,7 @@ export class MenuItem extends LitElement implements MenuItemType {
 
   /**
    * Whether or not to display the menu item in the selected visual state.
+   * @export
    */
   get selected() {
     const item = this.renderRoot?.querySelector('md-menu-item');
@@ -330,6 +334,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     return this.missedPropertySets.selected ?? false;
   }
 
+  /** @export */
   set selected(selected: boolean) {
     const item = this.renderRoot?.querySelector('md-menu-item');
     if (!item) {
@@ -339,6 +344,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     }
   }
 
+  /** @export */
   get switchSelected() {
     const crosSwitch = this.renderRoot?.querySelector('cros-switch');
     if (crosSwitch) {
@@ -347,6 +353,7 @@ export class MenuItem extends LitElement implements MenuItemType {
     return this.missedPropertySets.switchSelected ?? false;
   }
 
+  /** @export */
   set switchSelected(value: boolean) {
     const crosSwitch = this.renderRoot?.querySelector('cros-switch');
     if (!crosSwitch) {

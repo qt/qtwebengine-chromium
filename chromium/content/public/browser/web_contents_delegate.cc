@@ -109,6 +109,12 @@ bool WebContentsDelegate::HandleContextMenu(RenderFrameHost& render_frame_host,
   return false;
 }
 
+bool WebContentsDelegate::PreHandleMouseEvent(
+    WebContents* source,
+    const blink::WebMouseEvent& event) {
+  return false;
+}
+
 KeyboardEventProcessingResult WebContentsDelegate::PreHandleKeyboardEvent(
     WebContents* source,
     const input::NativeWebKeyboardEvent& event) {
@@ -470,5 +476,10 @@ WebContentsDelegate::GetBackForwardTransitionFallbackUXConfig() {
   return BackForwardTransitionAnimationManager::FallbackUXConfig();
 }
 #endif  // BUILDFLAG(IS_ANDROID)
+
+std::vector<blink::mojom::RelatedApplicationPtr>
+WebContentsDelegate::GetSavedRelatedApplications(WebContents* web_contents) {
+  return {};
+}
 
 }  // namespace content

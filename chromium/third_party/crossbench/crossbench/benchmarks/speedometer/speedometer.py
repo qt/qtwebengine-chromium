@@ -11,6 +11,8 @@ import logging
 from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
                     Tuple, Type)
 
+from typing_extensions import override
+
 from crossbench.benchmarks.base import (PressBenchmark,
                                         PressBenchmarkStoryFilter)
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
@@ -47,9 +49,11 @@ class SpeedometerProbe(
   SCORE_METRIC_KEY: Final[str] = "Score"
 
   @abc.abstractmethod
+  @override
   def get_context_cls(self) -> Type[SpeedometerProbeContext]:
     pass
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         repetitions_group.results[self].json
@@ -69,13 +73,16 @@ class SpeedometerProbe(
       total_score.append(iteration_score)
     return total_score
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
         self.merge_browsers_csv_list(group))
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_result(group.results, single_result=False)
 
@@ -98,6 +105,7 @@ class SpeedometerProbe(
       else:
         self._log_result_metrics(data)
 
+  @override
   def _extract_result_metrics_table(self, metrics: Dict[str, Any],
                                     table: Dict[str, List[str]]) -> None:
     for metric_key, metric in metrics.items():
@@ -114,11 +122,13 @@ class SpeedometerProbe(
 class SpeedometerProbeContext(JsonResultProbeContext):
   JS = "return JSON.stringify(window.suiteValues);"
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     # Use serialized json as transport format to preserve object key order.
     json_payload = actions.js(self.JS)
     return json.loads(json_payload)
 
+  @override
   def flatten_json_data(self, json_data: Any) -> Json:
     # json_data may contain multiple iterations, merge those first
     json_data = ObjectParser.non_empty_sequence(json_data,
@@ -136,7 +146,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
   def __init__(self,
                substories: Sequence[str] = (),
                iterations: Optional[int] = None,
-               url: Optional[str] = None):
+               url: Optional[str] = None) -> None:
     self._iterations: int = NumberParser.positive_int(
         iterations or self.DEFAULT_ITERATIONS,
         "iteration count",
@@ -148,6 +158,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
     return self._iterations
 
   @property
+  @override
   def substory_duration(self) -> dt.timedelta:
     return self.iterations * self.single_substory_duration
 
@@ -156,6 +167,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
     return dt.timedelta(seconds=0.4)
 
   @property
+  @override
   def slow_duration(self) -> dt.timedelta:
     """Max duration that covers run-times on slow machines and/or
     debug-mode browsers.
@@ -172,6 +184,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
     return params
 
 
+  @override
   def setup(self, run: Run) -> None:
     updated_url = self.get_run_url(run)
     with run.actions("Setup") as actions:
@@ -181,6 +194,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
       self._setup_benchmark_client(actions)
       actions.wait(0.5)
 
+  @override
   def get_run_url(self, run: Run) -> str:
     url = super().get_run_url(run)
     url = url_helper.update_url_query(url, self.url_params)
@@ -246,6 +260,7 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
   __doc__ = PressBenchmarkStoryFilter.__doc__
 
   @classmethod
+  @override
   def add_cli_parser(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser = super().add_cli_parser(parser)
@@ -262,6 +277,7 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
     return parser
 
   @classmethod
+  @override
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["iterations"] = args.iterations
@@ -272,11 +288,12 @@ class SpeedometerBenchmarkStoryFilter(PressBenchmarkStoryFilter):
                patterns: Sequence[str],
                separate: bool = False,
                url: Optional[str] = None,
-               iterations: Optional[int] = None):
+               iterations: Optional[int] = None) -> None:
     self.iterations = iterations
     assert issubclass(story_cls, SpeedometerStory)
     super().__init__(story_cls, patterns, separate, url)
 
+  @override
   def create_stories_from_names(self, names: List[str],
                                 separate: bool) -> Sequence[SpeedometerStory]:
     return self.story_cls.from_names(
@@ -289,9 +306,11 @@ class SpeedometerBenchmark(PressBenchmark, metaclass=abc.ABCMeta):
   STORY_FILTER_CLS = SpeedometerBenchmarkStoryFilter
 
   @classmethod
+  @override
   def short_base_name(cls) -> str:
     return "sp"
 
   @classmethod
+  @override
   def base_name(cls) -> str:
     return "speedometer"

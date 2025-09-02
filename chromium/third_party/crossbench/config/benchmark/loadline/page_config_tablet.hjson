@@ -2,7 +2,7 @@
   pages: {
     amazon_product: [
       {action: "get", url: "https://www.amazon.co.uk/NIVEA-Suncream-Spray-Protect-Moisture/dp/B001B0OJXM"},
-      {action: "wait_for_element", selector: "input[id=sp-cc-accept]", timeout: "3s"},
+      {action: "wait_for_element", selector: "input[id=sp-cc-accept]", timeout: "10s"},
       {action: "click", selector: "input[id=sp-cc-accept]"},
       {action: "wait", duration: "3s"},
       {action: "get", url: "about:blank"},

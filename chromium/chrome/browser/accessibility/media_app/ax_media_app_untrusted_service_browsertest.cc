@@ -14,7 +14,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "chrome/browser/accessibility/accessibility_state_utils.h"
 #include "chrome/browser/accessibility/media_app/ax_media_app.h"
 #include "chrome/browser/accessibility/media_app/ax_media_app_service_factory.h"
 #include "chrome/browser/accessibility/media_app/test/fake_ax_media_app.h"
@@ -148,6 +147,9 @@ class AXMediaAppUntrustedServiceTest : public InProcessBrowserTest {
 
   FakeAXMediaApp fake_media_app_;
   std::unique_ptr<TestAXMediaAppUntrustedService> service_;
+
+ private:
+  std::optional<content::ScopedAccessibilityModeOverride> mode_override_;
 };
 
 std::vector<PageMetadataPtr>
@@ -179,37 +181,23 @@ AXMediaAppUntrustedServiceTest::ClonePageMetadataPtrs(
 }
 
 void AXMediaAppUntrustedServiceTest::EnableScreenReaderForTesting() {
-  accessibility_state_utils::OverrideIsScreenReaderEnabledForTesting(true);
-#if BUILDFLAG(IS_CHROMEOS_ASH)
   AccessibilityManager::Get()->EnableSpokenFeedback(true);
-#else
-  content::ScopedAccessibilityModeOverride scoped_mode(ui::kAXModeComplete);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  mode_override_.emplace(ui::kAXModeComplete);
 }
 
 void AXMediaAppUntrustedServiceTest::DisableScreenReaderForTesting() {
-  accessibility_state_utils::OverrideIsScreenReaderEnabledForTesting(false);
-#if BUILDFLAG(IS_CHROMEOS_ASH)
   AccessibilityManager::Get()->EnableSpokenFeedback(false);
-#else
-  content::ScopedAccessibilityModeOverride scoped_mode(ui::kNone);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  mode_override_.reset();
 }
 
 void AXMediaAppUntrustedServiceTest::EnableSelectToSpeakForTesting() {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
   AccessibilityManager::Get()->SetSelectToSpeakEnabled(true);
-#else
-  content::ScopedAccessibilityModeOverride scoped_mode(ui::kAXModeComplete);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  mode_override_.emplace(ui::kAXModeComplete);
 }
 
 void AXMediaAppUntrustedServiceTest::DisableSelectToSpeakForTesting() {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
   AccessibilityManager::Get()->SetSelectToSpeakEnabled(false);
-#else
-  content::ScopedAccessibilityModeOverride scoped_mode(ui::kAXModeComplete);
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  mode_override_.reset();
 }
 
 void AXMediaAppUntrustedServiceTest::WaitForOcringPages(
@@ -251,21 +239,22 @@ IN_PROC_BROWSER_TEST_F(AXMediaAppUntrustedServiceTest,
   EXPECT_TRUE(service_->IsAccessibilityEnabled());
   EXPECT_EQ(
       "AXTree has_parent_tree title=PDF document\n"
-      "id=10000 banner <div> child_ids=10001 offset_container_id=1 (-1, "
+      "id=1 pdfRoot child_ids=10000 (0, 0)-(0, 0)\n"
+      "  id=10000 banner <div> child_ids=10001 offset_container_id=1 (-1, "
       "-1)-(1, 1) text_align=left is_page_breaking_object=true "
       "is_line_breaking_object=true has_aria_attribute=true\n"
-      "  id=10001 status <div> child_ids=10002 offset_container_id=10000 (0, "
+      "    id=10001 status <div> child_ids=10002 offset_container_id=10000 (0, "
       "0)-(1, 1) text_align=left container_relevant=additions text "
       "container_live=polite relevant=additions text live=polite "
       "container_atomic=true container_busy=false atomic=true "
       "is_line_breaking_object=true has_aria_attribute=true\n"
-      "    id=10002 staticText name=This PDF is inaccessible. Couldn't "
+      "      id=10002 staticText name=This PDF is inaccessible. Couldn't "
       "download text extraction files. Please try again later. child_ids=10003 "
       "offset_container_id=10001 (0, 0)-(1, 1) text_align=left "
       "container_relevant=additions text container_live=polite "
       "relevant=additions text live=polite container_atomic=true "
       "container_busy=false atomic=true is_line_breaking_object=true\n"
-      "      id=10003 inlineTextBox name=This PDF is inaccessible. Couldn't "
+      "        id=10003 inlineTextBox name=This PDF is inaccessible. Couldn't "
       "download text extraction files. Please try again later. "
       "offset_container_id=10002 (0, 0)-(1, 1) text_align=left\n",
       service_->GetDocumentTreeToStringForTesting());
@@ -283,21 +272,22 @@ IN_PROC_BROWSER_TEST_F(AXMediaAppUntrustedServiceTest,
   EXPECT_TRUE(service_->IsAccessibilityEnabled());
   EXPECT_EQ(
       "AXTree has_parent_tree title=PDF document\n"
-      "id=10000 banner <div> child_ids=10001 offset_container_id=1 (-1, "
+      "id=1 pdfRoot child_ids=10000 (0, 0)-(0, 0)\n"
+      "  id=10000 banner <div> child_ids=10001 offset_container_id=1 (-1, "
       "-1)-(1, 1) text_align=left is_page_breaking_object=true "
       "is_line_breaking_object=true has_aria_attribute=true\n"
-      "  id=10001 status <div> child_ids=10002 offset_container_id=10000 (0, "
+      "    id=10001 status <div> child_ids=10002 offset_container_id=10000 (0, "
       "0)-(1, 1) text_align=left container_relevant=additions text "
       "container_live=polite relevant=additions text live=polite "
       "container_atomic=true container_busy=false atomic=true "
       "is_line_breaking_object=true has_aria_attribute=true\n"
-      "    id=10002 staticText name=This PDF is inaccessible. Couldn't "
+      "      id=10002 staticText name=This PDF is inaccessible. Couldn't "
       "download text extraction files. Please try again later. child_ids=10003 "
       "offset_container_id=10001 (0, 0)-(1, 1) text_align=left "
       "container_relevant=additions text container_live=polite "
       "relevant=additions text live=polite container_atomic=true "
       "container_busy=false atomic=true is_line_breaking_object=true\n"
-      "      id=10003 inlineTextBox name=This PDF is inaccessible. Couldn't "
+      "        id=10003 inlineTextBox name=This PDF is inaccessible. Couldn't "
       "download text extraction files. Please try again later. "
       "offset_container_id=10002 (0, 0)-(1, 1) text_align=left\n",
       service_->GetDocumentTreeToStringForTesting());

@@ -36,6 +36,7 @@
 #include "state_tracker/device_state.h"
 #include "state_tracker/sampler_state.h"
 #include "state_tracker/render_pass_state.h"
+#include "generated/dispatch_functions.h"
 
 using sync_utils::BufferBarrier;
 using sync_utils::ImageBarrier;
@@ -535,8 +536,8 @@ bool CoreChecks::PreCallValidateCreateFence(VkDevice device, const VkFenceCreate
         auto check_export_support = [&](VkExternalFenceHandleTypeFlagBits flag) {
             VkPhysicalDeviceExternalFenceInfo external_info = vku::InitStructHelper();
             external_info.handleType = flag;
-            instance_state->DispatchGetPhysicalDeviceExternalFencePropertiesHelper(physical_device, &external_info,
-                                                                                   &external_properties);
+            DispatchGetPhysicalDeviceExternalFencePropertiesHelper(api_version, physical_device, &external_info,
+                                                                   &external_properties);
             if ((external_properties.externalFenceFeatures & VK_EXTERNAL_FENCE_FEATURE_EXPORTABLE_BIT) == 0) {
                 export_supported = false;
                 skip |= LogError("VUID-VkExportFenceCreateInfo-handleTypes-01446", device,
@@ -588,8 +589,8 @@ bool CoreChecks::PreCallValidateCreateSemaphore(VkDevice device, const VkSemapho
         auto check_export_support = [&](VkExternalSemaphoreHandleTypeFlagBits flag) {
             VkPhysicalDeviceExternalSemaphoreInfo external_info = vku::InitStructHelper();
             external_info.handleType = flag;
-            instance_state->DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(physical_device, &external_info,
-                                                                                       &external_properties);
+            DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(api_version, physical_device, &external_info,
+                                                                       &external_properties);
             if ((external_properties.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) == 0) {
                 export_supported = false;
                 skip |= LogError("VUID-VkExportSemaphoreCreateInfo-handleTypes-01124", device,
@@ -880,13 +881,12 @@ bool CoreChecks::ValidateRenderPassPipelineStage(VkRenderPass render_pass, const
 
 // Validate VUs for Pipeline Barriers that are within a renderPass
 // Pre: cb_state->active_render_pass must be a pointer to valid renderPass state
-bool CoreChecks::ValidateRenderPassPipelineBarriers(const Location &outer_loc, const vvl::CommandBuffer &cb_state,
-                                                    VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
-                                                    VkDependencyFlags dependency_flags, uint32_t mem_barrier_count,
-                                                    const VkMemoryBarrier *mem_barriers, uint32_t buffer_mem_barrier_count,
-                                                    const VkBufferMemoryBarrier *buffer_mem_barriers,
-                                                    uint32_t image_mem_barrier_count,
-                                                    const VkImageMemoryBarrier *image_barriers) const {
+bool CoreChecks::ValidateRenderPassBarriers(const Location &outer_loc, const vvl::CommandBuffer &cb_state,
+                                            VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask,
+                                            VkDependencyFlags dependency_flags, uint32_t mem_barrier_count,
+                                            const VkMemoryBarrier *mem_barriers, uint32_t buffer_mem_barrier_count,
+                                            const VkBufferMemoryBarrier *buffer_mem_barriers, uint32_t image_mem_barrier_count,
+                                            const VkImageMemoryBarrier *image_barriers) const {
     bool skip = false;
     const vvl::RenderPass *rp_state = cb_state.active_render_pass.get();
     ASSERT_AND_RETURN_SKIP(rp_state);
@@ -943,8 +943,8 @@ bool CoreChecks::ValidateRenderPassPipelineBarriers(const Location &outer_loc, c
     return skip;
 }
 
-bool CoreChecks::ValidateRenderPassPipelineBarriers(const Location &outer_loc, const vvl::CommandBuffer &cb_state,
-                                                    const VkDependencyInfo &dep_info) const {
+bool CoreChecks::ValidateRenderPassBarriers(const Location &outer_loc, const vvl::CommandBuffer &cb_state,
+                                            const VkDependencyInfo &dep_info) const {
     bool skip = false;
     const vvl::RenderPass *rp_state = cb_state.active_render_pass.get();
     if (!rp_state || rp_state->UsesDynamicRendering()) {
@@ -1052,9 +1052,9 @@ bool CoreChecks::ValidateStageMasksAgainstQueueCapabilities(const LogObjectList 
 }
 
 bool CoreChecks::ValidatePipelineStageFeatureEnables(const LogObjectList &objlist, const Location &stage_mask_loc,
-                                                     VkPipelineStageFlags2KHR stage_mask) const {
+                                                     VkPipelineStageFlags2 stage_mask) const {
     bool skip = false;
-    if (!enabled_features.synchronization2 && stage_mask == 0) {
+    if (!enabled_features.synchronization2 && stage_mask == VK_PIPELINE_STAGE_2_NONE) {
         const auto &vuid = sync_vuid_maps::GetBadFeatureVUID(stage_mask_loc, 0, extensions);
         skip |= LogError(vuid, objlist, stage_mask_loc, "must not be 0 unless synchronization2 is enabled.");
     }
@@ -1065,12 +1065,19 @@ bool CoreChecks::ValidatePipelineStageFeatureEnables(const LogObjectList &objlis
         return skip;
     }
     for (size_t i = 0; i < sizeof(bad_bits) * 8; i++) {
-        VkPipelineStageFlags2KHR bit = 1ULL << i;
+        VkPipelineStageFlags2 bit = 1ULL << i;
         if (bit & bad_bits) {
             const auto &vuid = sync_vuid_maps::GetBadFeatureVUID(stage_mask_loc, bit, extensions);
-            skip |=
-                LogError(vuid, objlist, stage_mask_loc, "includes %s when the device does not have %s feature enabled.",
-                         sync_utils::StringPipelineStageFlags(bit).c_str(), sync_vuid_maps::GetFeatureNameMap().at(bit).c_str());
+            const auto &feature_names = sync_vuid_maps::GetFeatureNameMap();
+            auto feature_it = feature_names.find(bit);
+
+            // If hit this assert just ensure that features in DisabledPipelineStages() match features in GetFeatureNameMap()
+            assert(feature_it != feature_names.end());
+
+            const std::string feature_name = (feature_it != feature_names.end()) ? feature_it->second : "corresponding";
+
+            skip |= LogError(vuid, objlist, stage_mask_loc, "includes %s when the device does not have %s feature enabled.",
+                             sync_utils::StringPipelineStageFlags(bit).c_str(), feature_name.c_str());
         }
     }
     return skip;
@@ -1333,9 +1340,9 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier(
     skip |= ValidatePipelineStage(objlist, error_obj.location.dot(Field::dstStageMask), queue_flags, dstStageMask);
     skip |= ValidateCmd(*cb_state, error_obj.location);
     if (cb_state->active_render_pass && !cb_state->active_render_pass->UsesDynamicRendering()) {
-        skip |= ValidateRenderPassPipelineBarriers(error_obj.location, *cb_state, srcStageMask, dstStageMask, dependencyFlags,
-                                                   memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount,
-                                                   pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
+        skip |= ValidateRenderPassBarriers(error_obj.location, *cb_state, srcStageMask, dstStageMask, dependencyFlags,
+                                           memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount, pBufferMemoryBarriers,
+                                           imageMemoryBarrierCount, pImageMemoryBarriers);
         if (skip) return true;  // Early return to avoid redundant errors from below calls
     } else {
         if (dependencyFlags & VK_DEPENDENCY_VIEW_LOCAL_BIT) {
@@ -1345,10 +1352,9 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier(
         }
     }
     if (cb_state->active_render_pass && cb_state->active_render_pass->UsesDynamicRendering()) {
-        // In dynamic rendering, vkCmdPipelineBarrier is only allowed for VK_EXT_shader_tile_image
-        skip |= ValidateShaderTileImageBarriers(objlist, error_obj.location, dependencyFlags, memoryBarrierCount, pMemoryBarriers,
-                                                bufferMemoryBarrierCount, imageMemoryBarrierCount, pImageMemoryBarriers,
-                                                srcStageMask, dstStageMask);
+        skip |= ValidateDynamicRenderingBarriers(objlist, error_obj.location, dependencyFlags, memoryBarrierCount, pMemoryBarriers,
+                                                 bufferMemoryBarrierCount, imageMemoryBarrierCount, pImageMemoryBarriers,
+                                                 srcStageMask, dstStageMask);
     }
     skip |= ValidateBarriers(error_obj.location, *cb_state, srcStageMask, dstStageMask, memoryBarrierCount, pMemoryBarriers,
                              bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
@@ -1368,7 +1374,7 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffe
     }
     skip |= ValidateCmd(*cb_state, error_obj.location);
     if (cb_state->active_render_pass) {
-        skip |= ValidateRenderPassPipelineBarriers(dep_info_loc, *cb_state, *pDependencyInfo);
+        skip |= ValidateRenderPassBarriers(dep_info_loc, *cb_state, *pDependencyInfo);
         if (skip) return true;  // Early return to avoid redundant errors from below calls
     } else {
         if (pDependencyInfo->dependencyFlags & VK_DEPENDENCY_VIEW_LOCAL_BIT) {
@@ -1377,8 +1383,7 @@ bool CoreChecks::PreCallValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffe
         }
     }
     if (cb_state->active_render_pass && cb_state->active_render_pass->UsesDynamicRendering()) {
-        // In dynamic rendering, vkCmdPipelineBarrier2 is only allowed for  VK_EXT_shader_tile_image
-        skip |= ValidateShaderTileImageBarriers(objlist, dep_info_loc, *pDependencyInfo);
+        skip |= ValidateDynamicRenderingBarriers(objlist, dep_info_loc, *pDependencyInfo);
     }
     skip |= ValidateDependencyInfo(objlist, dep_info_loc, *cb_state, *pDependencyInfo);
     return skip;
@@ -1576,9 +1581,9 @@ bool CoreChecks::ValidateSubpassDependency(const ErrorObject &error_obj, const L
     return skip;
 }
 
-// Verify an ImageMemoryBarrier's old/new ImageLayouts are compatible with the Image's ImageUsageFlags.
-bool CoreChecks::ValidateBarrierLayoutToImageUsage(const Location &layout_loc, VkImage image, VkImageLayout layout,
-                                                   VkImageUsageFlags usage_flags) const {
+// Verify an image barrier's old/new layouts are compatible with the image's usage flags.
+bool CoreChecks::ValidateImageLayoutAgainstImageUsage(const Location &layout_loc, VkImage image, VkImageLayout layout,
+                                                      VkImageUsageFlags usage_flags) const {
     bool skip = false;
     bool is_error = false;
     switch (layout) {
@@ -1617,7 +1622,7 @@ bool CoreChecks::ValidateBarrierLayoutToImageUsage(const Location &layout_loc, V
             is_error |= ((usage_flags & VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) == 0);
             break;
         case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ:
-            is_error = !IsShaderTileImageUsageValid(usage_flags);
+            is_error = !IsDynamicRenderingImageUsageValid(usage_flags);
             break;
         case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
             is_error = ((usage_flags & VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR) == 0);
@@ -1654,197 +1659,142 @@ bool CoreChecks::ValidateBarrierLayoutToImageUsage(const Location &layout_loc, V
     return skip;
 }
 
-std::vector<uint32_t> GetUsedAttachments(const vvl::CommandBuffer &cb_state) {
-    std::set<uint32_t> unique;
-
-    for (size_t i = 0; i < cb_state.rendering_attachments.color_locations.size(); ++i) {
-        const uint32_t unmapped_color_attachment = cb_state.rendering_attachments.color_locations[i];
-        if (unmapped_color_attachment != VK_ATTACHMENT_UNUSED) {
-            unique.insert(unmapped_color_attachment);
-        }
-    }
-
-    for (size_t i = 0; i < cb_state.rendering_attachments.color_indexes.size(); ++i) {
-        const uint32_t unmapped_color_index = cb_state.rendering_attachments.color_indexes[i];
-        if (unmapped_color_index != VK_ATTACHMENT_UNUSED) {
-            unique.insert(unmapped_color_index);
-        }
-    }
-
-    if (cb_state.rendering_attachments.depth_index) {
-        unique.insert(*cb_state.rendering_attachments.depth_index);
-    }
-    if (cb_state.rendering_attachments.stencil_index) {
-        unique.insert(*cb_state.rendering_attachments.stencil_index);
-    }
-
-    std::vector<uint32_t> attachments;
-    for (auto x : unique) {
-        attachments.push_back(x);
-    }
-    return attachments;
-}
-
-// Verify image barriers are compatible with the images they reference.
-bool CoreChecks::ValidateBarriersToImages(const Location &barrier_loc, const vvl::CommandBuffer &cb_state,
-                                          const ImageBarrier &img_barrier,
-                                          vvl::CommandBuffer::ImageLayoutMap &layout_updates_state) const {
-    bool skip = false;
+// Verify image barrier is compatible with the image it references.
+bool CoreChecks::ValidateImageBarrierAgainstImage(const vvl::CommandBuffer &cb_state, const ImageBarrier &barrier,
+                                                  const Location &barrier_loc, const vvl::Image &image_state,
+                                                  vvl::CommandBuffer::ImageLayoutMap &layout_updates_state) const {
     using sync_vuid_maps::GetImageBarrierVUID;
     using sync_vuid_maps::ImageError;
 
-    const auto &current_map = cb_state.GetImageLayoutMap();
+    bool skip = false;
 
-    {
-        auto image_state = Get<vvl::Image>(img_barrier.image);
-        ASSERT_AND_RETURN_SKIP(image_state);
+    const VkImage image = image_state.VkHandle();
+    assert(image == barrier.image);
 
-        auto image_loc = barrier_loc.dot(Field::image);
+    const VkImageCreateInfo &image_ci = image_state.create_info;
+    const Location image_loc = barrier_loc.dot(Field::image);
+    const VkFormat image_format = image_ci.format;
+    const VkImageLayout old_layout = barrier.oldLayout;
+    const VkImageLayout new_layout = barrier.newLayout;
 
-        if ((img_barrier.srcQueueFamilyIndex != img_barrier.dstQueueFamilyIndex) ||
-            (img_barrier.oldLayout != img_barrier.newLayout)) {
-            VkImageUsageFlags usage_flags = image_state->create_info.usage;
-            skip |= ValidateBarrierLayoutToImageUsage(barrier_loc.dot(Field::oldLayout), img_barrier.image, img_barrier.oldLayout,
-                                                      usage_flags);
-            skip |= ValidateBarrierLayoutToImageUsage(barrier_loc.dot(Field::newLayout), img_barrier.image, img_barrier.newLayout,
-                                                      usage_flags);
-        }
+    const VkImageAspectFlags barrier_aspect_mask = barrier.subresourceRange.aspectMask;
+    const bool has_depth_aspect = (barrier_aspect_mask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
+    const bool has_stencil_aspect = (barrier_aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
 
-        // Make sure layout is able to be transitioned, currently only presented shared presentable images are locked
-        if (image_state->layout_locked) {
-            // TODO: waiting for VUID https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/5078
-            skip |= LogError("UNASSIGNED-barrier-shared-presentable", img_barrier.image, image_loc,
-                             "(%s) is a shared presentable and attempting to transition from layout %s to layout %s, but image has "
-                             "already been presented and cannot have its layout transitioned.",
-                             FormatHandle(img_barrier.image).c_str(), string_VkImageLayout(img_barrier.oldLayout),
-                             string_VkImageLayout(img_barrier.newLayout));
-        }
+    skip |= ValidateBarrierQueueFamilies(cb_state.Handle(), barrier_loc, image_loc, barrier, image_state.Handle(),
+                                         image_ci.sharingMode, cb_state.command_pool->queueFamilyIndex);
+    const auto &vuid_aspect = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kAspectMask);
+    skip |= ValidateImageAspectMask(image_state.VkHandle(), image_ci.format, barrier.subresourceRange.aspectMask,
+                                    image_state.disjoint, image_loc, vuid_aspect.c_str());
+    skip |= ValidateImageBarrierSubresourceRange(image_ci, barrier.subresourceRange, cb_state.Handle(),
+                                                 barrier_loc.dot(Field::subresourceRange));
 
-        const VkImageCreateInfo &image_create_info = image_state->create_info;
-        const VkFormat image_format = image_create_info.format;
-        const VkImageAspectFlags aspect_mask = img_barrier.subresourceRange.aspectMask;
-        const bool has_depth_mask = (aspect_mask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
-        const bool has_stencil_mask = (aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
+    if ((barrier.srcQueueFamilyIndex != barrier.dstQueueFamilyIndex) || (old_layout != new_layout)) {
+        const VkImageUsageFlags usage_flags = image_ci.usage;
+        skip |= ValidateImageLayoutAgainstImageUsage(barrier_loc.dot(Field::oldLayout), image, old_layout, usage_flags);
+        skip |= ValidateImageLayoutAgainstImageUsage(barrier_loc.dot(Field::newLayout), image, new_layout, usage_flags);
+    }
 
-        if (vkuFormatIsDepthAndStencil(image_format)) {
-            if (enabled_features.separateDepthStencilLayouts) {
-                if (!has_depth_mask && !has_stencil_mask) {
-                    auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotDepthOrStencilAspect);
-                    skip |=
-                        LogError(vuid, img_barrier.image, image_loc, "(%s) has depth/stencil format %s, but its aspectMask is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                                 string_VkImageAspectFlags(aspect_mask).c_str());
-                }
-            } else {
-                if (!has_depth_mask || !has_stencil_mask) {
-                    auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotDepthAndStencilAspect);
-                    skip |=
-                        LogError(vuid, img_barrier.image, image_loc, "(%s) has depth/stencil format %s, but its aspectMask is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                                 string_VkImageAspectFlags(aspect_mask).c_str());
-                }
+    // Make sure layout is able to be transitioned, currently only presented shared presentable images are locked
+    if (image_state.layout_locked) {
+        // TODO: waiting for VUID https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/5078
+        skip |= LogError("UNASSIGNED-barrier-shared-presentable", image, image_loc,
+                         "(%s) is a shared presentable and attempting to transition from layout %s to layout %s, but image has "
+                         "already been presented and cannot have its layout transitioned.",
+                         FormatHandle(image).c_str(), string_VkImageLayout(old_layout), string_VkImageLayout(new_layout));
+    }
+
+    if (vkuFormatIsDepthAndStencil(image_format)) {
+        if (enabled_features.separateDepthStencilLayouts) {
+            if (!has_depth_aspect && !has_stencil_aspect) {
+                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotDepthOrStencilAspect);
+                skip |= LogError(vuid, image, image_loc, "(%s) has depth/stencil format %s, but its aspectMask is %s.",
+                                 FormatHandle(image).c_str(), string_VkFormat(image_format),
+                                 string_VkImageAspectFlags(barrier_aspect_mask).c_str());
             }
-        }
-
-        if (has_depth_mask) {
-            if (IsImageLayoutStencilOnly(img_barrier.oldLayout) || IsImageLayoutStencilOnly(img_barrier.newLayout)) {
-                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kSeparateDepthWithStencilLayout);
-                skip |= LogError(
-                    vuid, img_barrier.image, image_loc,
-                    "(%s) has stencil format %s has depth aspect with stencil only layouts, oldLayout = %s and newLayout = %s.",
-                    FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                    string_VkImageLayout(img_barrier.oldLayout), string_VkImageLayout(img_barrier.newLayout));
-            }
-        }
-        if (has_stencil_mask) {
-            if (IsImageLayoutDepthOnly(img_barrier.oldLayout) || IsImageLayoutDepthOnly(img_barrier.newLayout)) {
-                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kSeparateStencilhWithDepthLayout);
-                skip |= LogError(
-                    vuid, img_barrier.image, image_loc,
-                    "(%s) has depth format %s has stencil aspect with depth only layouts, oldLayout = %s and newLayout = %s.",
-                    FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                    string_VkImageLayout(img_barrier.oldLayout), string_VkImageLayout(img_barrier.newLayout));
-            }
-        }
-
-        if (!enabled_features.dynamicRenderingLocalRead) {
-            if (img_barrier.newLayout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ) {
-                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kDynamicRenderingLocalReadNew);
-                skip |= LogError(vuid, img_barrier.image, image_loc, "(%s) cannot have newLayout = %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkImageLayout(img_barrier.newLayout));
-            }
-            if (img_barrier.oldLayout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ) {
-                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kDynamicRenderingLocalReadOld);
-                skip |= LogError(vuid, img_barrier.image, image_loc, "(%s) cannot have oldLayout = %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkImageLayout(img_barrier.oldLayout));
-            }
-        }
-
-        if (img_barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
-            // TODO: Set memory invalid which is in mem_tracker currently
-        } else if (!IsQueueFamilyExternal(img_barrier.srcQueueFamilyIndex)) {
-            skip |= UpdateCommandBufferImageLayoutMap(cb_state, image_loc, img_barrier, current_map, layout_updates_state);
-        }
-
-        const vvl::RenderPass *rp_state = cb_state.active_render_pass.get();
-        if (enabled_features.dynamicRenderingLocalRead && rp_state) {
-            const auto &img_barrier_image = img_barrier.image;
-            const auto &rendering_info = rp_state->dynamic_rendering_begin_rendering_info;
-            std::vector<uint32_t> used_attachments(GetUsedAttachments(cb_state));
-
-            for (auto color_attachment_idx : used_attachments) {
-                if (color_attachment_idx >= rendering_info.colorAttachmentCount) {
-                    continue;
-                }
-                const auto &color_attachment = rendering_info.pColorAttachments[color_attachment_idx];
-                if (color_attachment.imageView == VK_NULL_HANDLE) {
-                    continue;
-                }
-                const auto image_view_state = Get<vvl::ImageView>(color_attachment.imageView);
-                ASSERT_AND_CONTINUE(image_view_state);
-                const auto &image_view_image_state = image_view_state->image_state;
-
-                if (img_barrier_image == image_view_image_state->VkHandle()) {
-                    auto guard = image_view_image_state->layout_range_map->ReadLock();
-
-                    for (const auto &entry : *image_view_image_state->layout_range_map) {
-                        if (entry.second != VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ && entry.second != VK_IMAGE_LAYOUT_GENERAL) {
-                            const auto &vuid = sync_vuid_maps::GetShaderTileImageVUID(
-                                barrier_loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageLayout);
-                            skip |= LogError(vuid, img_barrier.image, barrier_loc, "image layout is %s.",
-                                             string_VkImageLayout(entry.second));
-                        }
-                    }
-                }
-            }
-        }
-
-        // checks color format and (single-plane or non-disjoint)
-        // if ycbcr extension is not supported then single-plane and non-disjoint are always both true
-
-        if (vkuFormatIsColor(image_format) && (aspect_mask != VK_IMAGE_ASPECT_COLOR_BIT)) {
-            if (!vkuFormatIsMultiplane(image_format)) {
-                const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotColorAspectSinglePlane);
-                skip |= LogError(vuid, img_barrier.image, image_loc, "(%s) has color format %s, but its aspectMask is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                                 string_VkImageAspectFlags(aspect_mask).c_str());
-            } else if (!image_state->disjoint) {
-                const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotColorAspectNonDisjoint);
-                skip |= LogError(vuid, img_barrier.image, image_loc, "(%s) has color format %s, but its aspectMask is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                                 string_VkImageAspectFlags(aspect_mask).c_str());
-            }
-        }
-
-        if ((vkuFormatIsMultiplane(image_format)) && (image_state->disjoint == true)) {
-            if (!IsValidPlaneAspect(image_format, aspect_mask) && ((aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) == 0)) {
-                const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kBadMultiplanarAspect);
-                skip |= LogError(vuid, img_barrier.image, image_loc, "(%s) has Multiplane format %s, but its aspectMask is %s.",
-                                 FormatHandle(img_barrier.image).c_str(), string_VkFormat(image_format),
-                                 string_VkImageAspectFlags(aspect_mask).c_str());
+        } else {
+            if (!has_depth_aspect || !has_stencil_aspect) {
+                auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotDepthAndStencilAspect);
+                skip |= LogError(vuid, image, image_loc, "(%s) has depth/stencil format %s, but its aspectMask is %s.",
+                                 FormatHandle(image).c_str(), string_VkFormat(image_format),
+                                 string_VkImageAspectFlags(barrier_aspect_mask).c_str());
             }
         }
     }
+
+    if (has_depth_aspect) {
+        if (IsImageLayoutStencilOnly(old_layout) || IsImageLayoutStencilOnly(new_layout)) {
+            auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kSeparateDepthWithStencilLayout);
+            skip |= LogError(
+                vuid, image, image_loc,
+                "(%s) has stencil format %s has depth aspect with stencil only layouts, oldLayout = %s and newLayout = %s.",
+                FormatHandle(image).c_str(), string_VkFormat(image_format), string_VkImageLayout(old_layout),
+                string_VkImageLayout(new_layout));
+        }
+    }
+    if (has_stencil_aspect) {
+        if (IsImageLayoutDepthOnly(old_layout) || IsImageLayoutDepthOnly(new_layout)) {
+            auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kSeparateStencilhWithDepthLayout);
+            skip |=
+                LogError(vuid, image, image_loc,
+                         "(%s) has depth format %s has stencil aspect with depth only layouts, oldLayout = %s and newLayout = %s.",
+                         FormatHandle(image).c_str(), string_VkFormat(image_format), string_VkImageLayout(old_layout),
+                         string_VkImageLayout(new_layout));
+        }
+    }
+
+    if (!enabled_features.dynamicRenderingLocalRead) {
+        if (new_layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ) {
+            auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kDynamicRenderingLocalReadNew);
+            skip |= LogError(vuid, image, image_loc, "(%s) cannot have newLayout = %s.", FormatHandle(image).c_str(),
+                             string_VkImageLayout(new_layout));
+        }
+        if (old_layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ) {
+            auto vuid = GetImageBarrierVUID(barrier_loc, ImageError::kDynamicRenderingLocalReadOld);
+            skip |= LogError(vuid, image, image_loc, "(%s) cannot have oldLayout = %s.", FormatHandle(image).c_str(),
+                             string_VkImageLayout(old_layout));
+        }
+    }
+
+    const bool validate_barrier_layouts =
+        (old_layout != new_layout)                               // barrier defines layout transtion
+        && (old_layout != VK_IMAGE_LAYOUT_UNDEFINED)             // undefined allows any layout
+        && !IsQueueFamilyExternal(barrier.srcQueueFamilyIndex);  // do not validate layouts of external resources
+
+    if (validate_barrier_layouts) {
+        skip |= VerifyImageBarrierLayouts(cb_state, image_state, image_loc, barrier, layout_updates_state);
+    }
+
+    const vvl::RenderPass *rp_state = cb_state.active_render_pass.get();
+    if (rp_state && rp_state->UsesDynamicRendering()) {
+        skip |= VerifyDynamicRenderingImageBarrierLayouts(cb_state, image_state,
+                                                          *rp_state->dynamic_rendering_begin_rendering_info.ptr(), barrier_loc);
+    }
+
+    // checks color format and (single-plane or non-disjoint)
+    // if ycbcr extension is not supported then single-plane and non-disjoint are always both true
+    if (vkuFormatIsColor(image_format) && (barrier_aspect_mask != VK_IMAGE_ASPECT_COLOR_BIT)) {
+        if (!vkuFormatIsMultiplane(image_format)) {
+            const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotColorAspectSinglePlane);
+            skip |=
+                LogError(vuid, image, image_loc, "(%s) has color format %s, but its aspectMask is %s.", FormatHandle(image).c_str(),
+                         string_VkFormat(image_format), string_VkImageAspectFlags(barrier_aspect_mask).c_str());
+        } else if (!image_state.disjoint) {
+            const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kNotColorAspectNonDisjoint);
+            skip |=
+                LogError(vuid, image, image_loc, "(%s) has color format %s, but its aspectMask is %s.", FormatHandle(image).c_str(),
+                         string_VkFormat(image_format), string_VkImageAspectFlags(barrier_aspect_mask).c_str());
+        }
+    }
+    if ((vkuFormatIsMultiplane(image_format)) && (image_state.disjoint == true)) {
+        if (!IsValidPlaneAspect(image_format, barrier_aspect_mask) && ((barrier_aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) == 0)) {
+            const auto &vuid = GetImageBarrierVUID(barrier_loc, ImageError::kBadMultiplanarAspect);
+            skip |= LogError(vuid, image, image_loc, "(%s) has Multiplane format %s, but its aspectMask is %s.",
+                             FormatHandle(image).c_str(), string_VkFormat(image_format),
+                             string_VkImageAspectFlags(barrier_aspect_mask).c_str());
+        }
+    }
+
     return skip;
 }
 
@@ -2042,7 +1992,7 @@ void CoreChecks::RecordBarrierValidationInfo(const Location &barrier_loc, vvl::C
     if (IsOwnershipTransfer(image_barrier)) {
         if (auto image = Get<vvl::Image>(image_barrier.image)) {
             ImageBarrier barrier = image_barrier;
-            barrier.subresourceRange = NormalizeSubresourceRange(image->create_info, image_barrier.subresourceRange);
+            barrier.subresourceRange = image->NormalizeSubresourceRange(image_barrier.subresourceRange);
 
             if (cb_state.IsReleaseOp(barrier) && !IsQueueFamilyExternal(barrier.dstQueueFamilyIndex)) {
                 barrier_sets.release.emplace(barrier);
@@ -2084,25 +2034,6 @@ void CoreChecks::RecordBarriers(Func func_name, vvl::CommandBuffer &cb_state, co
     }
 }
 
-template <typename TransferBarrier, typename Scoreboard>
-bool CoreChecks::ValidateAndUpdateQFOScoreboard(const vvl::CommandBuffer &cb_state, const char *operation,
-                                                const TransferBarrier &barrier, Scoreboard *scoreboard, const Location &loc) const {
-    // Record to the scoreboard or report that we have a duplication
-    bool skip = false;
-    auto inserted = scoreboard->emplace(barrier, &cb_state);
-    if (!inserted.second && inserted.first->second != &cb_state) {
-        // This is a duplication (but don't report duplicates from the same CB, as we do that at record time
-        const LogObjectList objlist(cb_state.Handle(), barrier.handle, inserted.first->second->Handle());
-        skip |= LogWarning(TransferBarrier::DuplicateQFOInSubmit(), objlist, loc,
-                           "%s %s queue ownership of %s (%s), from srcQueueFamilyIndex %" PRIu32 " to dstQueueFamilyIndex %" PRIu32
-                           " duplicates existing barrier submitted in this batch from %s.",
-                           TransferBarrier::BarrierName(), operation, TransferBarrier::HandleName(),
-                           FormatHandle(barrier.handle).c_str(), barrier.srcQueueFamilyIndex, barrier.dstQueueFamilyIndex,
-                           FormatHandle(inserted.first->second->Handle()).c_str());
-    }
-    return skip;
-}
-
 template <typename TransferBarrier>
 bool CoreChecks::ValidateQueuedQFOTransferBarriers(const vvl::CommandBuffer &cb_state,
                                                    QFOTransferCBScoreboards<TransferBarrier> *scoreboards,
@@ -2110,26 +2041,7 @@ bool CoreChecks::ValidateQueuedQFOTransferBarriers(const vvl::CommandBuffer &cb_
                                                    const Location &loc) const {
     bool skip = false;
     const auto &cb_barriers = cb_state.GetQFOBarrierSets(TransferBarrier());
-    const char *barrier_name = TransferBarrier::BarrierName();
-    const char *handle_name = TransferBarrier::HandleName();
-    // No release should have an extant duplicate (WARNING)
-    for (const auto &release : cb_barriers.release) {
-        // Check the global pending release barriers
-        const auto set_it = global_release_barriers.find(release.handle);
-        if (set_it != global_release_barriers.cend()) {
-            const QFOTransferBarrierSet<TransferBarrier> &set_for_handle = set_it->second;
-            const auto found = set_for_handle.find(release);
-            if (found != set_for_handle.cend()) {
-                skip |= LogWarning(TransferBarrier::DuplicateQFOSubmitted(), cb_state.Handle(), loc,
-                                   "%s releasing queue ownership of %s (%s), from srcQueueFamilyIndex %" PRIu32
-                                   " to dstQueueFamilyIndex %" PRIu32
-                                   " duplicates existing barrier queued for execution, without intervening acquire operation.",
-                                   barrier_name, handle_name, FormatHandle(found->handle).c_str(), found->srcQueueFamilyIndex,
-                                   found->dstQueueFamilyIndex);
-            }
-        }
-        skip |= ValidateAndUpdateQFOScoreboard(cb_state, "releasing", release, &scoreboards->release, loc);
-    }
+
     // Each acquire must have a matching release (ERROR)
     for (const auto &acquire : cb_barriers.acquire) {
         const auto set_it = global_release_barriers.find(acquire.handle);
@@ -2142,12 +2054,11 @@ bool CoreChecks::ValidateQueuedQFOTransferBarriers(const vvl::CommandBuffer &cb_
             const char *vuid = (loc.function == vvl::Func::vkQueueSubmit) ? "VUID-vkQueueSubmit-pSubmits-02207"
                                                                           : "VUID-vkQueueSubmit2-commandBuffer-03879";
             skip |= LogError(vuid, cb_state.Handle(), loc,
-                             "in submitted command buffer %s acquiring ownership of %s (%s), from srcQueueFamilyIndex %" PRIu32
-                             " to dstQueueFamilyIndex %" PRIu32 " has no matching release barrier queued for execution.",
-                             barrier_name, handle_name, FormatHandle(acquire.handle).c_str(), acquire.srcQueueFamilyIndex,
-                             acquire.dstQueueFamilyIndex);
+                             "contains a %s that acquires ownership of %s for destination queue family %" PRIu32
+                             ", but no matching release operation was queued for execution from source queue family %" PRIu32,
+                             String(TransferBarrier::BarrierName()), FormatHandle(acquire.handle).c_str(),
+                             acquire.dstQueueFamilyIndex, acquire.srcQueueFamilyIndex);
         }
-        skip |= ValidateAndUpdateQFOScoreboard(cb_state, "acquiring", acquire, &scoreboards->acquire, loc);
     }
     return skip;
 }
@@ -2199,40 +2110,6 @@ void CoreChecks::RecordQueuedQFOTransfers(vvl::CommandBuffer &cb_state) {
     RecordQueuedQFOTransferBarriers<QFOImageTransferBarrier>(cb_state.qfo_transfer_image_barriers, qfo_release_image_barrier_map);
     RecordQueuedQFOTransferBarriers<QFOBufferTransferBarrier>(cb_state.qfo_transfer_buffer_barriers,
                                                               qfo_release_buffer_barrier_map);
-}
-
-template <typename Barrier, typename TransferBarrier>
-bool CoreChecks::ValidateQFOTransferBarrierUniqueness(const Location &barrier_loc, const vvl::CommandBuffer &cb_state,
-                                                      const Barrier &barrier,
-                                                      const QFOTransferBarrierSets<TransferBarrier> &barrier_sets) const {
-    bool skip = false;
-    const char *handle_name = TransferBarrier::HandleName();
-    const char *transfer_type = nullptr;
-    if (!IsOwnershipTransfer(barrier)) {
-        return skip;
-    }
-    const TransferBarrier *barrier_record = nullptr;
-    if (cb_state.IsReleaseOp(barrier) && !IsQueueFamilyExternal(barrier.dstQueueFamilyIndex)) {
-        const auto found = barrier_sets.release.find(barrier);
-        if (found != barrier_sets.release.cend()) {
-            barrier_record = &(*found);
-            transfer_type = "releasing";
-        }
-    } else if (cb_state.IsAcquireOp(barrier) && !IsQueueFamilyExternal(barrier.srcQueueFamilyIndex)) {
-        const auto found = barrier_sets.acquire.find(barrier);
-        if (found != barrier_sets.acquire.cend()) {
-            barrier_record = &(*found);
-            transfer_type = "acquiring";
-        }
-    }
-    if (barrier_record != nullptr) {
-        skip |= LogWarning(TransferBarrier::DuplicateQFOInCB(), cb_state.Handle(), barrier_loc,
-                           "%s queue ownership of %s (%s), from srcQueueFamilyIndex %" PRIu32 " to dstQueueFamilyIndex %" PRIu32
-                           " duplicates existing barrier recorded in this command buffer.",
-                           transfer_type, handle_name, FormatHandle(barrier_record->handle).c_str(),
-                           barrier_record->srcQueueFamilyIndex, barrier_record->dstQueueFamilyIndex);
-    }
-    return skip;
 }
 
 bool CoreChecks::ValidateBarrierQueueFamilies(const LogObjectList &objects, const Location &barrier_loc, const Location &field_loc,
@@ -2331,8 +2208,6 @@ bool CoreChecks::ValidateBufferBarrier(const LogObjectList &objects, const Locat
 
     bool skip = false;
 
-    skip |= ValidateQFOTransferBarrierUniqueness(barrier_loc, cb_state, mem_barrier, cb_state.qfo_transfer_buffer_barriers);
-
     // Validate buffer barrier queue family indices
     if (auto buffer_state = Get<vvl::Buffer>(mem_barrier.buffer)) {
         auto buf_loc = barrier_loc.dot(Field::buffer);
@@ -2367,13 +2242,12 @@ bool CoreChecks::ValidateBufferBarrier(const LogObjectList &objects, const Locat
     return skip;
 }
 
-bool CoreChecks::ValidateImageBarrier(const LogObjectList &objects, const Location &barrier_loc, const vvl::CommandBuffer &cb_state,
-                                      const ImageBarrier &mem_barrier) const {
+bool CoreChecks::ValidateImageBarrier(const LogObjectList &objlist, const vvl::CommandBuffer &cb_state, const ImageBarrier &barrier,
+                                      const Location &barrier_loc, vvl::CommandBuffer::ImageLayoutMap &layout_updates_state) const {
     bool skip = false;
 
-    skip |= ValidateQFOTransferBarrierUniqueness(barrier_loc, cb_state, mem_barrier, cb_state.qfo_transfer_image_barriers);
-    const VkImageLayout old_layout = mem_barrier.oldLayout;
-    const VkImageLayout new_layout = mem_barrier.newLayout;
+    const VkImageLayout old_layout = barrier.oldLayout;
+    const VkImageLayout new_layout = barrier.newLayout;
 
     bool is_ilt = true;
     if (enabled_features.synchronization2) {
@@ -2381,12 +2255,12 @@ bool CoreChecks::ValidateImageBarrier(const LogObjectList &objects, const Locati
     } else {
         if (old_layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL || old_layout == VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL) {
             const auto &vuid = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kBadSync2OldLayout);
-            skip |= LogError(vuid, objects, barrier_loc.dot(Field::oldLayout),
+            skip |= LogError(vuid, objlist, barrier_loc.dot(Field::oldLayout),
                              "is %s, but the synchronization2 feature was not enabled.", string_VkImageLayout(old_layout));
         }
         if (new_layout == VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL) {
             const auto &vuid = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kBadSync2NewLayout);
-            skip |= LogError(vuid, objects, barrier_loc.dot(Field::newLayout),
+            skip |= LogError(vuid, objlist, barrier_loc.dot(Field::newLayout),
                              "is %s, but the synchronization2 feature was not enabled.", string_VkImageLayout(new_layout));
         }
     }
@@ -2394,7 +2268,7 @@ bool CoreChecks::ValidateImageBarrier(const LogObjectList &objects, const Locati
     if (is_ilt) {
         if (new_layout == VK_IMAGE_LAYOUT_UNDEFINED || new_layout == VK_IMAGE_LAYOUT_PREINITIALIZED) {
             const auto &vuid = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kBadLayout);
-            skip |= LogError(vuid, objects, barrier_loc.dot(Field::newLayout), "is %s.", string_VkImageLayout(new_layout));
+            skip |= LogError(vuid, objlist, barrier_loc.dot(Field::newLayout), "is %s.", string_VkImageLayout(new_layout));
         }
     }
 
@@ -2402,28 +2276,17 @@ bool CoreChecks::ValidateImageBarrier(const LogObjectList &objects, const Locati
         if (!enabled_features.attachmentFeedbackLoopLayout) {
             const auto &vuid =
                 sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kBadAttFeedbackLoopLayout);
-            skip |= LogError(vuid, objects, barrier_loc.dot(Field::newLayout),
+            skip |= LogError(vuid, objlist, barrier_loc.dot(Field::newLayout),
                              "is VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT, but the attachmentFeedbackLoopLayout "
                              "feature was not enabled.");
         }
     }
 
-    if (auto image_data = Get<vvl::Image>(mem_barrier.image)) {
-        auto image_loc = barrier_loc.dot(Field::image);
-        // TODO - use LocationVuidAdapter
+    if (auto image_state = Get<vvl::Image>(barrier.image)) {
         const auto &vuid_no_memory = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kNoMemory);
-        skip |= ValidateMemoryIsBoundToImage(objects, *image_data, image_loc, vuid_no_memory.c_str());
-
-        skip |= ValidateBarrierQueueFamilies(objects, barrier_loc, image_loc, mem_barrier, image_data->Handle(),
-                                             image_data->create_info.sharingMode, cb_state.command_pool->queueFamilyIndex);
-
-        const auto &vuid_aspect = sync_vuid_maps::GetImageBarrierVUID(barrier_loc, sync_vuid_maps::ImageError::kAspectMask);
         skip |=
-            ValidateImageAspectMask(image_data->VkHandle(), image_data->create_info.format, mem_barrier.subresourceRange.aspectMask,
-                                    image_data->disjoint, image_loc, vuid_aspect.c_str());
-
-        skip |= ValidateImageBarrierSubresourceRange(image_data->create_info, mem_barrier.subresourceRange, objects,
-                                                     barrier_loc.dot(Field::subresourceRange));
+            ValidateMemoryIsBoundToImage(cb_state.Handle(), *image_state, barrier_loc.dot(Field::image), vuid_no_memory.c_str());
+        skip |= ValidateImageBarrierAgainstImage(cb_state, barrier, barrier_loc, *image_state, layout_updates_state);
     }
     return skip;
 }
@@ -2450,8 +2313,7 @@ bool CoreChecks::ValidateBarriers(const Location &outer_loc, const vvl::CommandB
         const ImageBarrier barrier(pImageMemBarriers[i], src_stage_mask, dst_stage_mask);
         const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op);
-        skip |= ValidateImageBarrier(objects, barrier_loc, cb_state, barrier);
-        skip |= ValidateBarriersToImages(barrier_loc, cb_state, barrier, layout_updates_state);
+        skip |= ValidateImageBarrier(objects, cb_state, barrier, barrier_loc, layout_updates_state);
     }
     for (uint32_t i = 0; i < bufferBarrierCount; ++i) {
         const Location barrier_loc = outer_loc.dot(Struct::VkBufferMemoryBarrier, Field::pBufferMemoryBarriers, i);
@@ -2481,8 +2343,7 @@ bool CoreChecks::ValidateDependencyInfo(const LogObjectList &objects, const Loca
         const ImageBarrier barrier(dep_info.pImageMemoryBarriers[i]);
         const OwnershipTransferOp transfer_op = barrier.TransferOp(cb_state.command_pool->queueFamilyIndex);
         skip |= ValidateMemoryBarrier(objects, barrier_loc, cb_state, barrier, transfer_op, dep_info.dependencyFlags);
-        skip |= ValidateImageBarrier(objects, barrier_loc, cb_state, barrier);
-        skip |= ValidateBarriersToImages(barrier_loc, cb_state, barrier, layout_updates_state);
+        skip |= ValidateImageBarrier(objects, cb_state, barrier, barrier_loc, layout_updates_state);
     }
     for (uint32_t i = 0; i < dep_info.bufferMemoryBarrierCount; ++i) {
         const Location barrier_loc = dep_info_loc.dot(Struct::VkBufferMemoryBarrier2, Field::pBufferMemoryBarriers, i);
@@ -2495,13 +2356,12 @@ bool CoreChecks::ValidateDependencyInfo(const LogObjectList &objects, const Loca
     return skip;
 }
 
-bool CoreChecks::ValidatePipelineStageForShaderTileImage(const LogObjectList &objlist, const Location &loc,
-                                                         VkPipelineStageFlags2KHR stage_mask,
-                                                         VkDependencyFlags dependency_flags) const {
+bool CoreChecks::ValidateDynamicRenderingPipelineStage(const LogObjectList &objlist, const Location &loc,
+                                                       VkPipelineStageFlags2 stage_mask, VkDependencyFlags dependency_flags) const {
     bool skip = false;
     if (HasNonFramebufferStagePipelineStageFlags(stage_mask)) {
         const auto &vuid =
-            sync_vuid_maps::GetShaderTileImageVUID(loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageFramebufferSpace);
+            sync_vuid_maps::GetDynamicRenderingBarrierVUID(loc, sync_vuid_maps::DynamicRenderingBarrierError::kFramebufferSpace);
 
         skip |= LogError(vuid, objlist, loc, "(%s) is restricted to framebuffer space stages (%s).",
                          sync_utils::StringPipelineStageFlags(stage_mask).c_str(),
@@ -2510,14 +2370,13 @@ bool CoreChecks::ValidatePipelineStageForShaderTileImage(const LogObjectList &ob
     if (HasFramebufferStagePipelineStageFlags(stage_mask) && loc.field == Field::srcStageMask &&
         (dependency_flags & VK_DEPENDENCY_BY_REGION_BIT) != VK_DEPENDENCY_BY_REGION_BIT) {
         const auto &vuid =
-            sync_vuid_maps::GetShaderTileImageVUID(loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageDependencyFlags);
+            sync_vuid_maps::GetDynamicRenderingBarrierVUID(loc, sync_vuid_maps::DynamicRenderingBarrierError::kDependencyFlags);
         skip |= LogError(vuid, objlist, loc, "must contain VK_DEPENDENCY_BY_REGION_BIT.");
     }
-
     return skip;
 }
 
-bool CoreChecks::IsShaderTileImageUsageValid(VkImageUsageFlags image_usage) const {
+bool CoreChecks::IsDynamicRenderingImageUsageValid(VkImageUsageFlags image_usage) const {
     bool valid = false;
 
     valid |= ((image_usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0);
@@ -2527,42 +2386,38 @@ bool CoreChecks::IsShaderTileImageUsageValid(VkImageUsageFlags image_usage) cons
     return valid;
 }
 
-bool CoreChecks::ValidateShaderTileImageBarriers(const LogObjectList &objlist, const Location &outer_loc,
-                                                 const VkDependencyInfo &dep_info) const {
+bool CoreChecks::ValidateDynamicRenderingBarriers(const LogObjectList &objlist, const Location &outer_loc,
+                                                  const VkDependencyInfo &dep_info) const {
     bool skip = false;
-
-    skip |= ValidateShaderTileImageCommon(objlist, outer_loc, dep_info.dependencyFlags, dep_info.bufferMemoryBarrierCount,
-                                          dep_info.imageMemoryBarrierCount);
+    skip |= ValidateDynamicRenderingBarriersCommon(objlist, outer_loc, dep_info.dependencyFlags, dep_info.bufferMemoryBarrierCount,
+                                                   dep_info.imageMemoryBarrierCount);
 
     for (uint32_t i = 0; i < dep_info.memoryBarrierCount; ++i) {
         const Location loc = outer_loc.dot(Struct::VkMemoryBarrier2, Field::pMemoryBarriers, i);
         const auto &mem_barrier = dep_info.pMemoryBarriers[i];
-        skip |= ValidatePipelineStageForShaderTileImage(objlist, loc.dot(Field::srcStageMask), mem_barrier.srcStageMask,
-                                                        dep_info.dependencyFlags);
-        skip |= ValidatePipelineStageForShaderTileImage(objlist, loc.dot(Field::dstStageMask), mem_barrier.dstStageMask,
-                                                        dep_info.dependencyFlags);
+        skip |= ValidateDynamicRenderingPipelineStage(objlist, loc.dot(Field::srcStageMask), mem_barrier.srcStageMask,
+                                                      dep_info.dependencyFlags);
+        skip |= ValidateDynamicRenderingPipelineStage(objlist, loc.dot(Field::dstStageMask), mem_barrier.dstStageMask,
+                                                      dep_info.dependencyFlags);
     }
-
     return skip;
 }
 
-bool CoreChecks::ValidateShaderTileImageBarriers(const LogObjectList &objlist, const Location &outer_loc,
-                                                 VkDependencyFlags dependency_flags, uint32_t memory_barrier_count,
-                                                 const VkMemoryBarrier *memory_barriers, uint32_t buffer_barrier_count,
-                                                 uint32_t image_barrier_count, const VkImageMemoryBarrier *image_barriers,
-                                                 VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask) const {
+bool CoreChecks::ValidateDynamicRenderingBarriers(const LogObjectList &objlist, const Location &outer_loc,
+                                                  VkDependencyFlags dependency_flags, uint32_t memory_barrier_count,
+                                                  const VkMemoryBarrier *memory_barriers, uint32_t buffer_barrier_count,
+                                                  uint32_t image_barrier_count, const VkImageMemoryBarrier *image_barriers,
+                                                  VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask) const {
     bool skip = false;
-
-    skip |= ValidateShaderTileImageCommon(objlist, outer_loc, dependency_flags, buffer_barrier_count, image_barrier_count);
-    skip |= ValidatePipelineStageForShaderTileImage(objlist, outer_loc.dot(Field::srcStageMask), src_stage_mask, dependency_flags);
-    skip |= ValidatePipelineStageForShaderTileImage(objlist, outer_loc.dot(Field::dstStageMask), dst_stage_mask, dependency_flags);
-
+    skip |= ValidateDynamicRenderingBarriersCommon(objlist, outer_loc, dependency_flags, buffer_barrier_count, image_barrier_count);
+    skip |= ValidateDynamicRenderingPipelineStage(objlist, outer_loc.dot(Field::srcStageMask), src_stage_mask, dependency_flags);
+    skip |= ValidateDynamicRenderingPipelineStage(objlist, outer_loc.dot(Field::dstStageMask), dst_stage_mask, dependency_flags);
     return skip;
 }
 
-bool CoreChecks::ValidateShaderTileImageCommon(const LogObjectList &objlist, const Location &outer_loc,
-                                               VkDependencyFlags dependency_flags, uint32_t buffer_barrier_count,
-                                               uint32_t image_barrier_count) const {
+bool CoreChecks::ValidateDynamicRenderingBarriersCommon(const LogObjectList &objlist, const Location &outer_loc,
+                                                        VkDependencyFlags dependency_flags, uint32_t buffer_barrier_count,
+                                                        uint32_t image_barrier_count) const {
     bool skip = false;
 
     // Check shader tile image features
@@ -2570,7 +2425,7 @@ bool CoreChecks::ValidateShaderTileImageCommon(const LogObjectList &objlist, con
                                   enabled_features.shaderTileImageDepthReadAccess || enabled_features.dynamicRenderingLocalRead;
     if (!features_enabled) {
         const auto &feature_error_vuid =
-            sync_vuid_maps::GetShaderTileImageVUID(outer_loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageFeatureError);
+            sync_vuid_maps::GetDynamicRenderingBarrierVUID(outer_loc, sync_vuid_maps::DynamicRenderingBarrierError::kFeatureError);
         skip |= LogError(feature_error_vuid, objlist, outer_loc,
                          "can not be called inside a dynamic rendering instance. This can be fixed by enabling the "
                          "VK_KHR_dynamic_rendering_local_read or VK_EXT_shader_tile_image features.");
@@ -2578,8 +2433,8 @@ bool CoreChecks::ValidateShaderTileImageCommon(const LogObjectList &objlist, con
 
     if (!enabled_features.dynamicRenderingLocalRead) {
         if (buffer_barrier_count != 0 || image_barrier_count != 0) {
-            const auto &buf_img_vuid = sync_vuid_maps::GetShaderTileImageVUID(
-                outer_loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageNoBuffersOrImages);
+            const auto &buf_img_vuid = sync_vuid_maps::GetDynamicRenderingBarrierVUID(
+                outer_loc, sync_vuid_maps::DynamicRenderingBarrierError::kNoBuffersOrImages);
             skip |= LogError(buf_img_vuid, objlist, outer_loc,
                              "can only include memory barriers, while application specify image barrier count %" PRIu32
                              " and buffer barrier count %" PRIu32,

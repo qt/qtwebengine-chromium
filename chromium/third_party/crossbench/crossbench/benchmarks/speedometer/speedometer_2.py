@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
+from typing_extensions import override
+
 from crossbench.benchmarks.speedometer.speedometer import (
     SpeedometerProbe, SpeedometerProbeContext, SpeedometerStory)
 from crossbench.helper import url_helper
@@ -14,6 +16,7 @@ from crossbench.parse import ObjectParser
 
 class Speedometer2Probe(SpeedometerProbe):
 
+  @override
   def _is_valid_metric_key(self, metric_key: str) -> bool:
     parts = metric_key.split("/")
     if len(parts) == 2:
@@ -25,6 +28,7 @@ class Speedometer2Probe(SpeedometerProbe):
 
 class Speedometer2ProbeContext(SpeedometerProbeContext):
 
+  @override
   def process_json_data(self, json_data) -> Any:
     json_data = ObjectParser.non_empty_sequence(json_data,
                                                 f"{self.probe.name} metrics")

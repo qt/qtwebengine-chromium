@@ -7,8 +7,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
-from typing import TYPE_CHECKING, Iterator, Optional, Union
+from typing import TYPE_CHECKING, Iterator, Optional, TypeVar
 from urllib.parse import urlparse
+
+from typing_extensions import override
 
 from crossbench import exception
 from crossbench import path as pth
@@ -24,21 +26,24 @@ if TYPE_CHECKING:
 
 
 GS_PREFIX = "gs://"
-GSUTIL_LS_MD5_RE = re.compile(r"Hash \(md5\):\s*([A-Za-z0-9+/]+)=*")
+GSUTIL_LS_MD5_RE: re.Pattern[str] = re.compile(
+    r"Hash \(md5\):\s*([A-Za-z0-9+/]+)=*")
 
+ReplayNetworkT = TypeVar("ReplayNetworkT", bound="ReplayNetwork")
 
 class ReplayNetwork(Network):
   """ A network implementation that can be used to replay requests
   from a an archive."""
 
   def __init__(self,
-               archive: Union[pth.LocalPath, str],
+               archive: pth.LocalPath | str,
                traffic_shaper: Optional[TrafficShaper] = None,
-               browser_platform: Optional[plt.Platform] = None):
+               browser_platform: Optional[plt.Platform] = None) -> None:
     super().__init__(traffic_shaper, browser_platform)
     self._archive_path = self._ensure_archive(archive)
 
   @property
+  @override
   def is_wpr(self) -> bool:
     return True
 
@@ -47,7 +52,9 @@ class ReplayNetwork(Network):
     return self._archive_path
 
   @contextlib.contextmanager
-  def open(self, session: BrowserSessionRunGroup) -> Iterator[ReplayNetwork]:
+  @override
+  def open(self: ReplayNetworkT,
+           session: BrowserSessionRunGroup) -> Iterator[ReplayNetworkT]:
     with super().open(session):
       with self._open_replay_server(session):
         with self._traffic_shaper.open(self, session):
@@ -79,7 +86,7 @@ class ReplayNetwork(Network):
       self.host_platform.sh("gsutil", "cp", url, local_path)
     return local_path
 
-  def _ensure_archive(self, archive: Union[pth.LocalPath, str]) -> LocalPath:
+  def _ensure_archive(self, archive: pth.LocalPath | str) -> LocalPath:
     if isinstance(archive, str) and archive.startswith(GS_PREFIX):
       return self._download_gcloud_archive(url=archive)
     return PathParser.existing_file_path(archive).resolve()

@@ -19,6 +19,7 @@
 #include "layer_options.h"
 #include <vulkan/vulkan_core.h>
 #include "chassis/validation_object.h"
+#include "containers/span.h"
 #include "error_message/log_message_type.h"
 #include "error_message/logging.h"
 #include "error_message/error_location.h"
@@ -26,7 +27,6 @@
 #include "utils/hash_util.h"
 #include <cstring>
 #include <string>
-#include <unordered_set>
 #include <vector>
 #include <vulkan/layer/vk_layer_settings.hpp>
 
@@ -188,9 +188,9 @@ const char *VK_LAYER_PRINTF_BUFFER_SIZE = "printf_buffer_size";
 // GPU-AV
 // ---
 const char *VK_LAYER_GPUAV_ENABLE = "gpuav_enable";
+const char *VK_LAYER_GPUAV_UNSAFE_MODE = "gpuav_unsafe_mode";
 const char *VK_LAYER_GPUAV_SHADER_INSTRUMENTATION = "gpuav_shader_instrumentation";
 const char *VK_LAYER_GPUAV_DESCRIPTOR_CHECKS = "gpuav_descriptor_checks";
-const char *VK_LAYER_GPUAV_WARN_ON_ROBUST_OOB = "gpuav_warn_on_robust_oob";
 const char *VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB = "gpuav_buffer_address_oob";
 const char *VK_LAYER_GPUAV_MAX_BUFFER_DEVICE_ADDRESSES = "gpuav_max_buffer_device_addresses";
 const char *VK_LAYER_GPUAV_VALIDATE_RAY_QUERY = "gpuav_validate_ray_query";
@@ -208,6 +208,7 @@ const char *VK_LAYER_GPUAV_BUFFER_COPIES = "gpuav_buffer_copies";
 const char *VK_LAYER_GPUAV_INDEX_BUFFERS = "gpuav_index_buffers";
 const char *VK_LAYER_GPUAV_IMAGE_LAYOUT = "gpuav_image_layout";
 
+const char *VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS = "gpuav_force_on_robustness";
 const char *VK_LAYER_GPUAV_RESERVE_BINDING_SLOT = "gpuav_reserve_binding_slot";
 const char *VK_LAYER_GPUAV_VMA_LINEAR_OUTPUT = "gpuav_vma_linear_output";
 
@@ -226,6 +227,7 @@ const char *VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES_PRETTY_PRINT = "syncval_me
 
 // Message Formatting
 // ---
+const char *VK_LAYER_MESSAGE_FORMAT_JSON = "message_format_json";
 const char *VK_LAYER_MESSAGE_FORMAT_DISPLAY_APPLICATION_NAME = "message_format_display_application_name";
 // Until post 1.3.290 SDK release, these were not possible to set via environment variables
 const char *VK_LAYER_LOG_FILENAME = "log_filename";
@@ -237,7 +239,6 @@ const char *DEPRECATED_VK_LAYER_GPUAV_VALIDATE_COPIES = "gpuav_validate_copies";
 const char *DEPRECATED_VK_LAYER_GPUAV_VALIDATE_INDIRECT_BUFFER = "gpuav_validate_indirect_buffer";
 const char *DEPRECATED_VK_LAYER_RESERVE_BINDING_SLOT = "reserve_binding_slot";
 const char *DEPRECATED_GPUAV_VMA_LINEAR_OUTPUT = "vma_linear_output";
-const char *DEPRECATED_GPUAV_WARN_ON_ROBUST_OOB = "warn_on_robust_oob";
 const char *DEPRECATED_GPUAV_SELECT_INSTRUMENTED_SHADERS = "select_instrumented_shaders";
 
 // These were deprecated after the 1.3.283 SDK release
@@ -587,11 +588,13 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT *la
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(DEPRECATED_VK_LAYER_VALIDATE_GPU_BASED, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
+        } else if (strcmp(VK_LAYER_GPUAV_UNSAFE_MODE, setting.pSettingName) == 0) {
+            required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_GPUAV_SHADER_INSTRUMENTATION, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_GPUAV_DESCRIPTOR_CHECKS, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
-        } else if (strcmp(VK_LAYER_GPUAV_WARN_ON_ROBUST_OOB, setting.pSettingName) == 0) {
+        } else if (strcmp(VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
@@ -629,6 +632,8 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT *la
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_SYNCVAL_MESSAGE_EXTRA_PROPERTIES_PRETTY_PRINT, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
+        } else if (strcmp(VK_LAYER_MESSAGE_FORMAT_JSON, setting.pSettingName) == 0) {
+            required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_MESSAGE_FORMAT_DISPLAY_APPLICATION_NAME, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(VK_LAYER_LOG_FILENAME, setting.pSettingName) == 0) {
@@ -648,8 +653,6 @@ static void ValidateLayerSettingsProvided(const VkLayerSettingsCreateInfoEXT *la
         } else if (strcmp(DEPRECATED_VK_LAYER_RESERVE_BINDING_SLOT, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(DEPRECATED_GPUAV_VMA_LINEAR_OUTPUT, setting.pSettingName) == 0) {
-            required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
-        } else if (strcmp(DEPRECATED_GPUAV_WARN_ON_ROBUST_OOB, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
         } else if (strcmp(DEPRECATED_GPUAV_SELECT_INSTRUMENTED_SHADERS, setting.pSettingName) == 0) {
             required_type = VK_LAYER_SETTING_TYPE_BOOL32_EXT;
@@ -764,6 +767,10 @@ static void ProcessDebugReportSettings(ConfigAndEnvSettings *settings_data, VkuL
     }
     debug_report->duplicate_message_limit = duplicate_message_limit;
 
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_MESSAGE_FORMAT_JSON)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_MESSAGE_FORMAT_JSON, debug_report->message_format_settings.json);
+    }
+
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_MESSAGE_FORMAT_DISPLAY_APPLICATION_NAME)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_MESSAGE_FORMAT_DISPLAY_APPLICATION_NAME,
                                 debug_report->message_format_settings.display_application_name);
@@ -818,7 +825,7 @@ static void ProcessDebugReportSettings(ConfigAndEnvSettings *settings_data, VkuL
         }
     }
 
-    std::vector<std::string> report_flags_list = {"error"};  // Default
+    std::vector<std::string> report_flags_list = {"error", "warn"};  // Default
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_REPORT_FLAGS)) {
         vkuGetLayerSettingValues(layer_setting_set, VK_LAYER_REPORT_FLAGS, report_flags_list);
     }
@@ -1029,6 +1036,10 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
     }
 
     GpuAVSettings &gpuav_settings = *settings_data->gpuav_settings;
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_UNSAFE_MODE)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_UNSAFE_MODE, gpuav_settings.unsafe_mode);
+    }
+
     bool shader_instrumentation_enabled = true;
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_SHADER_INSTRUMENTATION)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_SHADER_INSTRUMENTATION, shader_instrumentation_enabled);
@@ -1043,20 +1054,12 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
         }
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_POST_PROCESS_DESCRIPTOR_INDEXING)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_POST_PROCESS_DESCRIPTOR_INDEXING,
-                                    gpuav_settings.shader_instrumentation.post_process_descriptor_index);
+                                    gpuav_settings.shader_instrumentation.post_process_descriptor_indexing);
         }
 
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_VERTEX_ATTRIBUTE_FETCH_OOB)) {
             vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_VERTEX_ATTRIBUTE_FETCH_OOB,
                                     gpuav_settings.shader_instrumentation.vertex_attribute_fetch_oob);
-        }
-
-        if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_WARN_ON_ROBUST_OOB)) {
-            vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_WARN_ON_ROBUST_OOB, gpuav_settings.warn_on_robust_oob);
-        } else if (vkuHasLayerSetting(layer_setting_set, DEPRECATED_GPUAV_WARN_ON_ROBUST_OOB)) {
-            vkuGetLayerSettingValue(layer_setting_set, DEPRECATED_GPUAV_WARN_ON_ROBUST_OOB, gpuav_settings.warn_on_robust_oob);
-            setting_warnings.emplace_back("Deprecated " + std::string(DEPRECATED_GPUAV_WARN_ON_ROBUST_OOB) +
-                                          " setting was set, use " + std::string(VK_LAYER_GPUAV_WARN_ON_ROBUST_OOB) + " instead.");
         }
 
         if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_BUFFER_ADDRESS_OOB)) {
@@ -1130,6 +1133,10 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
 
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_IMAGE_LAYOUT)) {
         vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_IMAGE_LAYOUT, gpuav_settings.validate_image_layout);
+    }
+
+    if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS)) {
+        vkuGetLayerSettingValue(layer_setting_set, VK_LAYER_GPUAV_FORCE_ON_ROBUSTNESS, gpuav_settings.force_on_robustness);
     }
 
     if (vkuHasLayerSetting(layer_setting_set, VK_LAYER_GPUAV_RESERVE_BINDING_SLOT)) {
@@ -1360,7 +1367,8 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
     }
 
     for (const auto &warning : setting_warnings) {
-        settings_data->debug_report->DebugLogMsg(kWarningBit, {}, warning.c_str(), "VALIDATION-SETTINGS");
+        Location loc(vvl::Func::vkCreateInstance);
+        settings_data->debug_report->LogMessage(kWarningBit, "VALIDATION-SETTINGS", {}, loc, warning);
     }
 
     vkuDestroyLayerSettingSet(layer_setting_set, nullptr);

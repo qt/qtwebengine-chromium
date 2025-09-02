@@ -8,7 +8,9 @@ import abc
 import logging
 import subprocess
 from functools import cached_property
-from typing import TYPE_CHECKING, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Tuple, cast
+
+from typing_extensions import override
 
 from crossbench.plt.posix import PosixPlatform
 from crossbench.probes.probe_context import ProbeContext
@@ -23,7 +25,7 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
 
   def __init__(self, probe: ProfilingProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._profiling_process: Optional[subprocess.Popen] = None
+    self._profiling_process: subprocess.Popen | None = None
     self._story_ready = False
 
   def setup_v8_log_path(self) -> None:
@@ -35,6 +37,7 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
     self.browser_platform.mkdir(v8_log_dir)
     self.session.extra_js_flags["--logfile"] = str(v8_log_dir)
 
+  @override
   def start_story_run(self) -> None:
     self._story_ready = True
 
@@ -43,8 +46,8 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
     assert self._story_ready, (
         "Fetching renderer PID/TID before the story is loaded could lead to "
         "the wrong PID/TID being used. This should never happen TM!")
-    renderer_pid: Optional[int] = None
-    renderer_main_tid: Optional[int] = None
+    renderer_pid: int | None = None
+    renderer_main_tid: int | None = None
     with self.run.actions("Get Renderer PID/TID") as actions:
       renderer_pid = actions.js(
           "return chrome?.benchmarking?.getRendererPid?.();")
@@ -65,5 +68,6 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
 class PosixProfilingContext(ProfilingContext):
 
   @property
+  @override
   def browser_platform(self) -> PosixPlatform:
     return cast(PosixPlatform, super().browser_platform)

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import abc
-from typing import Set, TypeVar
+from typing import Self, Set, TypeVar
 
 from crossbench.decor import base
 from crossbench.runner.groups.session import BrowserSessionRunGroup
@@ -20,8 +20,7 @@ class SessionDecorator(base.Decorator[Run]):
     return self._targets
 
   @abc.abstractmethod
-  def get_context(self: SessionDecoratorT,
-                  target: Run) -> SessionDecoratorContext[SessionDecoratorT]:
+  def get_context(self: Self, target: Run) -> SessionDecoratorContext[Self]:
     pass
 
 

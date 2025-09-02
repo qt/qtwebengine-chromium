@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2024 The Khronos Group Inc.
- * Copyright (c) 2018-2024 Valve Corporation
- * Copyright (c) 2018-2024 LunarG, Inc.
+/* Copyright (c) 2025 The Khronos Group Inc.
+ * Copyright (c) 2025 Valve Corporation
+ * Copyright (c) 2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,11 @@ class VertexAttributeFetchOob : public Pass {
 
   private:
     uint32_t GetLinkFunctionId();
-    void Reset() final {}
 
-    uint32_t link_function_id = 0;
     bool instrumentation_performed = false;
+
+    // Function IDs to link in
+    uint32_t link_function_id_ = 0;
 };
 
 }  // namespace spirv

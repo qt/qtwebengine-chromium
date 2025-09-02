@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 package(
     default_visibility = ["//visibility:private"],
 )
@@ -20,6 +22,7 @@ cc_library(
     name = "native",
     visibility = ["//visibility:public"],
     deps = [
+        ":brush_serialization_jni",
         ":stroke_input_batch_serialization_jni",
     ],
     alwayslink = 1,
@@ -40,6 +43,31 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/types:span",
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": [
+            "@rules_jni//jni",
+        ],
+    }),
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "brush_serialization_jni",
+    srcs = ["brush_serialization_jni.cc"],
+    deps = [
+        "//ink/brush",
+        "//ink/brush:brush_coat",
+        "//ink/brush:brush_family",
+        "//ink/brush:brush_paint",
+        "//ink/brush:brush_tip",
+        "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:jni_proto_util",
+        "//ink/jni/internal:jni_throw_util",
+        "//ink/storage:brush",
+        "//ink/storage/proto:brush_cc_proto",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
     ] + select({
         "@platforms//os:android": [],
         "//conditions:default": [

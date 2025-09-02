@@ -11,6 +11,9 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
 
+from typing_extensions import override
+
+from crossbench.action_runner.action.enums import ReadyState
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.motionmark.base import MotionMarkBenchmark
 from crossbench.helper import url_helper
@@ -45,22 +48,27 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
   """
 
   @abc.abstractmethod
+  @override
   def get_context_cls(self) -> Type[MotionMark1ProbeContext]:
     pass
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
     return self.write_group_result(group, merged)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
         self.merge_browsers_csv_list(group))
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_result(group.results, single_result=False)
 
@@ -83,6 +91,7 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
       else:
         self._log_result_metrics(data)
 
+  @override
   def _extract_result_metrics_table(self, metrics: Dict[str, Any],
                                     table: Dict[str, List[str]]) -> None:
     for metric_key, metric in metrics.items():
@@ -105,9 +114,11 @@ class MotionMark1ProbeContext(JsonResultProbeContext):
     return window.benchmarkRunnerClient.results.results;
   """
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     return actions.js(self.JS)
 
+  @override
   def flatten_json_data(self, json_data: List) -> Json:
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
@@ -217,10 +228,12 @@ class MotionMark1Story(PressBenchmarkStory):
   READY_JS: str = "return true;"
 
   @classmethod
+  @override
   def default_story_names(cls) -> Tuple[str, ...]:
     return cls.ALL_STORIES["MotionMark"]
 
   @property
+  @override
   def substory_duration(self) -> dt.timedelta:
     return dt.timedelta(seconds=35)
 
@@ -236,11 +249,15 @@ class MotionMark1Story(PressBenchmarkStory):
       return updated_url
     return self.url
 
+  @override
   def setup(self, run: Run) -> None:
     test_url = self.prepare_test_url()
     use_developer_url = test_url != self.url
     with run.actions("Setup") as actions:
-      actions.show_url(test_url)
+      actions.show_url(
+          url=test_url,
+          ready_state=ReadyState.COMPLETE,
+          timeout=dt.timedelta(seconds=10))
       self._setup_wait_until_ready(actions, use_developer_url)
       if use_developer_url:
         self._setup_filter_stories(actions)

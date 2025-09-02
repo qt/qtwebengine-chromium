@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable
 
+from typing_extensions import override
+
 from crossbench.runner.groups.base import RunGroup
 
 if TYPE_CHECKING:
@@ -43,13 +45,16 @@ class BrowsersRunGroup(RunGroup):
       yield from story_group.repetitions_groups
 
   @property
+  @override
   def runs(self) -> Iterable[Run]:
     for group in self._story_groups:
       yield from group.runs
 
   @property
+  @override
   def info_stack(self) -> exception.TInfoStack:
     return ("Merging results from multiple browsers",)
 
+  @override
   def _merge_probe_results(self, probe: Probe) -> ProbeResult:
     return probe.merge_browsers(self)

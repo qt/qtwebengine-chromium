@@ -9,6 +9,8 @@ import enum
 import logging
 from typing import TYPE_CHECKING, Iterable, Iterator, List, Optional, Tuple
 
+from typing_extensions import override
+
 from crossbench.exception import TInfoStack
 from crossbench.flags.base import Flags
 from crossbench.flags.js_flags import JSFlags
@@ -67,7 +69,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     self._index: int = index
     self._runs: List[Run] = []
     self._root_dir: LocalPath = root_dir
-    self._browser_tmp_dir: Optional[AnyPath] = None
+    self._browser_tmp_dir: AnyPath | None = None
     self._extra_js_flags = JSFlags()
     self._extra_flags = extra_flags
     # Temporary objects, reset after all runs are ready (see set_ready).
@@ -135,6 +137,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self.raw_session_dir
 
   @property
+  @override
   def out_dir(self) -> LocalPath:
     return self._get_session_dir()
 
@@ -151,6 +154,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self._env
 
   @property
+  @override
   def probes(self) -> Iterable[Probe]:
     return iter(self._probes)
 
@@ -159,6 +163,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self._network
 
   @property
+  @override
   def browser(self) -> Browser:
     return self._browser
 
@@ -175,6 +180,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self._root_dir
 
   @property
+  @override
   def runs(self) -> Iterable[Run]:
     return iter(self._runs)
 
@@ -198,16 +204,18 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     assert isinstance(details_json["flags"], tuple)
     details_json["flags"] += tuple(self._extra_flags)
 
-  def setup_selenium_options(self, options: ArgOptions):
+  def setup_selenium_options(self, options: ArgOptions) -> None:
     # Using only the first run, since all runs need to have the same probes.
     self.first_run.setup_selenium_options(options)
 
   @property
+  @override
   def info_stack(self) -> TInfoStack:
     return ("Merging results from multiple browser sessions",
             f"browser={self.browser.unique_name}", f"session={self.index}")
 
   @property
+  @override
   def info(self) -> JsonMapping:
     info_dict = dict(super().info)
     info_dict.update({"index": self.index})
@@ -217,16 +225,19 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return f"Session({self.browser}, {self.index})"
 
   @property
+  @override
   def browser_tmp_dir(self) -> AnyPath:
     if not self._browser_tmp_dir:
       prefix = f"cb_browser_session_{self.index}"
       self._browser_tmp_dir = self.browser_platform.mkdtemp(prefix)
     return self._browser_tmp_dir
 
+  @override
   def merge(self, probes: Iterable[Probe]) -> None:
     # TODO: implement merging of session probes
     pass
 
+  @override
   def _merge_probe_results(self, probe: Probe) -> ProbeResult:
     return EmptyProbeResult()
 
@@ -280,7 +291,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
 
   def _setup_browser(self) -> None:
     self._state.expect(State.SETUP)
-    self.browser.setup_binary()
+    self.browser.setup()
 
   def _setup_session_dir(self) -> None:
     self._state.expect(State.SETUP)
@@ -288,9 +299,6 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
       self.path.mkdir(parents=True, exist_ok=True)
       if not self._create_symlinks:
         logging.debug("Symlink disabled by command line option")
-        return
-      if self.host_platform.is_win:
-        logging.debug("Skipping session_dir symlink on windows.")
         return
       if self.is_single_run:
         # If there is a single run per session we reuse the run-dir.
@@ -332,7 +340,8 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     with self.measure("browser-setup"):
       try:
         # pytype somehow gets the package path wrong here, disabling for now.
-        self._browser.setup(self)
+        self._browser.start(self)
+        assert self._browser.is_running, "Browser did not start up correctly"
       except Exception as e:
         logging.debug("Browser setup failed: %s", e)
         # Clean up half-setup browser instances
@@ -370,7 +379,7 @@ class ProbeSessionContextManager(ProbeContextManager[BrowserSessionRunGroup,
                                                      ProbeSessionContext]):
 
   def __init__(self, session: BrowserSessionRunGroup,
-               probe_results: ProbeResultDict):
+               probe_results: ProbeResultDict) -> None:
     super().__init__(session, probe_results)
 
   def get_probe_context(self, probe: Probe) -> Optional[ProbeSessionContext]:

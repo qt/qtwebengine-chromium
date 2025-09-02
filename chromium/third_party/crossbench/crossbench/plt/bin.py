@@ -5,17 +5,21 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Iterable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Tuple, TypeAlias
+
+from typing_extensions import override
 
 from crossbench import path as pth
 
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
+  BinaryLookup: TypeAlias = pth.AnyPathLike | Iterable[pth.AnyPathLike]
+
 
 
 class BinaryNotFoundError(RuntimeError):
 
-  def __init__(self, binary: Binary, platform: Platform):
+  def __init__(self, binary: Binary, platform: Platform) -> None:
     self.binary = binary
     self.platform = platform
     super().__init__(self._create_message())
@@ -29,16 +33,14 @@ class BinaryNotFoundError(RuntimeError):
 
 class UnsupportedPlatformError(BinaryNotFoundError):
 
-  def __init__(self, binary: Binary, platform: Platform, expected: str):
+  def __init__(self, binary: Binary, platform: Platform, expected: str) -> None:
     self.expected_platform_name: str = expected
     super().__init__(binary, platform)
 
+  @override
   def _create_message(self) -> str:
     return (f"Could not find binary '{self.binary}' on {self.platform}. "
             f"Only supported on {self.expected_platform_name}")
-
-
-BinaryLookup = Union[pth.AnyPathLike, Iterable[pth.AnyPathLike]]
 
 
 class Binary:
@@ -92,7 +94,7 @@ class Binary:
   def __str__(self) -> str:
     return self._name
 
-  @functools.lru_cache(maxsize=None)  # pylint: disable=method-cache-max-size-none
+  @functools.cache  # pylint: disable=method-cache-max-size-none
   def resolve_cached(self, platform: Platform) -> pth.AnyPath:
     return self.resolve(platform)
 
@@ -133,9 +135,10 @@ class Binary:
 
 class PosixBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyPosixPath(name).name, posix=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_posix:
       raise UnsupportedPlatformError(self, platform, "posix")
@@ -143,9 +146,10 @@ class PosixBinary(Binary):
 
 class MacOsBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyPosixPath(name).name, macos=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_macos:
       raise UnsupportedPlatformError(self, platform, "macos")
@@ -153,9 +157,10 @@ class MacOsBinary(Binary):
 
 class LinuxBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyPosixPath(name).name, linux=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_posix:
       raise UnsupportedPlatformError(self, platform, "linux")
@@ -163,9 +168,10 @@ class LinuxBinary(Binary):
 
 class AndroidBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyPosixPath(name).name, android=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_android:
       raise UnsupportedPlatformError(self, platform, "android")
@@ -173,9 +179,10 @@ class AndroidBinary(Binary):
 
 class WinBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyWindowsPath(name).name, win=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_win:
       raise UnsupportedPlatformError(self, platform, "windows")
@@ -183,9 +190,10 @@ class WinBinary(Binary):
 
 class ChromeOSBinary(Binary):
 
-  def __init__(self, name: pth.AnyPathLike):
+  def __init__(self, name: pth.AnyPathLike) -> None:
     super().__init__(pth.AnyPosixPath(name).name, chromeos=name)
 
+  @override
   def _validate_platform(self, platform: Platform) -> None:
     if not platform.is_chromeos:
       raise UnsupportedPlatformError(self, platform, "chromeos")

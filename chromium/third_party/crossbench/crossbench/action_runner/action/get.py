@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Type
+import functools
+from typing import TYPE_CHECKING, Self, Type
+
+from typing_extensions import override
 
 from crossbench.action_runner.action.action import ACTION_TIMEOUT, ActionT
 from crossbench.action_runner.action.action_type import ActionType
@@ -24,14 +27,16 @@ class GetAction(BaseDurationAction):
   TYPE: ActionType = ActionType.GET
 
   @classmethod
-  def parse_str(cls, value: str) -> GetAction:
-    return cls(url=ObjectParser.parse_fuzzy_url_str(value))
+  @override
+  def parse_str(cls, value: str) -> Self:
+    return cls(url=ObjectParser.fuzzy_url_str(value))
 
   @classmethod
+  @override
+  @functools.lru_cache(maxsize=1)
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = super().config_parser()
-    parser.add_argument(
-        "url", type=ObjectParser.parse_fuzzy_url_str, required=True)
+    parser.add_argument("url", type=ObjectParser.fuzzy_url_str, required=True)
     parser.add_argument(
         "duration",
         type=DurationParser.positive_or_zero_duration,
@@ -48,7 +53,7 @@ class GetAction(BaseDurationAction):
                timeout: dt.timedelta = ACTION_TIMEOUT,
                ready_state: ReadyState = ReadyState.ANY,
                target: WindowTarget = WindowTarget.SELF,
-               index: int = 0):
+               index: int = 0) -> None:
     if not url:
       raise ValueError(f"{self}.url is missing")
     self._url: str = url
@@ -56,6 +61,7 @@ class GetAction(BaseDurationAction):
     self._target = target
     super().__init__(duration, timeout, index)
 
+  @override
   def validate_duration(self) -> None:
     if self.ready_state != ReadyState.ANY:
       if self.duration != dt.timedelta():
@@ -73,6 +79,7 @@ class GetAction(BaseDurationAction):
     return self._ready_state
 
   @property
+  @override
   def duration(self) -> dt.timedelta:
     return self._duration
 
@@ -80,9 +87,11 @@ class GetAction(BaseDurationAction):
   def target(self) -> WindowTarget:
     return self._target
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:
     action_runner.get(run, self)
 
+  @override
   def to_json(self) -> JsonDict:
     details = super().to_json()
     details["url"] = self.url

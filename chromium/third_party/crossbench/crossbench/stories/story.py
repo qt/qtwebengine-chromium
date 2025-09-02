@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import TYPE_CHECKING, Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
 from crossbench.cli.config.secrets import Secrets
 from crossbench.path import safe_filename
@@ -26,7 +26,7 @@ class Story(abc.ABC):
   def __init__(self,
                name: str,
                duration: dt.timedelta = dt.timedelta(seconds=15),
-               secrets: Optional[Secrets] = None):
+               secrets: Optional[Secrets] = None) -> None:
     assert name, "Invalid page name"
     self._name = safe_filename(name)
     self._duration = duration
@@ -40,6 +40,10 @@ class Story(abc.ABC):
     return self._name
 
   @property
+  def substories(self) -> Tuple[str, ...]:
+    return (self.name,)
+
+  @property
   def duration(self) -> dt.timedelta:
     return self._duration
 
@@ -51,9 +55,9 @@ class Story(abc.ABC):
     return {"name": self.name, "duration": self.duration.total_seconds()}
 
   def log_run_details(self, run: Run) -> None:
-    logging.info("STORY:          %s", self)
+    logging.info("📚 STORY:                    %s", self)
     timing = run.timing
-    logging.info("STORY DURATION: expected=%s timeout=%s",
+    logging.info("⏳ STORY DURATION:           expected=%s timeout=%s",
                  timing.timedelta(self.duration),
                  timing.timeout_timedelta(self.duration))
 

@@ -10,15 +10,18 @@ import datetime as dt
 import enum
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Optional, Self, Sequence, Tuple, Type
 
-from crossbench import compat
+from typing_extensions import override
+
+from crossbench import plt
 from crossbench.helper.path_finder import ChromiumBuildBinaryFinder
-from crossbench.parse import DurationParser, PathParser
+from crossbench.parse import DurationParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
                                      ProbeKeyT)
 from crossbench.probes.probe_error import ProbeValidationError
 from crossbench.probes.result_location import ResultLocation
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
@@ -29,7 +32,7 @@ if TYPE_CHECKING:
 
 
 @enum.unique
-class SamplerType(compat.StrEnumWithHelp):
+class SamplerType(StrEnumWithHelp):
   MAIN_DISPLAY = ("main_display",
                   "Samples the backlight level of the main display.")
   BATTERY = ("battery", "Provides data retrieved from the IOPMPowerSource.")
@@ -60,9 +63,10 @@ class PowerSamplerProbe(Probe):
                           SamplerType.MAIN_DISPLAY)
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
-    parser.add_argument("bin_path", type=PathParser.binary_path)
+    parser.add_argument("bin_path", type=plt.PLATFORM.parse_local_binary_path)
     parser.add_argument(
         "sampling_interval",
         type=DurationParser.positive_duration,
@@ -81,9 +85,9 @@ class PowerSamplerProbe(Probe):
                bin_path: Optional[AnyPath] = None,
                sampling_interval: dt.timedelta = dt.timedelta(),
                samplers: Sequence[SamplerType] = SAMPLERS,
-               wait_for_battery: bool = True):
+               wait_for_battery: bool = True) -> None:
     super().__init__()
-    self._bin_path: Optional[AnyPath] = bin_path
+    self._bin_path: AnyPath | None = bin_path
     if not self._bin_path:
       logging.debug("No default power_sampler binary provided.")
     self._sampling_interval = sampling_interval
@@ -94,6 +98,7 @@ class PowerSamplerProbe(Probe):
     self._wait_for_battery = wait_for_battery
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("bin_path", str(self.bin_path)),
@@ -118,6 +123,7 @@ class PowerSamplerProbe(Probe):
   def wait_for_battery(self) -> bool:
     return self._wait_for_battery
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     self.expect_macos(browser)
     if not browser.platform.is_battery_powered:
@@ -143,7 +149,8 @@ class PowerSamplerProbe(Probe):
         return maybe_path
     raise self.missing_power_sampler_error(browser_platform, maybe_build_dir)
 
-  def missing_power_sampler_error(self, browser_platform, maybe_build_dir):
+  def missing_power_sampler_error(self, browser_platform,
+                                  maybe_build_dir) -> ProbeValidationError:
     is_build_dir = browser_platform.is_file(maybe_build_dir / "args.gn")
     if not is_build_dir:
       maybe_build_dir = browser_platform.path(
@@ -155,6 +162,7 @@ class PowerSamplerProbe(Probe):
     ]
     return ProbeValidationError(self, "\n".join(error_message))
 
+  @override
   def get_context_cls(self) -> Type[PowerSamplerProbeContext]:
     return PowerSamplerProbeContext
 
@@ -164,9 +172,9 @@ class PowerSamplerProbeContext(ProbeContext[PowerSamplerProbe]):
   def __init__(self, probe: PowerSamplerProbe, run: Run) -> None:
     super().__init__(probe, run)
     self._bin_path: AnyPath = probe.find_power_sampler_bin(self.browser)
-    self._active_user_process: Optional[subprocess.Popen] = None
-    self._power_process: Optional[subprocess.Popen] = None
-    self._power_battery_process: Optional[subprocess.Popen] = None
+    self._active_user_process: subprocess.Popen | None = None
+    self._power_process: subprocess.Popen | None = None
+    self._power_battery_process: subprocess.Popen | None = None
     self._power_output: AnyPath = self.result_path.with_suffix(".power.json")
     self._power_battery_output: AnyPath = self.result_path.with_suffix(
         ".power_battery.json")
@@ -220,13 +228,13 @@ class PowerSamplerProbeContext(ProbeContext[PowerSamplerProbe]):
 
   def stop_processes(self) -> None:
     if self._power_process:
-      self.browser_platform.wait_and_kill(self._power_process)
+      self.browser_platform.terminate_gracefully(self._power_process)
       self._power_process = None
     if self._power_battery_process:
-      self.browser_platform.wait_and_kill(self._power_battery_process)
+      self.browser_platform.terminate_gracefully(self._power_battery_process)
       self._power_battery_process = None
     if self._active_user_process:
-      self.browser_platform.wait_and_kill(self._active_user_process)
+      self.browser_platform.terminate_gracefully(self._active_user_process)
       self._active_user_process = None
 
   def _wait_for_battery_not_full(self, run: Run) -> None:

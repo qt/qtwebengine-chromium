@@ -15,12 +15,14 @@
  * limitations under the License.
  */
 
+#include <vulkan/vulkan_core.h>
 #include "gpuav/core/gpuav.h"
 #include "gpuav/validation_cmd/gpuav_validation_cmd_common.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "generated/validation_cmd_copy_buffer_to_image_comp.h"
+#include "containers/limits.h"
 
 namespace gpuav {
 
@@ -35,10 +37,10 @@ struct SharedCopyBufferToImageValidationResources final {
     SharedCopyBufferToImageValidationResources(Validator &gpuav, VkDescriptorSetLayout error_output_set_layout, const Location &loc)
         : device(gpuav.device), vma_allocator(gpuav.vma_allocator_) {
         VkResult result = VK_SUCCESS;
-        const std::vector<VkDescriptorSetLayoutBinding> bindings = {
+        const std::array<VkDescriptorSetLayoutBinding, 2> bindings = {{
             {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // copy source buffer
             {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},  // copy regions buffer
-        };
+        }};
 
         VkDescriptorSetLayoutCreateInfo ds_layout_ci = vku::InitStructHelper();
         ds_layout_ci.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -134,7 +136,7 @@ struct SharedCopyBufferToImageValidationResources final {
     }
 };
 
-void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, CommandBuffer &cb_state,
+void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, CommandBufferSubState &cb_state,
                                        const VkCopyBufferToImageInfo2 *copy_buffer_to_img_info) {
     if (!gpuav.gpuav_settings.validate_buffer_copies) {
         return;
@@ -201,7 +203,7 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Co
             return;
         }
 
-        auto gpu_regions_u32_ptr = (uint32_t *)copy_src_regions_mem_buffer.MapMemory(loc);
+        auto gpu_regions_u32_ptr = (uint32_t *)copy_src_regions_mem_buffer.GetMappedPtr();
 
         const uint32_t block_size = image_state->create_info.format == VK_FORMAT_D32_SFLOAT ? 4 : 5;
         uint32_t gpu_regions_count = 0;
@@ -245,7 +247,6 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Co
 
         if (gpu_regions_count == 0) {
             // Nothing to validate
-            copy_src_regions_mem_buffer.UnmapMemory();
             return;
         }
 
@@ -257,8 +258,6 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Co
         gpu_regions_u32_ptr[5] = gpu_regions_count;
         gpu_regions_u32_ptr[6] = 0;
         gpu_regions_u32_ptr[7] = 0;
-
-        copy_src_regions_mem_buffer.UnmapMemory();
     }
 
     // Update descriptor set
@@ -270,15 +269,10 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Co
             return;
         }
 
-        std::array<VkDescriptorBufferInfo, 2> descriptor_buffer_infos = {};
-        // Copy source buffer
-        descriptor_buffer_infos[0].buffer = copy_buffer_to_img_info->srcBuffer;
-        descriptor_buffer_infos[0].offset = 0;
-        descriptor_buffer_infos[0].range = VK_WHOLE_SIZE;
-        // Copy regions buffer
-        descriptor_buffer_infos[1].buffer = copy_src_regions_mem_buffer.VkHandle();
-        descriptor_buffer_infos[1].offset = 0;
-        descriptor_buffer_infos[1].range = VK_WHOLE_SIZE;
+        std::array<VkDescriptorBufferInfo, 2> descriptor_buffer_infos = {{
+            {copy_buffer_to_img_info->srcBuffer, 0, VK_WHOLE_SIZE},      // Copy source buffer_
+            {copy_src_regions_mem_buffer.VkHandle(), 0, VK_WHOLE_SIZE},  // Copy regions buffer
+        }};
 
         std::array<VkWriteDescriptorSet, descriptor_buffer_infos.size()> desc_writes = {};
         for (const auto [i, desc_buffer_info] : vvl::enumerate(descriptor_buffer_infos.data(), descriptor_buffer_infos.size())) {
@@ -306,20 +300,22 @@ void InsertCopyBufferToImageValidation(Validator &gpuav, const Location &loc, Co
     const uint32_t group_count_x = max_texels_count_in_regions / 64 + uint32_t(max_texels_count_in_regions % 64 > 0);
     DispatchCmdDispatch(cb_state.VkHandle(), group_count_x, 1, 1);
 
-    CommandBuffer::ErrorLoggerFunc error_logger = [loc, src_buffer = copy_buffer_to_img_info->srcBuffer](
-                                                      Validator &gpuav, const CommandBuffer &, const uint32_t *error_record,
-                                                      const LogObjectList &objlist, const std::vector<std::string> &) {
+    CommandBufferSubState::ErrorLoggerFunc error_logger = [loc, src_buffer = copy_buffer_to_img_info->srcBuffer](
+                                                              Validator &gpuav, const CommandBufferSubState &,
+                                                              const uint32_t *error_record, const LogObjectList &objlist,
+                                                              const std::vector<std::string> &) {
         bool skip = false;
-
         using namespace glsl;
 
-        if (error_record[kHeaderErrorGroupOffset] != kErrorGroupGpuCopyBufferToImage) {
+        const uint32_t error_group = error_record[kHeaderShaderIdErrorOffset] >> kErrorGroupShift;
+        if (error_group != kErrorGroupGpuCopyBufferToImage) {
             return skip;
         }
 
-        switch (error_record[kHeaderErrorSubCodeOffset]) {
+        const uint32_t error_sub_code = (error_record[kHeaderShaderIdErrorOffset] & kErrorSubCodeMask) >> kErrorSubCodeShift;
+        switch (error_sub_code) {
             case kErrorSubCodePreCopyBufferToImageBufferTexel: {
-                uint32_t texel_offset = error_record[kPreActionParamOffset_0];
+                const uint32_t texel_offset = error_record[kPreActionParamOffset_0];
                 LogObjectList objlist_and_src_buffer = objlist;
                 objlist_and_src_buffer.add(src_buffer);
                 const char *vuid = loc.function == vvl::Func::vkCmdCopyBufferToImage

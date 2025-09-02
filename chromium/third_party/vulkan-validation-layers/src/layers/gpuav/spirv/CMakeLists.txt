@@ -35,8 +35,6 @@ target_sources(gpu_av_spirv PRIVATE
     vertex_attribute_fetch_oob.cpp
 
     # Framework
-    instruction.h
-    instruction.cpp
     function_basic_block.h
     function_basic_block.cpp
     interface.h
@@ -45,16 +43,14 @@ target_sources(gpu_av_spirv PRIVATE
     module.cpp
     type_manager.h
     type_manager.cpp
-    inject_conditional_function_pass.h
-    inject_conditional_function_pass.cpp
-    inject_function_pass.h
-    inject_function_pass.cpp
     pass.h
     pass.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/spirv_grammar_helper.cpp
 
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_comp.h
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_comp.cpp
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp.h
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_non_bindless_comp.h
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_non_bindless_comp.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_class_general_buffer_comp.h
@@ -73,6 +69,7 @@ target_sources(gpu_av_spirv PRIVATE
 
 target_include_directories(gpu_av_spirv PRIVATE .
     ${VVL_SOURCE_DIR}/layers
+    ${VVL_SOURCE_DIR}/layers/external
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}
 )
 

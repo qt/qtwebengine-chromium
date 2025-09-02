@@ -11,7 +11,7 @@ import logging
 from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
                     Sequence, Set, Tuple, Type)
 
-from crossbench import compat, exception
+from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.benchmarks import benchmark_validator
@@ -28,6 +28,7 @@ from crossbench.probes.perfetto.trace_processor.trace_processor import \
     TraceProcessorProbe
 from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
 from crossbench.probes.thermal_monitor import ThermalStatus
+from crossbench.results_db.db import ResultsDB
 from crossbench.runner.groups.browsers import BrowsersRunGroup
 from crossbench.runner.groups.cache_temperatures import \
     CacheTemperaturesRunGroup
@@ -37,6 +38,7 @@ from crossbench.runner.groups.stories import StoriesRunGroup
 from crossbench.runner.groups.thread import RunThreadGroup
 from crossbench.runner.run import Run
 from crossbench.runner.timing import Timing
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import Benchmark
@@ -52,7 +54,7 @@ class RunnerException(exception.MultiException):
 
 
 @enum.unique
-class ThreadMode(compat.StrEnumWithHelp):
+class ThreadMode(StrEnumWithHelp):
   NONE = ("none", (
       "Execute all browser-sessions sequentially, default. "
       "Low interference risk, use for worry-free time-critical measurements."))
@@ -148,13 +150,20 @@ class Runner:
               ThreadMode.help_text(indent=2)))
 
     out_dir_group = parser.add_argument_group("Output Directory Options")
-    out_dir_group.add_argument(
+    symlink_group = out_dir_group.add_mutually_exclusive_group()
+    symlink_group.add_argument(
         "--no-symlinks",
         "--nosymlinks",
         dest="create_symlinks",
         action="store_false",
-        default=True,
-        help="Do not create symlinks in the output directory.")
+        default=not plt.PLATFORM.is_win,
+        help=("Do not create symlinks in the output directory. "
+              "Disabled by defauly on windows."))
+    symlink_group.add_argument(
+        "--symlinks",
+        dest="create_symlinks",
+        action="store_true",
+        help="Allow create symlinks in the output directory.")
 
     out_dir_xor_group = out_dir_group.add_mutually_exclusive_group()
     out_dir_xor_group.add_argument(
@@ -209,13 +218,14 @@ class Runner:
                cool_down_threshold: Optional[ThermalStatus] = None,
                thread_mode: ThreadMode = ThreadMode.NONE,
                throw: bool = False,
-               create_symlinks: bool = True):
+               create_symlinks: bool = True,
+               in_memory_result_db: bool = False) -> None:
     self._state = StateMachine(RunnerState.INITIAL)
     self.out_dir = out_dir.absolute()
     assert not self.out_dir.exists(), f"out_dir={self.out_dir} exists already"
     self.out_dir.mkdir(parents=True)
     self._timing = timing
-    self._cool_down_threshold: Optional[ThermalStatus] = cool_down_threshold
+    self._cool_down_threshold: ThermalStatus | None = cool_down_threshold
     self._browsers: Tuple[Browser, ...] = tuple(browsers)
     self._validate_browser_labels()
     self._benchmark = benchmark
@@ -237,10 +247,14 @@ class Runner:
                                 env_validation_mode)
     self._attach_default_probes(additional_probes)
     self._prepare_benchmark()
+    if in_memory_result_db:
+      self._results_db = ResultsDB()
+    else:
+      self._results_db = ResultsDB(self.out_dir / "results.db")
     self._cache_temperatures_groups: Tuple[CacheTemperaturesRunGroup, ...] = ()
     self._repetitions_groups: Tuple[RepetitionsRunGroup, ...] = ()
     self._story_groups: Tuple[StoriesRunGroup, ...] = ()
-    self._browser_group: Optional[BrowsersRunGroup] = None
+    self._browser_group: BrowsersRunGroup | None = None
     self._create_symlinks: bool = create_symlinks
 
   def _prepare_benchmark(self) -> None:
@@ -271,7 +285,7 @@ class Runner:
     # so all other probes have data by the time we write the results summary.
     assert isinstance(self._probes[0], ResultsSummaryProbe)
 
-  def _attach_internal_probes(self):
+  def _attach_internal_probes(self) -> None:
     for probe_cls in all_probes.NON_CONFIGURABLE_INTERNAL_PROBES:
       default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
       self._attach_default_probe(default_probe)
@@ -375,6 +389,10 @@ class Runner:
     return set(browser.platform for browser in self.browsers)
 
   @property
+  def results_db(self) -> ResultsDB:
+    return self._results_db
+
+  @property
   def all_runs(self) -> Tuple[Run, ...]:
     return tuple(self._all_runs)
 
@@ -452,30 +470,30 @@ class Runner:
     with self._exceptions.annotate("Preparing Runs"):
       self._all_runs = list(self.get_runs())
       assert self._all_runs, f"{type(self)}.get_runs() produced no runs"
-      logging.info("DISCOVERED %d RUN(S)", len(self._all_runs))
+      logging.info("🏃 SETUP %d RUN(S)", len(self._all_runs))
       self._measured_runs = [run for run in self._all_runs if not run.is_warmup]
     with self._exceptions.annotate("Preparing Environment"):
       self._env.setup()
     with self._exceptions.annotate(
         f"Preparing Benchmark: {self._benchmark.NAME}"):
       self._benchmark.setup(self)
+    self._results_db.setup_runs(self._all_runs)
 
   def _setup_validate_browsers(self) -> None:
-    logging.info("PREPARING %d BROWSER(S)", len(self.browsers))
+    logging.info("🌐 SETUP %d BROWSER(S)", len(self.browsers))
     with self._exceptions.annotate("Validating all browsers"):
       for browser in self.browsers:
         with self._exceptions.capture(
-            f"Preparing browser type={browser.type_name} "
+            f"Preparing browser type={browser.type_name()} "
             f"unique_name={browser.unique_name}"):
           self._setup_validate_browser(browser)
 
   def _setup_validate_browser(self, browser: Browser) -> None:
-    browser.validate_binary()
+    browser.validate()
     for probe in browser.probes:
       assert probe in self._probes, (
           f"Browser {browser} probe {probe} not in Runner.probes. "
           "Use Runner.attach_probe()")
-    browser.validate_flags()
 
   def has_any_live_network(self) -> bool:
     return any(browser.network.is_live for browser in self.browsers)
@@ -493,7 +511,8 @@ class Runner:
       for story in self.stories:
         for browser in self.browsers:
           # TODO: implement browser-session start/stop
-          extra_benchmark_flags = self.benchmark.extra_flags(browser.attributes)
+          extra_benchmark_flags = self.benchmark.extra_flags(
+              browser.attributes())
           browser_session = BrowserSessionRunGroup(self.env, self.probes,
                                                    browser,
                                                    extra_benchmark_flags,

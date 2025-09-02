@@ -78,23 +78,23 @@ MATCHER_P(StepsParametersEqMatcher, expected,
       arg, result_listener);
 }
 
-Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
+[[maybe_unused]] Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
     EasingFunction::Predefined predefined) {
   return VariantWith<EasingFunction::Predefined>(Eq(predefined));
 }
 
-Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
+[[maybe_unused]] Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
     const EasingFunction::CubicBezier& bezier) {
   return VariantWith<EasingFunction::CubicBezier>(
       CubicBezierParametersEqMatcher(bezier));
 }
 
-Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
+[[maybe_unused]] Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
     const EasingFunction::Linear& linear) {
   return VariantWith<EasingFunction::Linear>(LinearParametersEqMatcher(linear));
 }
 
-Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
+[[maybe_unused]] Matcher<EasingFunction::Parameters> EasingFunctionParametersEq(
     const EasingFunction::Steps& steps) {
   return VariantWith<EasingFunction::Steps>(StepsParametersEqMatcher(steps));
 }
@@ -202,6 +202,17 @@ Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
             ContainerEq(expected.target_modifier_range))));
 }
 
+Matcher<BrushBehavior::Node> BrushBehaviorNodeEqMatcher(
+    const BrushBehavior::PolarTargetNode& expected) {
+  return VariantWith<BrushBehavior::PolarTargetNode>(AllOf(
+      Field("target", &BrushBehavior::PolarTargetNode::target,
+            Eq(expected.target)),
+      Field("angle_range", &BrushBehavior::PolarTargetNode::angle_range,
+            ContainerEq(expected.angle_range)),
+      Field("magnitude_range", &BrushBehavior::PolarTargetNode::magnitude_range,
+            ContainerEq(expected.magnitude_range))));
+}
+
 MATCHER(BrushBehaviorNodePointwiseEqMatcher, "") {
   return ExplainMatchResult(BrushBehaviorNodeEq(std::get<1>(arg)),
                             std::get<0>(arg), result_listener);
@@ -269,8 +280,8 @@ MATCHER_P(BrushPaintTextureLayerEqMatcher, expected,
                        " BrushPaintTextureLayer (expected: ",
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
-      AllOf(Field(&BrushPaint::TextureLayer::color_texture_uri,
-                  Eq(expected.color_texture_uri)),
+      AllOf(Field(&BrushPaint::TextureLayer::client_texture_id,
+                  Eq(expected.client_texture_id)),
             Field(&BrushPaint::TextureLayer::mapping, Eq(expected.mapping)),
             Field(&BrushPaint::TextureLayer::origin, Eq(expected.origin)),
             Field(&BrushPaint::TextureLayer::size_unit, Eq(expected.size_unit)),
@@ -315,8 +326,7 @@ MATCHER_P(BrushCoatEqMatcher, expected,
                        " BrushCoat (expected: ",
                        ::testing::PrintToString(expected), ")")) {
   return ExplainMatchResult(
-      AllOf(Field("tips", &BrushCoat::tips,
-                  Pointwise(BrushTipEq(), expected.tips)),
+      AllOf(Field("tip", &BrushCoat::tip, BrushTipEq(expected.tip)),
             Field("paint", &BrushCoat::paint, BrushPaintEq(expected.paint))),
       arg, result_listener);
 }
@@ -327,16 +337,11 @@ MATCHER(BrushCoatPointwiseEqMatcher, "") {
 }
 
 Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
-    const BrushFamily::SpringModelV1& input_model) {
-  return VariantWith<BrushFamily::SpringModelV1>(_);  // no fields to match
+    const BrushFamily::SpringModel& input_model) {
+  return VariantWith<BrushFamily::SpringModel>(_);  // no fields to match
 }
 
-Matcher<BrushFamily::InputModel> BrushFamilyInputModelEqMatcher(
-    const BrushFamily::SpringModelV2& input_model) {
-  return VariantWith<BrushFamily::SpringModelV2>(_);  // no fields to match
-}
-
-Matcher<BrushFamily::InputModel> BrushFamilyInputModelEq(
+[[maybe_unused]] Matcher<BrushFamily::InputModel> BrushFamilyInputModelEq(
     const BrushFamily::InputModel& expected) {
   return std::visit(
       [](const auto& expected) {
@@ -352,7 +357,8 @@ MATCHER_P(BrushFamilyEqMatcher, expected,
   return ExplainMatchResult(
       AllOf(Property(&BrushFamily::GetCoats,
                      Pointwise(BrushCoatEq(), expected.GetCoats())),
-            Property(&BrushFamily::GetUri, Eq(expected.GetUri())),
+            Property(&BrushFamily::GetClientBrushFamilyId,
+                     Eq(expected.GetClientBrushFamilyId())),
             Property(&BrushFamily::GetInputModel,
                      BrushFamilyInputModelEq(expected.GetInputModel()))),
       arg, result_listener);

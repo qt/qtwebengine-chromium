@@ -17,15 +17,19 @@
 
 #pragma once
 
+#include <vulkan/vulkan_core.h>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <optional>
+#include <unordered_set>
 
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/state_object.h"
 #include "state_tracker/sampler_state.h"
 #include <spirv/unified1/spirv.hpp>
+#include "containers/limits.h"
 
 namespace vvl {
 class Pipeline;
@@ -37,7 +41,7 @@ struct Module;
 
 static constexpr uint32_t kInvalidValue = std::numeric_limits<uint32_t>::max();
 
-// Need to find a way to know if actually array lenght of zero, or a runtime array.
+// Need to find a way to know if actually array length of zero, or a runtime array.
 static constexpr uint32_t kRuntimeArray = std::numeric_limits<uint32_t>::max();
 
 // This is the common info for both OpDecorate and OpMemberDecorate
@@ -409,14 +413,17 @@ struct ResourceInterfaceVariable : public VariableBase {
     // Online example to showcase various arrays we do/don't care about here https://godbolt.org/z/h9jhsKaPn
     bool is_runtime_descriptor_array;
 
-    // Sampled Type width of the OpTypeImage the variable points to, 0 if doesn't use the image
-    const uint32_t image_sampled_type_width;
-
     // All info regarding what will be validated from requirements imposed by the pipeline on a descriptor. These
     // can't be checked at pipeline creation time as they depend on the Image or ImageView bound.
     // That is perf-critical code and hashing if 2 variables have same info provides a 20% perf bonus
     struct Info {
-        NumericType image_format_type;
+        // the 'format' operand of OpTypeImage as the corresponding Vulkan Format
+        VkFormat image_format{VK_FORMAT_UNDEFINED};
+        // the 'Sampled Type' operand of OpTypeImage,as a numeric type (float, uint, int)
+        NumericType image_sampled_type_numeric{NumericTypeUnknown};
+        // the 'Sampled Type' operand of OpTypeImage as the bit width (64 is the largest bit width in SPIR-V)
+        uint8_t image_sampled_type_width{0};
+
         spv::Dim image_dim;
         bool is_image_array;
         bool is_multisampled;
@@ -441,7 +448,7 @@ struct ResourceInterfaceVariable : public VariableBase {
         uint32_t access_mask{AccessBit::empty};
     } info;
     uint64_t descriptor_hash = 0;
-    bool IsImage() const { return info.image_format_type != NumericTypeUnknown; }
+    bool IsImage() const { return base_type.Opcode() == spv::OpTypeImage; }
 
     // Type of resource type (vkspec.html#interfaces-resources-storage-class-correspondence)
     bool is_storage_image{false};
@@ -455,8 +462,6 @@ struct ResourceInterfaceVariable : public VariableBase {
 
   protected:
     static const Instruction &FindBaseType(ResourceInterfaceVariable &variable, const Module &module_state);
-    static uint32_t FindImageSampledTypeWidth(const Module &module_state, const Instruction &base_type);
-    static NumericType FindImageFormatType(const Module &module_state, const Instruction &base_type);
     static bool IsStorageBuffer(const ResourceInterfaceVariable &variable);
 };
 
@@ -506,6 +511,8 @@ struct EntryPoint {
     // "User-defined Variable Interface" - vkspec.html#interfaces-iointerfaces-user
     std::vector<const StageInterfaceVariable *> user_defined_interface_variables;
 
+    // Map for quick reserve lookup of variables from the OpVariable Result ID
+    vvl::unordered_map<uint32_t, const ResourceInterfaceVariable *> resource_interface_variable_map;
     // Lookup map from Interface slot to the variable in that spot
     // spirv-val guarantees no overlap so 2 variables won't have same slot
     vvl::unordered_map<InterfaceSlot, const StageInterfaceVariable *, InterfaceSlot::Hash> input_interface_slots;
@@ -550,13 +557,13 @@ struct EntryPoint {
                                  const AccessChainVariableMap &access_chain_map);
 };
 
-// Info to capture while parsing the SPIR-V, but will only be used by ValidateSpirvStateless and don't need to save after
+// Info to capture while parsing the SPIR-V, but will only be used by SpirvValidator::Validate and don't need to save after
 struct StatelessData {
     // Used if the Shader Module is being passed in VkPipelineShaderStageCreateInfo
     std::shared_ptr<spirv::Module> pipeline_pnext_module;
 
     // These instruction mapping were designed to quickly find the few instructions without having to loop the entire pass
-    // In theory, these could be removed checked during the 2nd pass in ValidateSpirvStateless()
+    // In theory, these could be removed checked during the 2nd pass in SpirvValidator::Validate
     // TODO - Get perf numbers if better to understand if these make sense here
     std::vector<const Instruction *> read_clock_inst;
     std::vector<const Instruction *> atomic_inst;
@@ -617,6 +624,8 @@ struct Module {
         uint32_t builtin_workgroup_size_id = 0;
 
         std::vector<const Instruction *> cooperative_matrix_inst;
+
+        std::vector<const Instruction *> cooperative_vector_inst;
 
         std::vector<spv::Capability> capability_list;
         // Code on the hot path can cache capabilities for fast access.
@@ -685,27 +694,9 @@ struct Module {
         return (it != static_data_.execution_modes.end()) ? it->second : static_data_.empty_execution_mode;
     }
 
-    std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(uint32_t struct_id) const {
-        // return the actual execution modes for this id, or a default empty set.
-        const auto it = static_data_.type_struct_map.find(struct_id);
-        return (it != static_data_.type_struct_map.end()) ? it->second : nullptr;
-    }
+    std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(uint32_t struct_id) const;
     // Overload to walk down and find the OpTypeStruct
-    std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(const Instruction *insn) const {
-        while (true) {
-            if (insn->Opcode() == spv::OpVariable) {
-                insn = FindDef(insn->Word(1));
-            } else if (insn->Opcode() == spv::OpTypePointer) {
-                insn = FindDef(insn->Word(3));
-            } else if (insn->IsArray()) {
-                insn = FindDef(insn->Word(2));
-            } else if (insn->Opcode() == spv::OpTypeStruct) {
-                return GetTypeStructInfo(insn->Word(1));
-            } else {
-                return nullptr;
-            }
-        }
-    }
+    std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(const Instruction *insn) const;
 
     // Used to get human readable strings for error messages
     std::string GetDecorations(uint32_t id) const;
@@ -723,6 +714,7 @@ struct Module {
     bool FindLocalSize(const EntryPoint &entrypoint, uint32_t &local_size_x, uint32_t &local_size_y, uint32_t &local_size_z) const;
 
     uint32_t CalculateWorkgroupSharedMemory() const;
+    uint32_t CalculateTaskPayloadMemory() const;
 
     const Instruction *GetConstantDef(uint32_t id) const;
     uint32_t GetConstantValueById(uint32_t id) const;
@@ -738,6 +730,7 @@ struct Module {
     uint32_t GetTypeBytesSize(const Instruction *insn) const;
     uint32_t GetBaseType(const Instruction *insn) const;
     const Instruction *GetBaseTypeInstruction(uint32_t type) const;
+    const Instruction *GetVariablePointerType(const spirv::Instruction &var_insn) const;
     uint32_t GetTypeId(uint32_t id) const;
     uint32_t GetTexelComponentCount(const Instruction &insn) const;
     uint32_t GetFlattenArraySize(const Instruction &insn) const;

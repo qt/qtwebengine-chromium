@@ -46,7 +46,7 @@ struct MeshSpecificationData {
   // Skia doesn't seem to place any clear limit on the number of uniforms, so
   // this value is just the size we choose to use for our array. Currently it is
   // set to the actual number of uniforms we happen to use right now.
-  static constexpr int kMaxUniforms = 7;
+  static constexpr int kMaxUniforms = 8;
 
   // Subsets of shader variable types for attributes, varyings, and uniforms
   // that are used by Ink and available across platforms.
@@ -63,6 +63,7 @@ struct MeshSpecificationData {
     kFloat4 = 3,
   };
   enum class UniformType {
+    kFloat = 0,
     kFloat4 = 3,
     kInt = 5,
   };
@@ -84,6 +85,18 @@ struct MeshSpecificationData {
     // TODO: b/375203215 - Get rid of this uniform once we are able to mix
     // tiling and winding textures in a single `BrushPaint`.
     kTextureMapping = 5,
+    // The current progress, a float in [0, 1], of the texture animation.
+    //
+    // We must pass both animation progress and number of frames to the shader,
+    // rather than computing a frame index from these on the CPU and passing
+    // only that. Why? Each particle in a stroke can have a different progress
+    // offset, and these offsets are not quantized to animation frame
+    // boundaries. Therefore the conversion to frame indices depends on both the
+    // stroke-wide progress and the per-particle offset, the latter of which is
+    // only available in the vertex shader.
+    kTextureAnimationProgress = 6,
+    // The number of frames in the texture animation.
+    kNumTextureAnimationFrames = 7,
   };
 
   struct Attribute {

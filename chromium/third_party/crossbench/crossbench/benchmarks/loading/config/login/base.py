@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from typing_extensions import override
+
 from crossbench.benchmarks.loading.config.blocks import ActionBlock
 
 if TYPE_CHECKING:
@@ -16,12 +18,14 @@ if TYPE_CHECKING:
 class BaseLoginBlock(ActionBlock):
   LABEL: Final[str] = "login"
 
+  @override
   def validate(self) -> None:
     super().validate()
     assert self.index == 0, (
         f"Login block has to be the first, but got {self.index}")
 
   @property
+  @override
   def is_login(self) -> bool:
     return True
 
@@ -34,6 +38,7 @@ class BaseLoginBlock(ActionBlock):
 
 class PresetLoginBlock(BaseLoginBlock):
 
+  @override
   def validate_actions(self) -> None:
     """Skip validation, since PresetLoginBlocks have an unknown number
     of actions."""

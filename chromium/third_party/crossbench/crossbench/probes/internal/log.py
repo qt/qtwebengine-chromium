@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.probes.internal.base import InternalProbe
 from crossbench.probes.probe_context import ProbeContext
@@ -22,6 +24,7 @@ class LogProbe(InternalProbe):
   """
   NAME = "cb.log"
 
+  @override
   def get_context_cls(self) -> Type[LogProbeContext]:
     return LogProbeContext
 
@@ -30,8 +33,9 @@ class LogProbeContext(ProbeContext[LogProbe]):
 
   def __init__(self, probe_instance: LogProbe, run: Run) -> None:
     super().__init__(probe_instance, run)
-    self._log_handler: Optional[logging.Handler] = None
+    self._log_handler: logging.Handler | None = None
 
+  @override
   def setup(self) -> None:
     log_formatter = logging.Formatter(
         "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s] "

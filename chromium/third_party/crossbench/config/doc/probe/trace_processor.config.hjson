@@ -13,6 +13,11 @@
         },
       ],
       metrics: ["trace_stats"],
+      // Additional directories containing trace processor modules
+      // can be specified:
+      module_paths: [
+        "/my_project/modules/ext",
+      ]
     },
     perfetto: {
       textproto: '''

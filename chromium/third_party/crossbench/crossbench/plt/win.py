@@ -10,6 +10,8 @@ import os
 import shutil
 from typing import Optional, Type
 
+from typing_extensions import override
+
 from crossbench import path as pth
 from crossbench.plt.base import Platform
 from crossbench.plt.signals import WinSignals
@@ -30,29 +32,35 @@ class WinPlatform(Platform):
     return WinSignals
 
   @property
+  @override
   def is_win(self) -> bool:
     return True
 
   @property
+  @override
   def name(self) -> str:
     return "win"
 
   @property
+  @override
   def device(self) -> str:
     # TODO: implement
     return ""
 
   @functools.cached_property
+  @override
   def version(self) -> str:  #pylint: disable=invalid-overridden-method
     return self.sh_stdout("cmd", "/c", "ver").strip()
 
   @functools.cached_property
+  @override
   def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
     return self.sh_stdout(
       "powershell", "-c",
       "Get-CIMInstance -query 'select * from Win32_Processor' | ft Name"
     ).strip().splitlines()[2].strip()
 
+  @override
   def search_binary(self, app_or_bin: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     self.assert_is_local()
     app_or_bin_path: pth.AnyPath = self.path(app_or_bin)
@@ -71,6 +79,7 @@ class WinPlatform(Platform):
         return result_path
     return None
 
+  @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     app_or_bin = self.path(app_or_bin)
     if not self.exists(app_or_bin):
@@ -91,6 +100,7 @@ class WinPlatform(Platform):
     raise ValueError(f"Could not extract version for {app_or_bin}")
 
 
+  @override
   def symlink_or_copy(self, src: pth.AnyPathLike,
                       dst: pth.AnyPathLike) -> pth.AnyPath:
     """Windows does not support symlinking without admin support.

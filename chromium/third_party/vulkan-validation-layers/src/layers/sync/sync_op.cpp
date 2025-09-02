@@ -212,7 +212,8 @@ void ApplyBarriers(const std::vector<SyncImageMemoryBarrier> &barriers, QueueId 
     for (const SyncImageMemoryBarrier &barrier : barriers) {
         ApplyBarrierFunctor update_action(
             PipelineBarrierOp(queue_id, barrier.barrier, barrier.layout_transition, barrier.handle_index));
-        auto range_gen = barrier.image->MakeImageRangeGen(barrier.subresource_range, false);
+        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, false);
         access_context->UpdateMemoryAccessState(update_action, range_gen);
     }
 }
@@ -260,7 +261,8 @@ void ApplyBarriers(const std::vector<SyncImageMemoryBarrier> &barriers, QueueId 
         ApplyBarrierFunctor update_action(
             WaitEventBarrierOp(queue_id, sync_event.first_scope_tag, sync_barrier, barrier.layout_transition));
 
-        ImageRangeGen range_gen = barrier.image->MakeImageRangeGen(barrier.subresource_range, false);
+        const auto &sub_state = syncval_state::SubState(*barrier.image);
+        auto range_gen = sub_state.MakeImageRangeGen(barrier.subresource_range, false);
         EventImageRangeGenerator filtered_range_gen(sync_event.FirstScope(), range_gen);
 
         access_context->UpdateMemoryAccessState(update_action, filtered_range_gen);
@@ -334,8 +336,8 @@ void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, const 
                                          uint32_t barrier_count, const VkImageMemoryBarrier *barriers) {
     image_memory_barriers.reserve(barrier_count);
     for (const auto [index, barrier] : vvl::enumerate(barriers, barrier_count)) {
-        if (auto image = sync_state.Get<syncval_state::ImageState>(barrier.image)) {
-            auto subresource_range = NormalizeSubresourceRange(image->create_info, barrier.subresourceRange);
+        if (auto image = sync_state.Get<vvl::Image>(barrier.image)) {
+            auto subresource_range = image->NormalizeSubresourceRange(barrier.subresourceRange);
             const SyncBarrier sync_barrier(barrier, src, dst);
             const bool layout_transition = barrier.oldLayout != barrier.newLayout;
             image_memory_barriers.emplace_back(image, sync_barrier, subresource_range, layout_transition, index);
@@ -349,9 +351,9 @@ void BarrierSet::MakeImageMemoryBarriers(const SyncValidator &sync_state, VkQueu
     for (const auto [index, barrier] : vvl::enumerate(barriers, barrier_count)) {
         auto src = SyncExecScope::MakeSrc(queue_flags, barrier.srcStageMask);
         auto dst = SyncExecScope::MakeDst(queue_flags, barrier.dstStageMask);
-        auto image = sync_state.Get<syncval_state::ImageState>(barrier.image);
+        auto image = sync_state.Get<vvl::Image>(barrier.image);
         if (image) {
-            auto subresource_range = NormalizeSubresourceRange(image->create_info, barrier.subresourceRange);
+            auto subresource_range = image->NormalizeSubresourceRange(barrier.subresourceRange);
             const SyncBarrier sync_barrier(barrier, src, dst);
             const bool layout_transition = barrier.oldLayout != barrier.newLayout;
             image_memory_barriers.emplace_back(image, sync_barrier, subresource_range, layout_transition, index);
@@ -398,17 +400,18 @@ bool SyncOpPipelineBarrier::Validate(const CommandBufferAccessContext &cb_contex
         if (!image_barrier.layout_transition) {
             continue;
         }
-        const syncval_state::ImageState &image_state = *image_barrier.image;
+        const vvl::Image &image_state = *image_barrier.image;
         const auto hazard = context->DetectImageBarrierHazard(image_state, image_barrier.barrier.src_exec_scope.exec_scope,
                                                               image_barrier.barrier.src_access_scope,
                                                               image_barrier.subresource_range, AccessContext::kDetectAll);
         if (hazard.IsHazard()) {
-            // PHASE1 TODO -- add tag information to log msg when useful.
+            LogObjectList objlist(cb_context.GetCBState().Handle(), image_state.Handle());
             const Location loc(command_);
-            const auto &sync_state = cb_context.GetSyncState();
-            const auto error = sync_state.error_messages_.PipelineBarrierError(hazard, cb_context, image_barrier.barrier_index,
-                                                                               image_state, command_);
-            skip |= sync_state.SyncError(hazard.Hazard(), image_state.Handle(), loc, error);
+            const SyncValidator &sync_state = cb_context.GetSyncState();
+            const std::string resource_description = sync_state.FormatHandle(image_state.Handle());
+            const std::string error =
+                sync_state.error_messages_.ImageBarrierError(hazard, cb_context, command_, resource_description, image_barrier);
+            skip |= sync_state.SyncError(hazard.Hazard(), objlist, loc, error);
         }
     }
     return skip;
@@ -602,10 +605,11 @@ bool SyncOpWaitEvents::DoValidate(const CommandExecutionContext &exec_context, c
                     const auto missing_bits = sync_event->scope.mask_param & ~src_exec_scope.mask_param;
                     // Issue error message that event waited for is not in wait events scope
                     const char *const vuid = "VUID-vkCmdWaitEvents-srcStageMask-01158";
-                    const char *const message = "%s stageMask %" PRIx64 " includes bits not present in srcStageMask 0x%" PRIx64
-                                                ". Bits missing from srcStageMask %s. %s";
+                    const char *const message =
+                        "%s stageMask %s includes stages not present in srcStageMask %s. Stages missing from srcStageMask: %s. %s";
                     skip |= sync_state.LogError(vuid, event_handle, loc, message, sync_state.FormatHandle(event_handle).c_str(),
-                                                sync_event->scope.mask_param, src_exec_scope.mask_param,
+                                                sync_utils::StringPipelineStageFlags(sync_event->scope.mask_param).c_str(),
+                                                sync_utils::StringPipelineStageFlags(src_exec_scope.mask_param).c_str(),
                                                 sync_utils::StringPipelineStageFlags(missing_bits).c_str(), kIgnored);
                     break;
                 }
@@ -637,8 +641,10 @@ bool SyncOpWaitEvents::DoValidate(const CommandExecutionContext &exec_context, c
                     *image_state, subresource_range, sync_event->scope.exec_scope, src_access_scope, queue_id,
                     sync_event->FirstScope(), sync_event->first_scope_tag, AccessContext::DetectOptions::kDetectAll);
                 if (hazard.IsHazard()) {
-                    const auto error = sync_state.error_messages_.WaitEventsError(
-                        hazard, exec_context, image_memory_barrier.barrier_index, *image_state, command_);
+                    LogObjectList objlist(exec_context.Handle(), image_state->Handle());
+                    const std::string resource_description = sync_state.FormatHandle(image_state->Handle());
+                    const std::string error = sync_state.error_messages_.ImageBarrierError(
+                        hazard, exec_context, command_, resource_description, image_memory_barrier);
                     skip |= sync_state.SyncError(hazard.Hazard(), image_state->Handle(), loc, error);
                     break;
                 }
@@ -989,7 +995,7 @@ SyncOpBeginRenderPass::SyncOpBeginRenderPass(vvl::Func command, const SyncValida
             // Note that this a safe to presist as long as shared_attachments is not cleared
             attachments_.reserve(shared_attachments_.size());
             for (const auto &attachment : shared_attachments_) {
-                attachments_.emplace_back(static_cast<const syncval_state::ImageViewState *>(attachment.get()));
+                attachments_.emplace_back(attachment.get());
             }
         }
         if (pSubpassBeginInfo) {
@@ -1050,8 +1056,8 @@ ResourceUsageTag SyncOpBeginRenderPass::Record(CommandBufferAccessContext *cb_co
 
 bool SyncOpBeginRenderPass::ReplayValidate(ReplayState &replay, ResourceUsageTag recorded_tag) const {
     CommandExecutionContext &exec_context = replay.GetExecutionContext();
-    // can't be kExecuted, this operation is not allowed in secondary command buffers
-    assert(exec_context.Type() == CommandExecutionContext::kSubmitted);
+    // this operation is not allowed in secondary command buffers
+    assert(exec_context.Handle().type == kVulkanObjectTypeQueue);
     auto &batch_context = static_cast<QueueBatchContext &>(exec_context);
     batch_context.BeginRenderPassReplaySetup(replay, *this);
 
@@ -1091,8 +1097,8 @@ ResourceUsageTag SyncOpNextSubpass::Record(CommandBufferAccessContext *cb_contex
 bool SyncOpNextSubpass::ReplayValidate(ReplayState &replay, ResourceUsageTag recorded_tag) const {
     // Any store/resolve operations happen before the NextSubpass tag so we can advance to the next subpass state
     CommandExecutionContext &exec_context = replay.GetExecutionContext();
-    // can't be kExecuted, this operation is not allowed in secondary command buffers
-    assert(exec_context.Type() == CommandExecutionContext::kSubmitted);
+    // this operation is not allowed in secondary command buffers
+    assert(exec_context.Handle().type == kVulkanObjectTypeQueue);
     auto &batch_context = static_cast<QueueBatchContext &>(exec_context);
     batch_context.NextSubpassReplaySetup(replay);
 
@@ -1134,8 +1140,8 @@ bool SyncOpEndRenderPass::ReplayValidate(ReplayState &replay, ResourceUsageTag r
 
     // We can cleanup here as the recorded tag represents the final layout transition (which is the last operation or the RP)
     CommandExecutionContext &exec_context = replay.GetExecutionContext();
-    // can't be kExecuted, this operation is not allowed in secondary command buffers
-    assert(exec_context.Type() == CommandExecutionContext::kSubmitted);
+    // this operation is not allowed in secondary command buffers
+    assert(exec_context.Handle().type == kVulkanObjectTypeQueue);
     auto &batch_context = static_cast<QueueBatchContext &>(exec_context);
     batch_context.EndRenderPassReplayCleanup(replay);
 
@@ -1169,17 +1175,15 @@ bool ReplayState::DetectFirstUseHazard(const ResourceUsageRange &first_use_range
     if (first_use_range.non_empty()) {
         // We're allowing for the Replay(Validate|Record) to modify the exec_context (e.g. for Renderpass operations), so
         // we need to fetch the current access context each time
-        const HazardResult hazard = GetRecordedAccessContext()->DetectFirstUseHazard(exec_context_.GetQueueId(), first_use_range,
-                                                                                     *exec_context_.GetCurrentAccessContext());
+        const AccessContext *access_context = GetRecordedAccessContext();
 
+        const HazardResult hazard = access_context->DetectFirstUseHazard(exec_context_.GetQueueId(), first_use_range,
+                                                                         *exec_context_.GetCurrentAccessContext());
         if (hazard.IsHazard()) {
             const SyncValidator &sync_state = exec_context_.GetSyncState();
-            const auto handle = exec_context_.Handle();
-            const VkCommandBuffer recorded_handle = recorded_context_.GetCBState().VkHandle();
-            // TODO: figure out the last parameter for vvl::Func
-            const auto error =
-                sync_state.error_messages_.FirstUseError(hazard, exec_context_, recorded_context_, index_, recorded_handle, vvl::Func::Empty);
-            skip |= sync_state.SyncError(hazard.Hazard(), handle, error_obj_.location, error);
+            LogObjectList objlist(exec_context_.Handle(), recorded_context_.Handle());
+            const std::string error = sync_state.error_messages_.FirstUseError(hazard, exec_context_, recorded_context_, index_);
+            skip |= sync_state.SyncError(hazard.Hazard(), objlist, error_obj_.location, error);
         }
     }
     return skip;

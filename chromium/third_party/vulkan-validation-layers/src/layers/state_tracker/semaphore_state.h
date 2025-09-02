@@ -20,9 +20,9 @@
 #include "state_tracker/state_object.h"
 #include "state_tracker/submission_reference.h"
 #include <future>
+#include <optional>
 #include <map>
 #include <shared_mutex>
-#include "containers/custom_containers.h"
 #include "error_message/error_location.h"
 
 namespace vvl {
@@ -106,9 +106,6 @@ class Semaphore : public RefcountedStateObject {
     // Look for most recent / highest payload operation that matches
     std::optional<SemOp> LastOp(const std::function<bool(OpType op_type, uint64_t payload, bool is_pending)> &filter) const;
 
-    // Returns pending queue submission that signals this binary semaphore.
-    std::optional<SubmissionReference> GetPendingBinarySignalSubmission() const;
-
     // Returns pending queue submission that waits on this binary semaphore.
     std::optional<SubmissionReference> GetPendingBinaryWaitSubmission() const;
 
@@ -116,7 +113,7 @@ class Semaphore : public RefcountedStateObject {
     // returns information about the timeline wait; otherwise, it returns an empty result.
     // This is used to validate VUs (such as VUID-vkQueueSubmit-pWaitSemaphores-03238) that have this statement:
     // "and any semaphore signal operations on which it depends must have also been submitted for execution"
-    std::optional<SemaphoreInfo> GetPendingBinarySignalTimelineDependency() const;  
+    std::optional<SemaphoreInfo> GetPendingBinarySignalTimelineDependency() const;
 
     // Current payload value.
     // If a queue submission command is pending execution, then the returned value may immediately be out of date

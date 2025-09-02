@@ -6,25 +6,25 @@ import hashlib
 import pathlib
 import re
 import unicodedata
-from typing import Optional, Union
+from typing import Optional, TypeAlias
 
 # A path that can refer to files on a remote platform with potentially
 # a different Path flavour (e.g. Win vs Posix).
-AnyPath = pathlib.PurePath
-AnyPosixPath = pathlib.PurePosixPath
-AnyWindowsPath = pathlib.PureWindowsPath
+AnyPath: TypeAlias = pathlib.PurePath
+AnyPosixPath: TypeAlias = pathlib.PurePosixPath
+AnyWindowsPath: TypeAlias = pathlib.PureWindowsPath
 
-AnyPathLike = Union[str, AnyPath]
+AnyPathLike: TypeAlias = str | AnyPath
 
 # A path that only ever refers to files on the local host / runner platform.
 # Not that Path inherits from PurePath, and thus we can use a LocalPath in
 # all places a RemotePath is expected.
-LocalPath = pathlib.Path
-LocalPosixPath = pathlib.PosixPath
+LocalPath: TypeAlias = pathlib.Path
+LocalPosixPath: TypeAlias = pathlib.PosixPath
 
-LocalPathLike = Union[str, LocalPath]
+LocalPathLike: TypeAlias = str | LocalPath
 
-_UNSAFE_FILENAME_CHARS_RE = re.compile(r"[^a-zA-Z0-9+\-_.]")
+_UNSAFE_FILENAME_CHARS_RE: re.Pattern[str] = re.compile(r"[^a-zA-Z0-9+\-_.]")
 
 
 def safe_filename(name: str) -> str:

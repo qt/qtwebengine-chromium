@@ -15,25 +15,33 @@
 #pragma once
 
 #include <stdint.h>
-#include "inject_conditional_function_pass.h"
+#include "pass.h"
 
 namespace gpuav {
 namespace spirv {
 
 // Create a pass to instrument SPV_KHR_ray_query instructions
-class RayQueryPass : public InjectConditionalFunctionPass {
+class RayQueryPass : public Pass {
   public:
-    RayQueryPass(Module& module) : InjectConditionalFunctionPass(module) {}
+    RayQueryPass(Module& module);
     const char* Name() const final { return "RayQueryPass"; }
+    bool Instrument() final;
     void PrintDebugInfo() const final;
 
   private:
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst) final;
-    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data) final;
-    void Reset() final;
+    // This is metadata tied to a single instruction gathered during RequiresInstrumentation() to be used later
+    struct InstructionMeta {
+        const Instruction* target_instruction = nullptr;
+    };
 
-    uint32_t link_function_id = 0;
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta);
+    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
+                                const InstructionMeta& meta);
+
     uint32_t GetLinkFunctionId();
+
+    // Function IDs to link in
+    uint32_t link_function_id_ = 0;
 };
 
 }  // namespace spirv

@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type
+from typing import TYPE_CHECKING, Tuple, Type
+
+from typing_extensions import override
 
 from crossbench.benchmarks.jetstream.jetstream_2 import (JetStream2Benchmark,
                                                          JetStream2Probe,
@@ -12,11 +14,14 @@ from crossbench.benchmarks.jetstream.jetstream_2 import (JetStream2Benchmark,
                                                          JetStream2Story,
                                                          ProbeClsTupleT)
 
+if TYPE_CHECKING:
+  from crossbench.benchmarks.base import VersionParts
 
 class JetStream22Probe(JetStream2Probe):
   __doc__ = JetStream2Probe.__doc__
   NAME: str = "jetstream_2.2"
 
+  @override
   def get_context_cls(self) -> Type[JetStream22ProbeContext]:
     return JetStream22ProbeContext
 
@@ -42,9 +47,11 @@ class JetStream22Benchmark(JetStream2Benchmark):
   PROBES: ProbeClsTupleT = (JetStream22Probe,)
 
   @classmethod
-  def version(cls) -> Tuple[int, ...]:
+  @override
+  def version(cls) -> VersionParts:
     return (2, 2)
 
   @classmethod
+  @override
   def aliases(cls) -> Tuple[str, ...]:
     return ("js", "jetstream", "js2", "jetstream_2") + super().aliases()

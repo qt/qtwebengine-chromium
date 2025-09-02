@@ -16,10 +16,10 @@
 
 #include <stdint.h>
 #include <vector>
+#include <list>
 #include <memory>
 #include <spirv/unified1/spirv.hpp>
-#include "containers/custom_containers.h"
-#include "instruction.h"
+#include "state_tracker/shader_instruction.h"
 
 namespace gpuav {
 namespace spirv {
@@ -28,8 +28,10 @@ class Module;
 struct Function;
 
 // Core data structure of module.
-// The vector acts as our linked list to iterator and make occasional insertions.
-// The unique_ptr allows us to create instructions outside module scope and bring them back.
+// We use the vector for Instruction because inside a block these should be together in memory. We should rarly need to update
+// randomly in a block, for those cases, we just need to manage the iterator The unique_ptr allows us to create instructions outside
+// module scope and bring them back.
+using Instruction = ::spirv::Instruction;
 using InstructionList = std::vector<std::unique_ptr<Instruction>>;
 using InstructionIt = InstructionList::iterator;
 
@@ -41,7 +43,7 @@ struct BasicBlock {
 
     void ToBinary(std::vector<uint32_t>& out);
 
-    uint32_t GetLabelId();
+    uint32_t GetLabelId() const;
 
     // "All OpVariable instructions in a function must be the first instructions in the first block"
     // So need to get the first valid location in block.
@@ -57,10 +59,14 @@ struct BasicBlock {
     InstructionList instructions_;
     Function& function_;
 
-    bool loop_header_ = false;
+    // For blocks that are a Loop hader, points to the Merge Target
+    uint32_t loop_header_merge_target_ = 0;
+    bool IsLoopHeader() const { return loop_header_merge_target_ != 0; }
 };
 
-using BasicBlockList = std::vector<std::unique_ptr<BasicBlock>>;
+// Control Flow can be tricky, so having this as a List allows use to easily add/remove/edit blocks around without worrying about
+// the iterator breaking from under us.
+using BasicBlockList = std::list<std::unique_ptr<BasicBlock>>;
 using BasicBlockIt = BasicBlockList::iterator;
 
 struct Function {
@@ -72,11 +78,11 @@ struct Function {
     void ToBinary(std::vector<uint32_t>& out);
 
     const Instruction& GetDef() { return *pre_block_inst_[0].get(); }
-    BasicBlock& GetFirstBlock() { return *blocks_[0]; }
+    BasicBlock& GetFirstBlock() { return *blocks_.front(); }
 
     // Adds a new block after and returns reference to it
     BasicBlockIt InsertNewBlock(BasicBlockIt it);
-    void InitBlocks(uint32_t count);
+    BasicBlock& InsertNewBlockEnd();
 
     void ReplaceAllUsesWith(uint32_t old_word, uint32_t new_word);
 

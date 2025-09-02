@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import enum
 
-from crossbench import compat
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 
 @enum.unique
-class ResultLocation(compat.StrEnumWithHelp):
+class ResultLocation(StrEnumWithHelp):
   LOCAL = ("local",
            "Probe always produces results on the runner's local platform.")
   BROWSER = ("browser",

@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, List, Optional, Type
+from typing import TYPE_CHECKING, List, Type
+
+from typing_extensions import override
 
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
@@ -30,12 +32,14 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
   PRODUCES_DATA = False
 
   @property
+  @override
   def is_attached(self) -> bool:
     return True
 
+  @override
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     repetitions: List[JsonDict] = []
-    browser: Optional[JsonDict] = None
+    browser: JsonDict | None = None
 
     for run in group.runs:
       source_file = run.results[self].json
@@ -65,6 +69,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     stories: JsonDict = {}
     browser = None
@@ -95,6 +100,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     browsers: JsonDict = {}
     for story_group in group.story_groups:
@@ -118,11 +124,13 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
 
+  @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
     return ResultsSummaryProbeContext
 
 
 class ResultsSummaryProbeContext(InternalJsonResultProbeContext):
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     return self.run.details_json()

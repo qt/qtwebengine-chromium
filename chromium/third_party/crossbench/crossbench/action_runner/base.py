@@ -58,14 +58,14 @@ class InputSourceNotImplementedError(ActionNotImplementedError):
 
 class ActionRunner:
 
-  def __init__(self):
+  def __init__(self) -> None:
     self._listener = ActionRunnerListener()
     # TODO: Don't share state across runs
-    self._info_stack: Optional[exception.TInfoStack] = None
+    self._info_stack: exception.TInfoStack | None = None
 
     self._failure_screenshot_annotations: List[ScreenshotAnnotation] = []
 
-  def set_listener(self, listener):
+  def set_listener(self, listener: ActionRunnerListener) -> None:
     self._listener = listener
 
   # info_stack is a unique identifier for the currently running or most recently
@@ -80,7 +80,7 @@ class ActionRunner:
   def bond(self) -> BondActionRunner:
     return BondActionRunner()
 
-  def teardown(self, run: Run):
+  def teardown(self, run: Run) -> None:
     del run
     pass
 
@@ -216,7 +216,7 @@ class ActionRunner:
       run.runner.wait(duration)
 
   def run_page_multiple_tabs(self, run: Run, tabs: TabController,
-                             pages: Iterable[Page]):
+                             pages: Iterable[Page]) -> None:
     # TODO: refactor possible logics to TabController.
     browser = run.browser
     for _ in tabs:
@@ -235,14 +235,14 @@ class ActionRunner:
         raise
 
   def run_combined_page(self, run: Run, page: CombinedPage,
-                        multiple_tabs: bool):
+                        multiple_tabs: bool) -> None:
     if multiple_tabs:
       self.run_page_multiple_tabs(run, page.tabs, page.pages)
     else:
       for sub_page in page.pages:
         sub_page.run_with(run, self, False)
 
-  def run_interactive_page_once(self, run: Run, page: InteractivePage):
+  def run_interactive_page_once(self, run: Run, page: InteractivePage) -> None:
     try:
       self.run_blocks(run, page, page.blocks)
       self._maybe_navigate_to_about_blank(run, page)
@@ -251,13 +251,14 @@ class ActionRunner:
       raise
 
   def run_interactive_page(self, run: Run, page: InteractivePage,
-                           multiple_tabs: bool):
+                           multiple_tabs: bool) -> None:
     if multiple_tabs:
       self.run_page_multiple_tabs(run, page.tabs, [page])
     else:
       self.run_interactive_page_once(run, page)
 
-  def run_setup(self, run: Run, page: InteractivePage, setup: ActionBlock):
+  def run_setup(self, run: Run, page: InteractivePage,
+                setup: ActionBlock) -> None:
     try:
       with exception.annotate("setup"):
         setup.run_with(self, run, page)
@@ -265,7 +266,8 @@ class ActionRunner:
       page.create_failure_artifacts(run, "setup-failure")
       raise
 
-  def run_login(self, run: Run, page: InteractivePage, login: ActionBlock):
+  def run_login(self, run: Run, page: InteractivePage,
+                login: ActionBlock) -> None:
     try:
       with exception.annotate("login"):
         with run.browser.network.traffic_shaper.pause():
@@ -275,4 +277,10 @@ class ActionRunner:
       raise
 
   def switch_tab(self, run: Run, action: i_action.SwitchTabAction):
+    raise ActionNotImplementedError(self, action)
+
+  def close_tab(self, run: Run, action: i_action.CloseTabAction):
+    raise ActionNotImplementedError(self, action)
+
+  def wait_for_download(self, run: Run, action: i_action.WaitForDownloadAction):
     raise ActionNotImplementedError(self, action)

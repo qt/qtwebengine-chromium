@@ -11,8 +11,10 @@ import multiprocessing
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from typing_extensions import override
+
 from crossbench import plt
-from crossbench.browsers.chrome.version import ChromeVersion
+from crossbench.browsers.chromium.version import ChromiumVersion
 from crossbench.helper import fs_helper
 from crossbench.helper.spinner import Spinner
 from crossbench.probes.profiling.context.base import PosixProfilingContext
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
-V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromeVersion((118, 0, 5993, 48))
+V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromiumVersion((118, 0, 5993, 48))
 PERF_DATA_PATTERN = "*.perf.data"
 JIT_DUMP_PATTERN = "jit-*.dump"
 
@@ -35,6 +37,7 @@ class LinuxProfilingContext(PosixProfilingContext):
       JIT_DUMP_PATTERN,
   )
 
+  @override
   def get_default_result_path(self) -> pth.AnyPath:
     result_dir = super().get_default_result_path()
     self.browser_platform.mkdir(result_dir)
@@ -42,9 +45,9 @@ class LinuxProfilingContext(PosixProfilingContext):
 
   @property
   def has_perf_prof_path(self) -> bool:
-    # TODO: replace with full version comparison
-    return self.browser.major_version > V8_PERF_PROF_PATH_FLAG_MIN_VERSION.major
+    return self.browser.version > V8_PERF_PROF_PATH_FLAG_MIN_VERSION
 
+  @override
   def setup(self) -> None:
     self.setup_v8_log_path()
     if self.has_perf_prof_path:
@@ -72,7 +75,7 @@ class LinuxProfilingContext(PosixProfilingContext):
 
   def stop_process(self) -> None:
     if self._profiling_process:
-      self.browser_platform.wait_and_kill(self._profiling_process)
+      self.browser_platform.terminate_gracefully(self._profiling_process)
       self._profiling_process = None
 
   def teardown(self) -> ProbeResult:

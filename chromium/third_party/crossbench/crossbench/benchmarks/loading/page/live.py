@@ -7,7 +7,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING, Dict, Tuple
 
+from typing_extensions import override
+
 from crossbench.action_runner.action.get import GetAction
+from crossbench.action_runner.action.wait_for_ready_state import \
+    WaitForReadyStateAction
 from crossbench.benchmarks.loading.config.blocks import ActionBlock
 from crossbench.benchmarks.loading.page.base import DEFAULT_DURATION, PAGE_LIST
 from crossbench.benchmarks.loading.page.interactive import InteractivePage
@@ -22,6 +26,7 @@ if TYPE_CHECKING:
 class LivePage(InteractivePage):
 
   @classmethod
+  @override
   def all_story_names(cls) -> Tuple[str, ...]:
     return tuple(page.name for page in PAGE_LIST)
 
@@ -36,7 +41,10 @@ class LivePage(InteractivePage):
   ) -> None:
     assert url, "Invalid page url"
     self.url: str = url
-    blocks = (ActionBlock(actions=(GetAction(self.url, duration),)),)
+    get_duration = duration - WaitForReadyStateAction().duration
+    blocks = (ActionBlock(
+        actions=(GetAction(self.url, get_duration),
+                 WaitForReadyStateAction())),)
     super().__init__(
         name,
         blocks=blocks,
@@ -44,12 +52,14 @@ class LivePage(InteractivePage):
         tabs=tabs,
         about_blank_duration=about_blank_duration)
 
+  @override
   def details_json(self) -> JsonDict:
     result = super().details_json()
     result["url"] = str(self.url)
     return result
 
   @property
+  @override
   def first_url(self) -> str:
     return self.url
 
@@ -92,5 +102,5 @@ assert not PAGE_LIST, "PAGE_LIST was already initialized."
 PAGE_LIST.extend(LIVE_PAGES)
 
 PAGES: Dict[str, LivePage] = {page.name: page for page in LIVE_PAGES}
-PAGE_LIST_SMALL = (PAGES["facebook"], PAGES["maps"], PAGES["timesofindia"],
-                   PAGES["cnn"])
+PAGE_LIST_SMALL: Tuple[LivePage, ...] = (PAGES["facebook"], PAGES["maps"],
+                                         PAGES["timesofindia"], PAGES["cnn"])

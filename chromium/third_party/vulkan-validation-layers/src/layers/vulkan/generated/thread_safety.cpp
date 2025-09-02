@@ -6269,6 +6269,7 @@ void Device::PostCallRecordGetPrivateDataEXT(VkDevice device, VkObjectType objec
     PostCallRecordGetPrivateData(device, objectType, objectHandle, privateDataSlot, pData, record_obj);
 }
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 void Device::PreCallRecordCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                              const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
                                              const RecordObject& record_obj) {
@@ -6345,6 +6346,7 @@ void Device::PostCallRecordCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, 
     FinishReadObject(commandBuffer, record_obj.location);
 }
 
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
 void Device::PreCallRecordExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo,
                                                 const RecordObject& record_obj) {
@@ -8146,6 +8148,18 @@ void Device::PostCallRecordGetMemoryMetalHandlePropertiesEXT(VkDevice device, Vk
 }
 
 #endif  // VK_USE_PLATFORM_METAL_EXT
+void Device::PreCallRecordCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
+                                              const RecordObject& record_obj) {
+    StartWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PostCallRecordCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoEXT* pRenderingEndInfo,
+                                               const RecordObject& record_obj) {
+    FinishWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
 void Device::PreCallRecordCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                          const VkAllocationCallbacks* pAllocator,
                                                          VkAccelerationStructureKHR* pAccelerationStructure,

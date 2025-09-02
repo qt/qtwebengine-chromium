@@ -15,36 +15,57 @@
 #pragma once
 
 #include <stdint.h>
-#include "inject_conditional_function_pass.h"
+#include "pass.h"
 
 namespace gpuav {
 namespace spirv {
 
 // Create a pass to instrument descriptor indexing.
 // This pass makes sure any index into an descriptor array is not OOB or uninitialized
-class DescriptorIndexingOOBPass : public InjectConditionalFunctionPass {
+class DescriptorIndexingOOBPass : public Pass {
   public:
-    DescriptorIndexingOOBPass(Module& module) : InjectConditionalFunctionPass(module) {}
+    DescriptorIndexingOOBPass(Module& module);
     const char* Name() const final { return "DescriptorIndexingOOBPass"; }
+    bool Instrument() final;
     void PrintDebugInfo() const final;
 
   private:
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst) final;
-    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data) final;
-    void Reset() final;
+    // This is metadata tied to a single instruction gathered during RequiresInstrumentation() to be used later
+    struct InstructionMeta {
+        const Instruction* target_instruction = nullptr;
 
-    uint32_t link_function_id = 0;
-    uint32_t GetLinkFunctionId();
+        const Instruction* var_inst = nullptr;
+        const Instruction* image_inst = nullptr;
+        uint32_t descriptor_set = 0;
+        uint32_t descriptor_binding = 0;
+        uint32_t descriptor_index_id = 0;
+        bool is_combined_image_sampler = false;
 
-    const Instruction* var_inst_ = nullptr;
-    const Instruction* image_inst_ = nullptr;
+        // Duplicate values if dealing with SAMPLED_IMAGE and SAMPLER together
+        const Instruction* sampler_var_inst = nullptr;
+        uint32_t sampler_descriptor_set = 0;
+        uint32_t sampler_descriptor_binding = 0;
+        uint32_t sampler_descriptor_index_id = 0;
+    };
 
-    uint32_t descriptor_set_ = 0;
-    uint32_t descriptor_binding_ = 0;
-    uint32_t descriptor_index_id_ = 0;
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta);
+    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
+                                const InstructionMeta& meta);
+
+    uint32_t GetLinkFunctionId(bool is_combined_image_sampler);
 
     // < original ID, new CopyObject ID >
     vvl::unordered_map<uint32_t, uint32_t> copy_object_map_;
+
+    // If the shader has a 'imageArray[]' the OpVariable will point to 'imageArray' then we only need to check (in unsafe mode) each
+    // index into it once to see if the descriptor is valid or not . We marks which variables were already instrumented
+    // < Variable ID, [descriptor index IDs accessed with this variable >
+    vvl::unordered_map<uint32_t, vvl::unordered_set<uint32_t>> block_instrumented_table_;
+
+    // Function IDs to link in
+    uint32_t link_bindless_id_ = 0;
+    uint32_t link_bindless_combined_image_sampler_id_ = 0;
+    uint32_t link_non_bindless_id_ = 0;
 };
 
 }  // namespace spirv

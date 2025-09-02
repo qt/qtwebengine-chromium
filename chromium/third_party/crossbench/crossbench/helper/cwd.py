@@ -6,17 +6,17 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  from crossbench.path import AnyPath, LocalPath
+  from crossbench.path import LocalPath
 
 
 class ChangeCWD:
 
   def __init__(self, destination: LocalPath) -> None:
     self.new_dir = destination
-    self.prev_dir: Optional[str] = None
+    self.prev_dir: str | None = None
 
   def __enter__(self) -> None:
     self.prev_dir = os.getcwd()

@@ -3,19 +3,20 @@
 # found in the LICENSE file.
 
 import sys
+from typing import List, Optional
 
 from crossbench.cli.btp import BTPUtil
 from crossbench.cli.cli import CrossBenchCLI
 
 
-def crossbench(argv=None) -> None:
+def crossbench(argv: Optional[List[str]] = None) -> None:
   if not argv:
     argv = sys.argv
   cli = CrossBenchCLI()
   cli.run(argv[1:])
 
 
-def cb_btp(argv=None) -> None:
+def cb_btp(argv: Optional[List[str]] = None) -> None:
   if not argv:
     argv = sys.argv
   btp = BTPUtil()

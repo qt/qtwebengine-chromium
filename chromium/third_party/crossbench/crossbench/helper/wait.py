@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Iterator, Optional, Tuple, Union
+import logging
+import math
+import time
+from typing import Iterator, Optional, Tuple
 
-from crossbench import plt
+from crossbench.runner.timing import AnyTime, AnyTimeUnit
 
 
-def as_timedelta(value: Union[int, float, dt.timedelta]) -> dt.timedelta:
+def as_timedelta(value: int | float | dt.timedelta) -> dt.timedelta:
   if isinstance(value, dt.timedelta):
     return value
   return dt.timedelta(seconds=value)
@@ -24,69 +27,85 @@ class WaitRange:
   increase the sleep/wait time by the given factor, until we reach the max
   sleep time.
 
-  | delay | min | min * factor | ... | min * factor ** N | max | ... | max |
-  | ----------------------------- timeout ---------------------------------|
+  | delay | min | min * factor | ... | min * factor ** N |  ... | max |
+  | --------------------------- timeout ------------------------------|
+  | i=0   | i=1 | i=2          | ............... | i=max_iterations-1 |
 
   The timeout puts an upper bound to the total sleep time when using
   wait_with_backoff().
   """
-  min: dt.timedelta
-  max: dt.timedelta
-  initial_sleep: dt.timedelta
-  max_iterations: Optional[int]
 
   def __init__(
       self,
-      min: Union[int, float, dt.timedelta] = 0.1,  # pylint: disable=redefined-builtin
-      timeout: Union[int, float, dt.timedelta] = 10,
+      min: AnyTime = 0.1,  # pylint: disable=redefined-builtin
+      timeout: AnyTime = 10,
       factor: float = 1.01,
-      max: Optional[Union[int, float, dt.timedelta]] = None,  # pylint: disable=redefined-builtin
-      max_iterations: Optional[int] = None,
-      delay: Union[int, float, dt.timedelta] = 0) -> None:
-    self.min = as_timedelta(min)
-    assert self.min.total_seconds() > 0
+      max: Optional[AnyTime] = None,  # pylint: disable=redefined-builtin
+      max_iterations: int | float = math.inf,
+      delay: AnyTime = 0) -> None:
+    self._min: dt.timedelta = as_timedelta(min)
+    assert self._min.total_seconds() > 0
     if not max:
-      self.max = self.min * 10
+      self._max: dt.timedelta = self._min * 10
     else:
-      self.max = as_timedelta(max)
-    assert self.min <= self.max
+      self._max = as_timedelta(max)
+    assert self._min <= self._max
     assert 1.0 < factor
-    self.factor = factor
-    self.timeout = as_timedelta(timeout)
-    assert 0 < self.timeout.total_seconds()
-    self.delay = as_timedelta(delay)
-    assert self.delay <= self.timeout
-    assert max_iterations is None or max_iterations > 0
-    self.max_iterations = max_iterations
+    self._factor: float = factor
+    self._timeout: dt.timedelta = as_timedelta(timeout)
+    assert 0 < self._timeout.total_seconds()
+    self._delay = as_timedelta(delay)
+    assert self._delay <= self._timeout
+    assert max_iterations > 0
+    self._max_iterations: int | float = max_iterations
 
-  def __iter__(self) -> Iterator[dt.timedelta]:
+  @property
+  def timeout(self) -> dt.timedelta:
+    return self._timeout
+
+  def __iter__(self) -> Iterator[Tuple[int, dt.timedelta]]:
     i = 0
-    if self.delay:
-      yield self.delay
-    current_sleep = self.min
-    while self.max_iterations is None or i < self.max_iterations:
-      yield current_sleep
-      current_sleep = min(current_sleep * self.factor, self.max)
+    if self._delay:
+      yield i, self._delay
+      i += 1
+
+    current_sleep = self._min
+    while True:
+      if self._max_iterations <= i:
+        break
+      yield i, current_sleep
+      current_sleep = min(current_sleep * self._factor, self._max)
       i += 1
 
   def wait_with_backoff(
-      self,
-      platform: Optional[plt.Platform] = None) -> Iterator[Tuple[float, float]]:
-    platform = platform or plt.PLATFORM
+      self,) -> Iterator[Tuple[int, dt.timedelta, dt.timedelta]]:
     start = dt.datetime.now()
-    timeout = self.timeout
-    for sleep_for in self:
+    timeout = self._timeout
+    for i, sleep_for in self:
       duration = dt.datetime.now() - start
-      if duration > self.timeout:
+      if duration > self._timeout:
         raise TimeoutError(f"Waited for {duration}")
       time_left = timeout - duration
-      yield duration.total_seconds(), time_left.total_seconds()
-      platform.sleep(sleep_for.total_seconds())
+      yield i, duration, time_left
+      sleep_f(sleep_for.total_seconds())
+
+
+def sleep(seconds: AnyTimeUnit) -> None:
+  if isinstance(seconds, dt.timedelta):
+    seconds = seconds.total_seconds()
+  sleep_f(seconds)
+
+
+def sleep_f(seconds: float) -> None:
+  if seconds == 0:
+    return
+  logging.debug("WAIT %ss", seconds)
+  time.sleep(seconds)
 
 
 def wait_with_backoff(
-    wait_range: Union[int, float, dt.timedelta, WaitRange],
-    platform: Optional[plt.Platform] = None) -> Iterator[Tuple[float, float]]:
+    wait_range: AnyTime | WaitRange,
+) -> Iterator[Tuple[int, dt.timedelta, dt.timedelta]]:
   if not isinstance(wait_range, WaitRange):
     wait_range = WaitRange(timeout=wait_range)
-  return wait_range.wait_with_backoff(platform)
+  return wait_range.wait_with_backoff()

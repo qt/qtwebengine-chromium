@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
 
   def __init__(self, host_platform: Platform, host: str, port: int,
-               ssh_port: int, ssh_user: str):
+               ssh_port: int, ssh_user: str) -> None:
     super().__init__(host_platform)
     self._host = host
     self._port = port
@@ -46,7 +46,7 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
     return True
 
   @abc.abstractmethod
-  def _build_ssh_cmd(self, *args: CmdArg, shell=False) -> ListCmdArgs:
+  def _build_ssh_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
     pass
 
   def sh_stdout_bytes(self,
@@ -84,7 +84,7 @@ class SshPlatformMixin(RemotePlatformMixin, metaclass=abc.ABCMeta):
 
   def popen(self,
             *args: CmdArg,
-            bufsize=-1,
+            bufsize: int = -1,
             shell: bool = False,
             stdout=None,
             stderr=None,

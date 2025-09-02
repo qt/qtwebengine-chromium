@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, List, Type
+from typing import TYPE_CHECKING, List, Self, Type
 
 from immutabledict import immutabledict
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.probes.cpu_frequency_map import CPUFrequencyMap
@@ -67,12 +68,13 @@ class FrequencyProbe(EnvModifier):
   IS_GENERAL_PURPOSE = True
   PRODUCES_DATA = False
 
-  def __init__(self, cpus: CPUFrequencyMap):
+  def __init__(self, cpus: CPUFrequencyMap) -> None:
     super().__init__()
     self._cpu_frequency_map: CPUFrequencyMap = cpus
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "cpus",
@@ -82,9 +84,11 @@ class FrequencyProbe(EnvModifier):
     return parser
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (("cpus", self._cpu_frequency_map.key),)
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     super().validate_browser(env, browser)
     # As long as a valid platform map can be derived, all is good.
@@ -94,6 +98,7 @@ class FrequencyProbe(EnvModifier):
   def cpu_frequency_map(self) -> CPUFrequencyMap:
     return self._cpu_frequency_map
 
+  @override
   def get_context_cls(self) -> Type[FrequencyProbeContext]:
     return FrequencyProbeContext
 

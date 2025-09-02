@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/loader/preload_helper.h"
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/timer/elapsed_timer.h"
 #include "third_party/blink/public/common/features.h"
@@ -246,6 +247,23 @@ bool IsCompressionDictionaryLoadAllowed(
   }
 }
 
+bool IsSubresourceLoad(PreloadHelper::LoadLinksFromHeaderMode mode) {
+  switch (mode) {
+    case PreloadHelper::LoadLinksFromHeaderMode::kDocumentBeforeCommit:
+    case PreloadHelper::LoadLinksFromHeaderMode::
+        kDocumentAfterCommitWithoutViewport:
+    case PreloadHelper::LoadLinksFromHeaderMode::
+        kDocumentAfterCommitWithViewport:
+    case PreloadHelper::LoadLinksFromHeaderMode::kDocumentAfterLoadCompleted:
+      return false;
+    case PreloadHelper::LoadLinksFromHeaderMode::kSubresourceFromMemoryCache:
+    case PreloadHelper::LoadLinksFromHeaderMode::kSubresourceNotFromMemoryCache:
+      return true;
+    default:
+      NOTREACHED();
+  }
+}
+
 }  // namespace
 
 void PreloadHelper::DnsPrefetchIfNeeded(
@@ -471,11 +489,11 @@ void PreloadHelper::PreloadIfNeeded(
       resource_type == ResourceType::kFont) {
     if (!integrity_attr.empty()) {
       IntegrityMetadataSet metadata_set;
-      SubresourceIntegrity::ParseIntegrityAttribute(integrity_attr,
-                                                    metadata_set);
+      SubresourceIntegrity::ParseIntegrityAttribute(
+          integrity_attr, metadata_set, document.GetExecutionContext());
       link_fetch_params.SetIntegrityMetadata(metadata_set);
       link_fetch_params.MutableResourceRequest().SetFetchIntegrity(
-          integrity_attr);
+          integrity_attr, document.GetExecutionContext());
     }
   } else {
     if (!integrity_attr.empty()) {
@@ -631,7 +649,8 @@ void PreloadHelper::ModulePreloadIfNeeded(
   if (!integrity_value.empty()) {
     IntegrityReport integrity_report;
     SubresourceIntegrity::ParseIntegrityAttribute(
-        params.integrity, integrity_metadata, &integrity_report);
+        params.integrity, integrity_metadata, document.GetExecutionContext(),
+        &integrity_report);
     integrity_report.SendReports(document.GetExecutionContext());
   } else if (integrity_value.IsNull()) {
     // Step 10. "If el does not have an integrity attribute, then set integrity
@@ -788,6 +807,15 @@ void PreloadHelper::LoadLinksFromHeader(
 
     LinkLoadParameters params(header, base_url);
     bool change_rel_to_prefetch = false;
+
+    // For security purposes, set `referrerpolicy: "no-referrer"` in link loads
+    // from subresources. See https://crbug.com/415810136 for details.
+    if (base::FeatureList::IsEnabled(
+            blink::features::kNoReferrerForPreloadFromSubresource)) {
+      if (IsSubresourceLoad(mode)) {
+        params.referrer_policy = network::mojom::ReferrerPolicy::kNever;
+      }
+    }
 
     if (params.rel.IsLinkPreload() && recursive_prefetch_token) {
       // Only preload headers are expected to have a recursive prefetch token

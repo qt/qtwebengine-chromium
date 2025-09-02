@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import abc
 import datetime as dt
+import functools
 from typing import TYPE_CHECKING, Tuple, Type
+
+from typing_extensions import override
 
 from crossbench.action_runner.action.action import ACTION_TIMEOUT, ActionT
 from crossbench.action_runner.action.base_duration import BaseDurationAction
@@ -20,6 +23,8 @@ if TYPE_CHECKING:
 class InputSourceAction(BaseDurationAction, metaclass=abc.ABCMeta):
 
   @classmethod
+  @override
+  @functools.cache
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = super().config_parser()
     parser.add_argument(
@@ -38,6 +43,7 @@ class InputSourceAction(BaseDurationAction, metaclass=abc.ABCMeta):
   def input_source(self) -> InputSource:
     return self._input_source
 
+  @override
   def validate(self) -> None:
     super().validate()
     self.validate_input_source()
@@ -51,6 +57,7 @@ class InputSourceAction(BaseDurationAction, metaclass=abc.ABCMeta):
   def supported_input_sources(self) -> Tuple[InputSource, ...]:
     pass
 
+  @override
   def to_json(self) -> JsonDict:
     details = super().to_json()
     details["source"] = self.input_source

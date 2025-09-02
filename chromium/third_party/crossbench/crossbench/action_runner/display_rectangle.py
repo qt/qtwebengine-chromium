@@ -53,6 +53,25 @@ class DisplayRectangle:
     return (scrollable_top, scrollable_bottom,
             scrollable_bottom - scrollable_top)
 
+  # Returns the sub-rectangle of |other| that exists within |self|.
+  # |other| must have the same reference origin as |self|.
+  def intersection(self, other: Self) -> DisplayRectangle:
+    assert other.left < self.right and other.top < self.bottom, (
+        "Rectangles do not intersect. Maybe you need to add 'scroll_into_view'."
+    )
+
+    width: int = other.width
+
+    if other.right > self.right:
+      width = self.right - other.left
+
+    height: int = other.height
+
+    if other.bottom > self.bottom:
+      height = self.bottom - other.top
+
+    return DisplayRectangle(other.origin, width, height)
+
   @property
   def left(self) -> int:
     return self.origin.x

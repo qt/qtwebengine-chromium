@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import abc
 import dataclasses
-from typing import Any, Dict, Iterator
+from typing import Iterator
+
+from typing_extensions import override
 
 from crossbench.config import ConfigObject
 from crossbench.parse import NumberParser
@@ -17,10 +19,7 @@ class TabController(ConfigObject):
   is_forever: bool
 
   @classmethod
-  def parse_dict(cls, config: Dict[str, Any]) -> TabController:
-    raise NotImplementedError("Cannot create tab controller from dict")
-
-  @classmethod
+  @override
   def parse_str(cls, value: str) -> TabController:
     if not value or value == "single":
       return cls.single()

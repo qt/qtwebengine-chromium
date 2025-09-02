@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import logging
 import shlex
-from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Sequence,
-                    Tuple, Union, cast)
+from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Self,
+                    Sequence, Tuple, cast)
+
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench import plt
@@ -36,7 +38,8 @@ V8_INTERPRETED_FRAMES_FLAG = "--interpreted-frames-native-stack"
 RENDERER_CMD_PATH: Final[pth.LocalPath] = pth.LocalPath(
     __file__).parent / "linux-perf-chrome-renderer-cmd.sh"
 
-def perf_frequency(value: Any) -> Union[str, int]:
+
+def perf_frequency(value: Any) -> str | int:
   if value == "max":
     return "max"
   return NumberParser.positive_int(value, "frequency")
@@ -60,7 +63,8 @@ class ProfilingProbe(Probe):
   IS_GENERAL_PURPOSE = True
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "js",
@@ -192,23 +196,25 @@ class ProfilingProbe(Probe):
               "details."))
     return parser
 
-  def __init__(self,
-               js: bool = True,
-               v8_interpreted_frames: bool = True,
-               pprof: bool = True,
-               cleanup: CleanupMode = CleanupMode.AUTO,
-               browser_process: bool = False,
-               spare_renderer_process: bool = False,
-               target: TargetMode = TargetMode.BROWSER_APP_ONLY,
-               pin_renderer_main_core: Optional[int] = None,
-               call_graph_mode: CallGraphMode = CallGraphMode.FRAME_POINTER,
-               frequency: Optional[Union[int, str]] = None,
-               clockid: Optional[str] = None,
-               count: Optional[int] = None,
-               cpu: Sequence[int] = (),
-               events: Sequence[str] = (),
-               grouped_events: Sequence[str] = (),
-               add_counters: Sequence[str] = ()):
+  def __init__(
+      self,
+      js: bool = True,
+      v8_interpreted_frames: bool = True,
+      pprof: bool = True,
+      cleanup: CleanupMode = CleanupMode.AUTO,
+      browser_process: bool = False,
+      spare_renderer_process: bool = False,
+      target: TargetMode = TargetMode.BROWSER_APP_ONLY,
+      pin_renderer_main_core: Optional[int] = None,
+      call_graph_mode: CallGraphMode = CallGraphMode.FRAME_POINTER,
+      frequency: Optional[int | str] = None,
+      clockid: Optional[str] = None,
+      count: Optional[int] = None,
+      cpu: Sequence[int] = (),
+      events: Sequence[str] = (),
+      grouped_events: Sequence[str] = (),
+      add_counters: Sequence[str] = ()
+  ) -> None:
     super().__init__()
     self._sample_js: bool = js
     self._sample_browser_process: bool = browser_process
@@ -219,20 +225,21 @@ class ProfilingProbe(Probe):
     if v8_interpreted_frames:
       assert js, "Cannot expose V8 interpreted frames without js profiling."
     self._target: TargetMode = target
-    self._pin_renderer_main_core: Optional[int] = pin_renderer_main_core
+    self._pin_renderer_main_core: int | None = pin_renderer_main_core
     self._call_graph_mode: CallGraphMode = call_graph_mode
     self._start_profiling_after_setup: bool = target in (
         TargetMode.RENDERER_MAIN_ONLY,
         TargetMode.RENDERER_PROCESS_ONLY) or pin_renderer_main_core is not None
-    self._frequency: Optional[Union[int, str]] = frequency
-    self._clockid: Optional[str] = clockid
-    self._count: Optional[int] = count
+    self._frequency: int | str | None = frequency
+    self._clockid: str | None = clockid
+    self._count: int | None = count
     self._cpu: Tuple[int, ...] = tuple(cpu)
     self._events: Tuple[str, ...] = tuple(events)
     self._grouped_events: Tuple[str, ...] = tuple(grouped_events)
     self._add_counters: Tuple[str, ...] = tuple(add_counters)
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("js", self._sample_js),
@@ -286,7 +293,7 @@ class ProfilingProbe(Probe):
     return self._start_profiling_after_setup
 
   @property
-  def frequency(self) -> Optional[Union[int, str]]:
+  def frequency(self) -> Optional[int | str]:
     return self._frequency
 
   @property
@@ -313,6 +320,7 @@ class ProfilingProbe(Probe):
   def add_counters(self) -> Tuple[str, ...]:
     return self._add_counters
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     browser_platform = browser.platform
     if browser_platform.is_linux:
@@ -323,7 +331,7 @@ class ProfilingProbe(Probe):
       self._validate_android(env, browser)
     else:
       raise ProbeIncompatibleBrowser(self, browser)
-    if browser.attributes.is_chromium_based:
+    if browser.attributes().is_chromium_based:
       chromium = cast(ChromiumBased, browser)
       self._validate_chromium_based(chromium)
     if self.run_pprof:
@@ -392,8 +400,8 @@ class ProfilingProbe(Probe):
   def _validate_benchmarking_extension_version(self,
                                                browser: ChromiumBased) -> None:
     assert (
-        browser.attributes.is_chromium_based and
-        browser.major_version >= 124), (
+        browser.attributes().is_chromium_based and
+        browser.version.major >= 124), (
             "For RENDERER_MAIN_ONLY/RENDERER_PROCESS_ONLY profiling, "
             "browser version >= M124 https://crrev.com/c/5374765 is required.")
 
@@ -409,19 +417,20 @@ class ProfilingProbe(Probe):
       # Converting xctrace to pprof is not supported on macos
       return
     try:
-      if gcertstatus := browser.platform.which("gcertstatus"):
-        browser.platform.sh(gcertstatus)
+      if gcertstatus := host_platform.which("gcertstatus"):
+        host_platform.sh(gcertstatus)
         return
       env.handle_warning("Could not find gcertstatus")
     except plt.SubprocessError:
       env.handle_warning("Please run gcert for generating pprof results")
 
+  @override
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
     if browser.platform.is_linux or browser.platform.is_android:
-      assert browser.attributes.is_chromium_based, (
+      assert browser.attributes().is_chromium_based, (
           f"Expected Chromium-based browser, found {type(browser)}.")
-    if browser.attributes.is_chromium_based:
+    if browser.attributes().is_chromium_based:
       chromium = cast(ChromiumBased, browser)
       self._attach_chromium(chromium)
 
@@ -440,7 +449,7 @@ class ProfilingProbe(Probe):
     # Disable sandbox to write profiling data
     browser.flags.set("--no-sandbox")
 
-  def _set_renderer_cmd_prefix(self, browser):
+  def _set_renderer_cmd_prefix(self, browser) -> None:
     assert not browser.platform.is_remote, (
         "Copying renderer command prefix to remote platform is "
         "not implemented yet")
@@ -465,9 +474,11 @@ class ProfilingProbe(Probe):
       cmd_prefix.append(f"--perf-args={shlex.join(custom_perf_args)}")
     browser.flags["--renderer-cmd-prefix"] = shlex.join(cmd_prefix)
 
+  @override
   def log_run_result(self, run: Run) -> None:
     self._log_results([run])
 
+  @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     self._log_results(group.runs)
 
@@ -482,7 +493,7 @@ class ProfilingProbe(Probe):
     for i, run in enumerate(filtered_runs):
       self._log_run_result_summary(run, i)
 
-  def _log_results_overview(self, filtered_runs):
+  def _log_results_overview(self, filtered_runs) -> None:
     if len(filtered_runs) <= 1:
       return
     if any(run.browser_platform.is_macos for run in filtered_runs):

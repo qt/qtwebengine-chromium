@@ -209,6 +209,7 @@ class Context {
                                             bool is_const_param = true) const;
     bool ValidatePnextStructContents(const Location &loc, const VkBaseOutStructure *header, const char *pnext_vuid,
                                      bool is_const_param = true) const;
+    bool ValidatePnextStructExtension(const Location &loc, const VkBaseOutStructure *header) const;
 
     bool ValidateStructPnext(const Location &loc, const void *next, size_t allowed_type_count, const VkStructureType *allowed_types,
                              uint32_t header_version, const char *pnext_vuid, const char *stype_vuid,
@@ -335,24 +336,9 @@ class Instance : public vvl::base::Instance {
     bool CheckPromotedApiAgainstVulkanVersion(VkInstance instance, const Location &loc, const uint32_t promoted_version) const;
     bool CheckPromotedApiAgainstVulkanVersion(VkPhysicalDevice pdev, const Location &loc, const uint32_t promoted_version) const;
 
-    bool SupportedByPdev(const VkPhysicalDevice physical_device, vvl::Extension extension, bool skip_gpdp2 = false) const;
-
-    bool ValidatePnextFeatureStructContents(const Location &loc, const VkBaseOutStructure *header, const char *pnext_vuid,
-                                            VkPhysicalDevice physicalDevice = VK_NULL_HANDLE, bool is_const_param = true) const;
-    bool ValidatePnextStructContents(const Location &loc, const VkBaseOutStructure *header, const char *pnext_vuid,
-                                     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE, bool is_const_param = true) const;
-
-    bool ValidateStructPnext(const Location &loc, const void *next, size_t allowed_type_count, const VkStructureType *allowed_types,
-                             uint32_t header_version, const char *pnext_vuid, const char *stype_vuid,
-                             VkPhysicalDevice physicalDevice = VK_NULL_HANDLE, const bool is_const_param = true) const;
-
     template <typename ExtensionState>
     bool ValidateExtensionReqs(const ExtensionState &extensions, const char *vuid, const char *extension_type,
                                vvl::Extension extension, const Location &extension_loc) const;
-
-    void PostCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
-                                    const VkAllocationCallbacks *pAllocator, VkDevice *pDevice,
-                                    const RecordObject &record_obj) override;
 
     bool PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
                                        VkInstance *pInstance, const ErrorObject &error_obj) const override;
@@ -457,9 +443,6 @@ class Device : public vvl::base::Device {
 
     Instance *instance;
     VkPhysicalDeviceLimits device_limits = {};
-    // We have a copy of this in Stateless and the state tracker, could move the base::Device,
-    // but we don't have a way to set it at that level
-    DeviceFeatures enabled_features = {};
 
     // This was a special case where it was decided to use the extension version for validation
     // https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/5671
@@ -470,24 +453,6 @@ class Device : public vvl::base::Device {
     // This override takes a deferred lock. i.e. it is not acquired.
     ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
-
-    // Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2::pNext chain
-    struct DeviceExtensionProperties {
-        VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props;
-        VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props_nv;
-        VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext;
-        VkPhysicalDeviceRayTracingPropertiesNV ray_tracing_props_nv;
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_props_khr;
-        VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props;
-        VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback_props;
-        VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR vertex_attribute_divisor_props;
-        VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props;
-        VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_props;
-        VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
-        VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props;
-        VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props;
-    };
-    DeviceExtensionProperties phys_dev_ext_props = {};
 
     struct SubpassesUsageStates {
         vvl::unordered_set<uint32_t> subpasses_using_color_attachment;
@@ -510,6 +475,8 @@ class Device : public vvl::base::Device {
                                   const ErrorObject &error_obj) const;
 
     void RecordRenderPass(VkRenderPass renderPass, const VkRenderPassCreateInfo2 *pCreateInfo);
+
+    void FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) override;
 
     // Pre/PostCallRecord declarations
     void PostCallRecordCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
@@ -618,6 +585,16 @@ class Device : public vvl::base::Device {
     bool manual_PreCallValidateCreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo,
                                                 const VkAllocationCallbacks *pAllocator, VkBufferView *pBufferView,
                                                 const Context &context) const;
+    bool ValidateCreateBufferFlags(const VkBufferCreateFlags flags, const Location &flag_loc) const;
+    bool ValidateCreateBufferBufferDeviceAddress(const VkBufferCreateInfo &create_info, const Location &create_info_loc) const;
+
+    bool ValidateDependencyInfo(const Context &context, const VkDependencyInfo &dep_info, const Location &loc) const;
+    bool manual_PreCallValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo *pDependencyInfo,
+                                                   const Context &context) const;
+    bool manual_PreCallValidateCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent event, const VkDependencyInfo *pDependencyInfo,
+                                            const Context &context) const;
+    bool manual_PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+                                              const VkDependencyInfo *pDependencyInfos, const Context &context) const;
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
     bool ExportMetalObjectsPNextUtil(VkExportMetalObjectTypeFlagBitsEXT bit, const char *vuid, const Location &loc,
@@ -1163,6 +1140,19 @@ class Device : public vvl::base::Device {
 
     bool ValidateAllocateMemoryExternal(VkDevice device, const VkMemoryAllocateInfo &allocate_info, VkMemoryAllocateFlags flags,
                                         const Location &allocate_info_loc) const;
+
+    bool ValidateVkConvertCooperativeVectorMatrixInfoNV(const LogObjectList &objlist,
+                                                        const VkConvertCooperativeVectorMatrixInfoNV &info,
+                                                        const Location &info_loc) const;
+
+    bool manual_PreCallValidateConvertCooperativeVectorMatrixNV(VkDevice device,
+                                                                const VkConvertCooperativeVectorMatrixInfoNV *pInfo,
+                                                                const Context &context) const;
+
+    bool manual_PreCallValidateCmdConvertCooperativeVectorMatrixNV(VkCommandBuffer commandBuffer, uint32_t infoCount,
+                                                                   const VkConvertCooperativeVectorMatrixInfoNV *pInfos,
+                                                                   const Context &context) const;
+
 #include "generated/stateless_device_methods.h"
 };
 

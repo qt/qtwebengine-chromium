@@ -14,9 +14,11 @@
  */
 
 #include "module.h"
+#include <cassert>
 #include <spirv/unified1/spirv.hpp>
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "error_message/logging.h"
+#include "error_message/error_location.h"
 #include "error_message/log_message_type.h"
 
 #include <iostream>
@@ -26,17 +28,15 @@
 namespace gpuav {
 namespace spirv {
 
+static constexpr uint32_t kLinkedInstruction = std::numeric_limits<uint32_t>::max();
+
 Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings,
                const DeviceFeatures& enabled_features,
                const std::vector<std::vector<BindingLayout>>& set_index_to_bindings_layout_lut)
     : type_manager_(*this),
-      max_instrumentations_count_(settings.max_instrumentations_count),
-      shader_id_(settings.shader_id),
-      output_buffer_descriptor_set_(settings.output_buffer_descriptor_set),
-      support_non_semantic_info_(settings.support_non_semantic_info),
+      settings_(settings),
       enabled_features_(enabled_features),
       has_bindless_descriptors_(settings.has_bindless_descriptors),
-      print_debug_info_(settings.print_debug_info),
       debug_report_(debug_report),
       set_index_to_bindings_layout_lut_(set_index_to_bindings_layout_lut) {
     uint32_t instruction_count = 0;
@@ -187,7 +187,7 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
         }
 
         if (opcode == spv::OpLoopMerge) {
-            current_block->loop_header_ = true;
+            current_block->loop_header_merge_target_ = new_inst->Word(1);
         }
 
         if (opcode == spv::OpLabel) {
@@ -344,6 +344,16 @@ void Module::AddInterfaceVariables(uint32_t id, spv::StorageClass storage_class)
     }
 }
 
+// Helper for passes with multiple linked functions they may grab
+// Pass in cached link_function_id and only update it the first time
+uint32_t Module::GetLinkFunction(uint32_t& link_function_id, const OfflineLinkInfo& offline_info) {
+    if (link_function_id == 0) {
+        link_function_id = TakeNextId();
+        link_info_.emplace_back(LinkInfo{offline_info, link_function_id});
+    }
+    return link_function_id;
+}
+
 // Takes the current module and injects the function into it
 // This is done by first apply any new Types/Constants/Variables and then copying in the instructions of the Function
 void Module::LinkFunction(const LinkInfo& info) {
@@ -357,8 +367,8 @@ void Module::LinkFunction(const LinkInfo& info) {
 
     // find all constant and types, add any the module doesn't have
     uint32_t offset = 5;  // skip header
-    while (offset < info.word_count) {
-        const uint32_t* inst_word = &info.words[offset];
+    while (offset < info.offline.word_count) {
+        const uint32_t* inst_word = &info.offline.words[offset];
         const uint32_t opcode = *inst_word & 0x0ffffu;
         const uint32_t length = *inst_word >> 16;
         if (opcode == spv::OpFunction) {
@@ -445,8 +455,8 @@ void Module::LinkFunction(const LinkInfo& info) {
                 case SpvType::kForwardPointer: {
                     // forward reference id swap
                     type_id = TakeNextId();
-                    old_result_id = new_inst->words_[1];
-                    new_inst->words_[1] = type_id;
+                    old_result_id = new_inst->Word(1);
+                    new_inst->UpdateWord(1, type_id);
                     type_manager_.AddType(std::move(new_inst), spv_type);
                     break;
                 }
@@ -481,23 +491,48 @@ void Module::LinkFunction(const LinkInfo& info) {
 
             id_swap_map[old_result_id] = type_id;
 
-        } else if (ConstantOperation(opcode)) {
+        } else if (ConstantOperation(opcode) || IsSpecConstant(opcode)) {
+            if (opcode == spv::OpSpecConstant) {
+                // Replace LinkConstants with a OpCostant
+                uint32_t new_op_constant[4];
+                new_op_constant[0] = (4 << 16) | spv::OpConstant;
+                new_op_constant[1] = new_inst->Word(1);
+                new_op_constant[2] = new_inst->Word(2);
+                if (new_inst->Word(3) == glsl::kLinkShaderId) {
+                    new_op_constant[3] = settings_.shader_id;
+                }
+                new_inst.reset(new Instruction(new_op_constant, kLinkedInstruction));
+            } else if (opcode == spv::OpSpecConstantOp) {
+                // Apply the SpecConstantOp and generate a new OpCostant
+                uint32_t new_op_constant[4];
+                new_op_constant[0] = (4 << 16) | spv::OpConstant;
+                new_op_constant[1] = new_inst->Word(1);
+                new_op_constant[2] = new_inst->Word(2);
+                const uint32_t operation = new_inst->Word(3);
+                if (operation == spv::OpBitwiseOr) {
+                    const Constant* op_1 = type_manager_.FindConstantById(id_swap_map[new_inst->Word(4)]);
+                    const Constant* op_2 = type_manager_.FindConstantById(id_swap_map[new_inst->Word(5)]);
+                    new_op_constant[3] = op_1->GetValueUint32() | op_2->GetValueUint32();
+                } else {
+                    assert(false);  // Missing support
+                }
+                new_inst.reset(new Instruction(new_op_constant, kLinkedInstruction));
+            }
+
             const Type& type = *type_manager_.FindTypeById(id_swap_map[new_inst->TypeId()]);
             const Constant* constant = nullptr;
             // for simplicity, just create a new constant for things other than 32-bit OpConstant as there are rarely-to-none
             // composite/null/true/false constants in linked functions. The extra logic to try and find them is much larger and cost
             // time failing most the searches.
-            if (opcode == spv::OpConstant) {
+            //
+            // If length is 5, it is a 64-bit constant, which we don't care about
+            // (we want lenght of 4 as that means it is 32-bit)
+            if (opcode == spv::OpConstant && new_inst->Length() == 4) {
                 const uint32_t constant_value = new_inst->Word(3);
                 if (type.inst_.Opcode() == spv::OpTypeInt && type.inst_.Word(2) == 32) {
                     constant = type_manager_.FindConstantInt32(type.Id(), constant_value);
                 } else if (type.inst_.Opcode() == spv::OpTypeFloat && type.inst_.Word(2) == 32) {
                     constant = type_manager_.FindConstantFloat32(type.Id(), constant_value);
-                }
-
-                // Replace LinkConstants
-                if (constant_value == glsl::kLinkShaderId) {
-                    new_inst->words_[3] = shader_id_;
                 }
             }
 
@@ -511,15 +546,31 @@ void Module::LinkFunction(const LinkInfo& info) {
         } else if (opcode == spv::OpVariable) {
             // Add in all variables outside of functions
             const uint32_t new_result_id = TakeNextId();
-            AddInterfaceVariables(new_result_id, (spv::StorageClass)new_inst->Word(3));
+            const spv::StorageClass storage_class = new_inst->StorageClass();
+            AddInterfaceVariables(new_result_id, storage_class);
             id_swap_map[old_result_id] = new_result_id;
             new_inst->ReplaceResultId(new_result_id);
             new_inst->ReplaceLinkedId(id_swap_map);
 
             const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
+
+            if (storage_class == spv::StorageClassPrivate && type->spv_type_ == SpvType::kPointer &&
+                ((info.offline.flags & ZeroInitializeUintPrivateVariables) != 0)) {
+                const Type* pointer_type = type_manager_.FindTypeById(type->inst_.Word(3));
+                // If we hit this assert, we need to add support for another type
+                assert(pointer_type && pointer_type->spv_type_ == SpvType::kInt);
+                if (pointer_type->spv_type_ == SpvType::kInt) {
+                    const uint32_t uint32_0_id = type_manager_.GetConstantZeroUint32().Id();
+                    new_inst->AppendWord(uint32_0_id);
+                }
+            }
+
             type_manager_.AddVariable(std::move(new_inst), *type);
         } else if (opcode == spv::OpDecorate || opcode == spv::OpMemberDecorate) {
-            decorations.emplace_back(std::move(new_inst));
+            // We want to drop any SpecId we added
+            if (opcode != spv::OpDecorate || new_inst->Word(2) != spv::DecorationSpecId) {
+                decorations.emplace_back(std::move(new_inst));
+            }
         } else if (opcode == spv::OpCapability) {
             spv::Capability capability = spv::Capability(new_inst->Word(1));
             // Shader is required and we want to remove Linkage from final shader
@@ -547,8 +598,8 @@ void Module::LinkFunction(const LinkInfo& info) {
     // because flow-control instructions (ex. OpBranch) do forward references to IDs, do an initial loop to get all OpLabel to have
     // in id_swap_map
     uint32_t offset_copy = offset;
-    while (offset_copy < info.word_count) {
-        const uint32_t* inst_word = &info.words[offset_copy];
+    while (offset_copy < info.offline.word_count) {
+        const uint32_t* inst_word = &info.offline.words[offset_copy];
         const uint32_t opcode = *inst_word & 0x0ffffu;
         const uint32_t length = *inst_word >> 16;
         if (opcode == spv::OpLabel) {
@@ -559,28 +610,28 @@ void Module::LinkFunction(const LinkInfo& info) {
         offset_copy += length;
     }
 
-    AddDebugName(info.opname, info.function_id);
+    AddDebugName(info.offline.opname, info.function_id);
 
     // Add function and copy all instructions to it, while adjusting any IDs
     auto& new_function = functions_.emplace_back(std::make_unique<Function>(*this));
     // We make things simpler by just putting everything in the first BasicBlock
     // (We need it in a block incase we want to alter this function later with something like DebugPrintf)
     BasicBlock* link_basic_block = nullptr;
-    while (offset < info.word_count) {
-        const uint32_t* inst_word = &info.words[offset];
+    while (offset < info.offline.word_count) {
+        const uint32_t* inst_word = &info.offline.words[offset];
         auto new_inst = std::make_unique<Instruction>(inst_word, kLinkedInstruction);
         const uint32_t opcode = new_inst->Opcode();
         const uint32_t length = new_inst->Length();
 
         if (opcode == spv::OpFunction) {
-            new_inst->words_[1] = id_swap_map[new_inst->words_[1]];
-            new_inst->words_[2] = info.function_id;
+            new_inst->UpdateWord(1, id_swap_map[new_inst->Word(1)]);
+            new_inst->UpdateWord(2, info.function_id);
             // We can easily inject the same function hundreds of times and really don't want to inline it.
             // Have found that if drivers don't inline, can get a 20x speed-up at compiling large bloated shaders.
             // There is no way to query this or test if the driver does consume this, also currently most drivers
             // will ignore this as it is not hooked up... but worth trying
-            new_inst->words_[3] = spv::FunctionControlDontInlineMask;
-            new_inst->words_[4] = function_type_id;
+            new_inst->UpdateWord(3, spv::FunctionControlDontInlineMask);
+            new_inst->UpdateWord(4, function_type_id);
         } else if (opcode == spv::OpLabel) {
             uint32_t new_result_id = id_swap_map[new_inst->ResultId()];
             new_inst->ReplaceResultId(new_result_id);
@@ -603,13 +654,14 @@ void Module::LinkFunction(const LinkInfo& info) {
             new_inst->ReplaceLinkedId(id_swap_map);
         }
 
+        // For a future FindInstruction() make sure everything is added to the inst_map
+        const uint32_t result_id = new_inst->ResultId();
+        if (result_id != 0) {
+            new_function->inst_map_[result_id] = new_inst.get();
+        }
+
         if (link_basic_block) {
             // Need for a possible FindInstruction() lookup
-            const uint32_t result_id = new_inst->ResultId();
-            if (result_id != 0) {
-                new_function->inst_map_[result_id] = new_inst.get();
-            }
-
             link_basic_block->instructions_.emplace_back(std::move(new_inst));
         } else {
             new_function->pre_block_inst_.emplace_back(std::move(new_inst));
@@ -631,7 +683,7 @@ void Module::LinkFunction(const LinkInfo& info) {
             continue;  // remove linkage info
         } else if (decoration->Word(2) == spv::DecorationDescriptorSet) {
             // only should be one DescriptorSet to update
-            decoration->words_[3] = output_buffer_descriptor_set_;
+            decoration->UpdateWord(3, settings_.output_buffer_descriptor_set);
         }
 
         decoration->ReplaceLinkedId(id_swap_map);
@@ -651,7 +703,7 @@ void Module::PostProcess() {
     if (use_bda_) {
         // Adjust the original addressing model to be PhysicalStorageBuffer64 if not already.
         // A module can only have one OpMemoryModel
-        memory_model_[0]->words_[1] = spv::AddressingModelPhysicalStorageBuffer64;
+        memory_model_[0]->UpdateWord(1, spv::AddressingModelPhysicalStorageBuffer64);
         if (!HasCapability(spv::CapabilityPhysicalStorageBufferAddresses)) {
             AddCapability(spv::CapabilityPhysicalStorageBufferAddresses);
             AddExtension("SPV_KHR_physical_storage_buffer");
@@ -680,17 +732,19 @@ void Module::PostProcess() {
     }
 }
 
-void Module::InternalWarning(const char* tag, const char* message) {
+void Module::InternalWarning(const char* tag, const std::string& message) {
     if (debug_report_) {
-        debug_report_->DebugLogMsg(kWarningBit, {}, message, tag);
+        Location loc(vvl::Func::Empty);
+        debug_report_->LogMessage(kWarningBit, tag, {}, loc, message);
     } else {
         std::cout << "[" << tag << "] " << message << '\n';
     }
 }
 
-void Module::InternalError(const char* tag, const char* message) {
+void Module::InternalError(const char* tag, const std::string& message) {
     if (debug_report_) {
-        debug_report_->DebugLogMsg(kErrorBit, {}, message, tag);
+        Location loc(vvl::Func::Empty);
+        debug_report_->LogMessage(kErrorBit, tag, {}, loc, message);
     } else {
         std::cerr << "[" << tag << "] " << message << '\n';
     }

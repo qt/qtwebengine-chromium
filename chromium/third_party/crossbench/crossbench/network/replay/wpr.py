@@ -9,13 +9,14 @@ import contextlib
 import dataclasses
 import logging
 from typing import (TYPE_CHECKING, Final, Iterator, List, Mapping, Optional,
-                    Tuple, Union)
+                    Tuple, TypeVar)
+
+from typing_extensions import override
 
 from crossbench.flags.base import Flags
 from crossbench.helper.path_finder import WprGoToolFinder
 from crossbench.network.replay.base import GS_PREFIX, ReplayNetwork
 from crossbench.network.replay.web_page_replay import WprReplayServer
-from crossbench.parse import PathParser
 from crossbench.path import check_hash
 from crossbench.plt import PLATFORM, Platform
 
@@ -37,7 +38,7 @@ class WPRCloudBinary:
   file_hash: str
 
   @property
-  def url(self):
+  def url(self) -> str:
     return f"{WPR_BASE_URL}/wpr_go_{self.file_hash}"
 
 
@@ -66,22 +67,25 @@ WPR_PREBUILT_LOOKUP: Final[Mapping[Tuple[str, str], WPRCloudBinary]] = {
 }
 
 
+WprReplayNetworkT = TypeVar("WprReplayNetworkT", bound="WprReplayNetwork")
+
 class WprReplayNetwork(ReplayNetwork):
 
   def __init__(self,
-               archive: Union[LocalPath, str],
+               archive: LocalPath | str,
                traffic_shaper: Optional[TrafficShaper] = None,
                wpr_go_bin: Optional[LocalPath] = None,
                browser_platform: Platform = PLATFORM,
                persist_server: bool = False,
-               inject_deterministic_script: bool = True):
+               inject_deterministic_script: bool = True) -> None:
     super().__init__(archive, traffic_shaper, browser_platform)
-    self._server: Optional[WprReplayServer] = None
-    self._tmp_dir: Optional[AnyPath] = None
+    self._server: WprReplayServer | None = None
+    self._tmp_dir: AnyPath | None = None
     self._persist_server = persist_server
     self._inject_deterministic_script = inject_deterministic_script
     self._ensure_wpr_go(wpr_go_bin)
 
+  @override
   def extra_flags(self, browser_attributes: BrowserAttributes) -> Flags:
     assert self.is_running, "Extra network flags are not valid"
     assert self._server
@@ -113,11 +117,13 @@ class WprReplayNetwork(ReplayNetwork):
     pass
 
   @contextlib.contextmanager
-  def open(self, session: BrowserSessionRunGroup) -> Iterator[ReplayNetwork]:
+  @override
+  def open(self: WprReplayNetworkT,
+           session: BrowserSessionRunGroup) -> Iterator[WprReplayNetworkT]:
     with super().open(session):
       yield self
 
-  def _ensure_server_started(self, session: BrowserSessionRunGroup):
+  def _ensure_server_started(self, session: BrowserSessionRunGroup) -> None:
     log_dir = session.browser_dir if self._persist_server else session.out_dir
     if not self._server or not self._persist_server:
       self._server = self._create_server(log_dir)
@@ -128,6 +134,7 @@ class WprReplayNetwork(ReplayNetwork):
       logging.debug("WPR server already started")
 
   @contextlib.contextmanager
+  @override
   def _open_replay_server(self, session: BrowserSessionRunGroup):
     self._ensure_server_started(session)
 
@@ -138,16 +145,19 @@ class WprReplayNetwork(ReplayNetwork):
         self._server.stop()
 
   @property
+  @override
   def http_port(self) -> int:
     assert self._server, "WPR is not running"
     return self._server.http_port
 
   @property
+  @override
   def https_port(self) -> int:
     assert self._server, "WPR is not running"
     return self._server.https_port
 
   @property
+  @override
   def host(self) -> str:
     assert self._server, "WPR is not running"
     return self._server.host
@@ -162,7 +172,8 @@ class WprReplayNetwork(ReplayNetwork):
 
 class LocalWprReplayNetwork(WprReplayNetwork):
 
-  def _ensure_wpr_go(self, wpr_go_bin: Optional[LocalPath] = None):
+  @override
+  def _ensure_wpr_go(self, wpr_go_bin: Optional[LocalPath] = None) -> None:
     if not wpr_go_bin:
       if local_wpr_go := WprGoToolFinder(self.host_platform).path:
         wpr_go_bin = self.host_platform.local_path(local_wpr_go)
@@ -171,11 +182,13 @@ class LocalWprReplayNetwork(WprReplayNetwork):
           f"Could not find wpr.go binary on {self.host_platform}")
     if wpr_go_bin.suffix == ".go" and not self.host_platform.which("go"):
       raise ValueError(f"'go' binary not found on {self.host_platform}")
-    self._wpr_go_bin: LocalPath = self.host_platform.local_path(
-        PathParser.binary_path(wpr_go_bin, "wpr.go source"))
+    self._wpr_go_bin: LocalPath = self.host_platform.parse_local_binary_path(
+        wpr_go_bin, "wpr.go source")
 
   @contextlib.contextmanager
-  def open(self, session: BrowserSessionRunGroup) -> Iterator[ReplayNetwork]:
+  @override
+  def open(self: LocalWprReplayNetwork,
+           session: BrowserSessionRunGroup) -> Iterator[LocalWprReplayNetwork]:
     with super().open(session):
       with self._forward_ports(session):
         yield self
@@ -198,8 +211,9 @@ class LocalWprReplayNetwork(WprReplayNetwork):
     browser_platform.stop_reverse_port_forward(http_port)
     browser_platform.stop_reverse_port_forward(https_port)
 
+  @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
-    inject_scripts: Optional[List[AnyPath]] = (
+    inject_scripts: List[AnyPath] | None = (
         None if self.inject_deterministic_script else [])
     return WprReplayServer(
         self.archive_path,
@@ -215,15 +229,16 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
   def is_compatible(cls, platform: Platform) -> bool:
     return platform.is_android or platform.is_chromeos
 
-  def _ensure_wpr_go(self, wpr_go_bin: Optional[LocalPath] = None):
+  @override
+  def _ensure_wpr_go(self, wpr_go_bin: Optional[LocalPath] = None) -> None:
     assert RemoteWprReplayNetwork.is_compatible(self.browser_platform)
     if wpr_go_bin:
       if wpr_go_bin.suffix == ".go":
         raise ValueError(f"Can't run .go files on {self.browser_platform}")
     else:
       wpr_go_bin = self._download_prebuilt_wpr()
-    self._wpr_go_bin: LocalPath = self.host_platform.local_path(
-        PathParser.binary_path(wpr_go_bin, "wpr.go binary"))
+    self._wpr_go_bin: LocalPath = self.host_platform.parse_local_binary_path(
+        wpr_go_bin, "wpr.go binary")
 
   def _download_prebuilt_wpr(self) -> LocalPath:
     wpr_cloud_binary = WPR_PREBUILT_LOOKUP[self.browser_platform.key]
@@ -238,7 +253,9 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
     return local_wpr_go_bin
 
   @contextlib.contextmanager
-  def open(self, session: BrowserSessionRunGroup) -> Iterator[ReplayNetwork]:
+  @override
+  def open(self: RemoteWprReplayNetwork,
+           session: BrowserSessionRunGroup) -> Iterator[RemoteWprReplayNetwork]:
     with self._remote_temp_dir(session):
       with super().open(session):
         yield self
@@ -274,6 +291,7 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
 
     return [remote_wpr_go_bin] + remote_files
 
+  @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
     wpr_go_bin, archive, key_file, cert_file, inject_script =\
         self._push_required_files()

@@ -675,14 +675,14 @@ HRESULT GenerateSampleFromDecoderBuffer(
   RETURN_IF_FAILED(mf_sample->SetSampleTime(sample_time));
 
   ComPtr<IMFMediaBuffer> mf_buffer;
-  size_t data_size = buffer->size();
-  RETURN_IF_FAILED(MFCreateMemoryBuffer(buffer->size(), &mf_buffer));
+  auto buffer_span = base::span(*buffer);
+  RETURN_IF_FAILED(MFCreateMemoryBuffer(buffer_span.size(), &mf_buffer));
 
   BYTE* mf_buffer_data = nullptr;
   DWORD max_length = 0;
   RETURN_IF_FAILED(mf_buffer->Lock(&mf_buffer_data, &max_length, 0));
-  memcpy(mf_buffer_data, buffer->data(), data_size);
-  RETURN_IF_FAILED(mf_buffer->SetCurrentLength(data_size));
+  memcpy(mf_buffer_data, buffer_span.data(), buffer_span.size());
+  RETURN_IF_FAILED(mf_buffer->SetCurrentLength(buffer_span.size()));
   RETURN_IF_FAILED(mf_buffer->Unlock());
 
   RETURN_IF_FAILED(mf_sample->AddBuffer(mf_buffer.Get()));
@@ -846,8 +846,12 @@ HRESULT GenerateSampleFromVideoFrame(
     DWORD buffer_alignment,
     IMFSample** sample_out) {
   // A shared image sample cannot be created synchronously.  Use
-  // GenerateSampleFromSharedImageVideoFrame
-  CHECK(!frame->HasSharedImage());
+  // GenerateSampleFromSharedImageVideoFrame. Note that this is not true for
+  // mappable shared image since it has a GpuMemoryBufferHandle. So skipping the
+  // CHECK when frame has a mappable buffer.
+  if (!frame->HasMappableGpuBuffer()) {
+    CHECK(!frame->HasSharedImage());
+  }
 
   HRESULT hr;
   Microsoft::WRL::ComPtr<IMFSample> sample;

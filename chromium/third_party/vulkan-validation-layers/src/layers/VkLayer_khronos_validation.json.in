@@ -4,7 +4,7 @@
         "name": "@JSON_LAYER_NAME@",
         "type": "GLOBAL",
         "library_path": "@JSON_LIBRARY_PATH@",
-        "api_version": "1.4.307",
+        "api_version": "1.4.311",
         "implementation_version": "1",
         "description": "Khronos Validation Layer",
         "introduction": "The main, comprehensive Khronos validation layer.\n\nVulkan is an Explicit API, enabling direct control over how GPUs actually work. By design, minimal error checking is done inside a Vulkan driver. Applications have full control and responsibility for correct operation. Any errors in how Vulkan is used can result in a crash. \n\nThe Khronos Validation Layer can be enabled to assist development by enabling developers to verify their applications correctly use the Vulkan API.",
@@ -86,7 +86,7 @@
                         { "key": "printf_enable", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "validate_best_practices", "value": false },
-                        { "key": "report_flags", "value": [ "error" ] },
+                        { "key": "report_flags", "value": [ "error", "warn" ] },
                         { "key": "debug_action", "value": [ "VK_DBG_LAYER_ACTION_LOG_MSG" ] },
                         { "key": "enable_message_limit", "value": true }
                     ]
@@ -426,7 +426,7 @@
                                     "settings": [
                                         {
                                             "key": "syncval_message_extra_properties",
-                                            "label": "Extra key-value properties",
+                                            "label": "Extra properties",
                                             "description": "Append a section of key-value properties to the error message. Useful for filtering errors.",
                                             "type": "BOOL",
                                             "default": false,
@@ -567,6 +567,20 @@
                             "platforms": [ "WINDOWS", "LINUX" ],
                             "settings": [
                                 {
+                                    "key": "gpuav_unsafe_mode",
+                                    "label": "Unsafe Mode",
+                                    "description": "Normally GPU-AV will try to prevent crashes, but with unsafe mode, it will be much faster to validate, but might not stop a crash",
+                                    "type": "BOOL",
+                                    "default": false,
+                                    "platforms": [ "WINDOWS", "LINUX" ],
+                                    "dependence": {
+                                        "mode": "ALL",
+                                        "settings": [
+                                            { "key": "gpuav_enable", "value": true }
+                                        ]
+                                    }
+                                },
+                                {
                                     "key": "gpuav_shader_instrumentation",
                                     "label": "Shader instrumentation",
                                     "description": "Instrument shaders to validate descriptors, descriptor indexing, buffer device addresses and ray queries. Warning: will considerably slow down shader executions.",
@@ -595,25 +609,7 @@
                                                     { "key": "gpuav_enable", "value": true },
                                                     { "key": "gpuav_shader_instrumentation", "value": true }
                                                 ]
-                                            },
-                                            "settings": [
-                                                {
-                                                    "key": "gpuav_warn_on_robust_oob",
-                                                    "label": "Generate warning on out of bounds accesses even if buffer robustness is enabled",
-                                                    "description": "Warn on out of bounds accesses even if robustness is enabled",
-                                                    "type": "BOOL",
-                                                    "default": true,
-                                                    "platforms": [ "WINDOWS", "LINUX" ],
-                                                    "dependence": {
-                                                        "mode": "ALL",
-                                                        "settings": [
-                                                            { "key": "gpuav_enable", "value": true },
-                                                            { "key": "gpuav_shader_instrumentation", "value": true },
-                                                            { "key": "gpuav_descriptor_checks", "value": true }
-                                                        ]
-                                                    }
-                                                }
-                                            ]
+                                            }
                                         },
                                         {
                                             "key": "gpuav_buffer_address_oob",
@@ -811,6 +807,20 @@
                                     "key": "gpuav_image_layout",
                                     "label": "Image Layout",
                                     "description": "(Warning - still known to have false positives) Use GPU-AV to detect which descriptors where accessed. Then using post processing, check that the layout of each image subresource is correct whenever it is used by a command buffer.",
+                                    "type": "BOOL",
+                                    "default": false,
+                                    "platforms": [ "WINDOWS", "LINUX" ],
+                                    "dependence": {
+                                        "mode": "ALL",
+                                        "settings": [
+                                            { "key": "gpuav_enable", "value": true }
+                                        ]
+                                    }
+                                },
+                                {
+                                    "key": "gpuav_force_on_robustness",
+                                    "label": "Force robustness on behalf of the user",
+                                    "description": "When robustness is enabled, GPU-AV will skip checks already covered by robustness",
                                     "type": "BOOL",
                                     "default": false,
                                     "platforms": [ "WINDOWS", "LINUX" ],
@@ -1154,6 +1164,14 @@
                     "type": "GROUP",
                     "expanded": true,
                     "settings": [
+                        {
+                            "key": "message_format_json",
+                            "label": "JSON",
+                            "description": "Display Validation as JSON (VkDebugUtilsMessengerCallbackDataEXT::pMessage will contain JSON)",
+                            "type": "BOOL",
+                            "default": false,
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                        },
                         {
                             "key": "message_format_display_application_name",
                             "label": "Display Application Name",

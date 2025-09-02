@@ -225,6 +225,7 @@ const char* const E_GL_EXT_expect_assume                    = "GL_EXT_expect_ass
 const char* const E_GL_EXT_control_flow_attributes2         = "GL_EXT_control_flow_attributes2";
 const char* const E_GL_EXT_spec_constant_composites         = "GL_EXT_spec_constant_composites";
 const char* const E_GL_EXT_texture_offset_non_const         = "GL_EXT_texture_offset_non_const";
+const char* const E_GL_EXT_nontemporal_keyword              = "GL_EXT_nontemporal_keyword";
 
 // Arrays of extensions for the above viewportEXTs duplications
 
@@ -285,6 +286,9 @@ const char* const E_GL_EXT_ray_tracing_position_fetch           = "GL_EXT_ray_tr
 const char* const E_GL_NV_displacement_micromap                 = "GL_NV_displacement_micromap";
 const char* const E_GL_NV_shader_atomic_fp16_vector             = "GL_NV_shader_atomic_fp16_vector";
 const char* const E_GL_NV_cooperative_matrix2                   = "GL_NV_cooperative_matrix2";
+const char* const E_GL_NV_cooperative_vector                    = "GL_NV_cooperative_vector";
+const char* const E_GL_NV_cluster_acceleration_structure        = "GL_NV_cluster_acceleration_structure";
+const char* const E_GL_NV_linear_swept_spheres                  = "GL_NV_linear_swept_spheres";
 
 // ARM
 const char* const E_GL_ARM_shader_core_builtins                 = "GL_ARM_shader_core_builtins";

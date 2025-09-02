@@ -81,7 +81,7 @@ class TimeoutPlaybackController(PlaybackController):
 class RepeatPlaybackController(PlaybackController):
   count : int
 
-  def __post_init__(self):
+  def __post_init__(self) -> None:
     NumberParser.positive_int(self.count, " page playback count")
 
   def __iter__(self) -> Iterator[None]:

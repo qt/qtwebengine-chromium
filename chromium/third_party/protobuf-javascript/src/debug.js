@@ -1,6 +1,6 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
+// https://protobuf.dev/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -51,6 +51,7 @@ goog.require('jspb.Message');
  * not available for code size reasons.
  * @param {jspb.Message} message A jspb.Message.
  * @return {Object}
+ * @export
  */
 jspb.debug.dump = function(message) {
   if (!goog.DEBUG) {

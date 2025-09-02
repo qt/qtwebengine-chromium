@@ -7,7 +7,7 @@ from __future__ import annotations
 import enum
 from typing import Optional
 
-from crossbench.compat import StrEnumWithHelp
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 
 @enum.unique
@@ -44,4 +44,4 @@ class CallGraphMode(StrEnumWithHelp):
   # https://android.googlesource.com/platform/system/extras/+/master/simpleperf/doc/README.md.
   NO_CALL_GRAPH = ("no_call_graph", "Do not record a call graph")
   DWARF = ("dwarf", "Run DWARF-based unwinding unwinding")
-  FRAME_POINTER = ("frame_pointer", "Run frame pointer unwinding")
+  FRAME_POINTER = ("fp", "Run frame pointer unwinding")

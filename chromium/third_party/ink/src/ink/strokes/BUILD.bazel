@@ -1,4 +1,4 @@
-# Copyright 2024 Google LLC
+# Copyright 2024-2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -52,7 +55,6 @@ cc_test(
         "//ink/brush:fuzz_domains",
         "//ink/brush:type_matchers",
         "//ink/color",
-        "//ink/geometry:affine_transform",
         "//ink/geometry:angle",
         "//ink/geometry:envelope",
         "//ink/geometry:mesh_test_helpers",
@@ -64,7 +66,6 @@ cc_test(
         "//ink/strokes/input:stroke_input_batch",
         "//ink/strokes/input:type_matchers",
         "//ink/types:duration",
-        "//ink/types:uri",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -91,6 +92,7 @@ cc_test(
         "//ink/strokes/input:recorded_test_inputs",
         "//ink/strokes/input:stroke_input_batch",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_benchmark//:benchmark_main",
     ],
 )
@@ -148,10 +150,10 @@ cc_test(
         "//ink/strokes/input:stroke_input_batch",
         "//ink/strokes/input:type_matchers",
         "//ink/types:duration",
-        "//ink/types:uri",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

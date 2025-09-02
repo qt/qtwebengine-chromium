@@ -7,6 +7,8 @@ from __future__ import annotations
 import re
 from typing import Dict, Final, Optional, Tuple
 
+from typing_extensions import override
+
 from crossbench.browsers.version import (BrowserVersion, BrowserVersionChannel,
                                          PartialBrowserVersionError)
 
@@ -32,6 +34,7 @@ class ChromiumVersion(BrowserVersion):
   _CHANNEL_RE = re.compile("|".join(_CHANNEL_LOOKUP.keys()), re.I)
 
   @classmethod
+  @override
   def _parse(
       cls,
       full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
@@ -130,10 +133,12 @@ class ChromiumVersion(BrowserVersion):
     return bool(cls._VALID_SUFFIX_MATCH.fullmatch(suffix))
 
   @property
+  @override
   def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
     return (self.comparable_parts(self._PARTS_LEN), self._channel)
 
   @property
+  @override
   def has_complete_parts(self) -> bool:
     return len(self.parts) == 4
 
@@ -157,6 +162,7 @@ class ChromiumVersion(BrowserVersion):
   def is_canary(self) -> bool:
     return self.is_pre_alpha
 
+  @override
   def _channel_name(self, channel: BrowserVersionChannel) -> str:
     if name := self._CHANNEL_NAME_LOOKUP[channel]:
       return name
@@ -167,6 +173,7 @@ class ChromeDriverVersion(ChromiumVersion):
   _EMPTY_COMMIT_HASH: Final = "0000000000000000000000000000000000000000"
 
   @classmethod
+  @override
   def _validate_prefix(cls, prefix: Optional[str]) -> bool:
     if not prefix:
       return False
@@ -174,12 +181,14 @@ class ChromeDriverVersion(ChromiumVersion):
                               "microsoft edge webdriver ")
 
   @classmethod
+  @override
   def _parse_default_channel(cls, full_version: str) -> BrowserVersionChannel:
     if cls._EMPTY_COMMIT_HASH in full_version:
       return BrowserVersionChannel.PRE_ALPHA
     return BrowserVersionChannel.STABLE
 
   @classmethod
+  @override
   def _validate_suffix(cls, suffix: Optional[str]) -> bool:
     # TODO: extract commit hash / branch info from newer versions
     return True

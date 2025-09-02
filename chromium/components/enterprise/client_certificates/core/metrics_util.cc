@@ -20,8 +20,8 @@ std::string_view ProvisioningScenarioToString(ProvisioningScenario scenario) {
       return "CertificateCreation";
     case ProvisioningScenario::kCertificateRenewal:
       return "CertificateRenewal";
-    case ProvisioningScenario::kPublicKeySync:
-      return "PublicKeySync";
+    case ProvisioningScenario::kExistingIdentity:
+      return "ExistingIdentity";
   }
 }
 
@@ -44,20 +44,6 @@ void LogProvisioningError(ProvisioningError provisioning_error,
     base::UmaHistogramEnumeration(kProvisioningStoreErrorHistogram,
                                   store_error.value());
   }
-}
-
-void LogKeySyncResponse(HttpCodeOrClientError upload_code) {
-  if (upload_code.has_value()) {
-    static constexpr char kKeySyncCodeHistogram[] =
-        "Enterprise.ClientCertificate.Profile.PublicKeySync.UploadCode";
-    base::UmaHistogramSparse(kKeySyncCodeHistogram, upload_code.value());
-    return;
-  }
-
-  static constexpr char kKeySyncClientErrorHistogram[] =
-      "Enterprise.ClientCertificate.Profile.PublicKeySync.ClientError";
-  base::UmaHistogramEnumeration(kKeySyncClientErrorHistogram,
-                                upload_code.error());
 }
 
 void LogCertificateCreationResponse(HttpCodeOrClientError upload_code,

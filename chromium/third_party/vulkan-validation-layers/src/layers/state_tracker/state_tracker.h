@@ -23,11 +23,11 @@
 #include "utils/hash_vk_types.h"
 #include "state_tracker/video_session_state.h"
 #include "chassis/dispatch_object.h"
-#include "generated/device_features.h"
 #include "error_message/logging.h"
+#include "containers/span.h"
 #include "containers/custom_containers.h"
 #include "utils/android_ndk_types.h"
-#include "containers/range_vector.h"
+#include "containers/range_map.h"
 #include <vulkan/utility/vk_struct_helper.hpp>
 #include <atomic>
 #include <functional>
@@ -71,6 +71,8 @@ class QueryPool;
 struct DedicatedBinding;
 struct ShaderModule;
 struct ShaderObject;
+class VideoSession;
+class VideoSessionParameters;
 }  // namespace vvl
 
 namespace chassis {
@@ -127,6 +129,7 @@ struct TraitsBase {
     struct Traits<state_type> : public TraitsBase<handle_type, state_type> {}; \
     }
 
+// Downstream projects may want to extend various state object types
 #define VALSTATETRACK_DERIVED_STATE_OBJECT(handle_type, state_type, base_type)            \
     namespace state_object {                                                              \
     template <>                                                                           \
@@ -184,7 +187,7 @@ class Instance : public vvl::base::Instance {
                                                                           uint32_t queueFamilyIndex, uint32_t* pCounterCount,
                                                                           VkPerformanceCounterKHR* pCounters);
     void RecordGetPhysicalDeviceDisplayPlanePropertiesState(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
-                                                            void* pProperties);
+                                                            void* pProperties, const RecordObject& record_obj);
     void PostCallRecordGetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                   VkDisplayPlanePropertiesKHR* pProperties,
                                                                   const RecordObject& record_obj) override;
@@ -228,34 +231,10 @@ class Instance : public vvl::base::Instance {
     void PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
                                    const VkAllocationCallbacks* pAllocator, VkDevice* pDevice, const RecordObject& record_obj,
                                    vku::safe_VkDeviceCreateInfo* modified_create_info) override;
-    void PostCallRecordCreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo* pCreateInfo,
-                                    const VkAllocationCallbacks* pAllocator, VkDevice* pDevice,
-                                    const RecordObject& record_obj) override;
 
     void PostCallRecordCreateDisplayModeKHR(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
                                             const VkDisplayModeCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                             VkDisplayModeKHR* pMode, const RecordObject& record_obj) override;
-
-    template <bool init = true, typename ExtProp>
-    void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtEnabled enabled, ExtProp* ext_prop) {
-        assert(ext_prop);
-        if (IsExtEnabled(enabled)) {
-            // Extensions that use two calls to get properties don't want to init on the second call
-            if constexpr (init) {
-                *ext_prop = vku::InitStructHelper();
-            }
-            VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
-            DispatchGetPhysicalDeviceProperties2Helper(gpu, &prop2);
-        }
-    }
-
-    template <typename ExtProp>
-    void GetPhysicalDeviceExtProperties(VkPhysicalDevice gpu, ExtProp* ext_prop) {
-        assert(ext_prop);
-        *ext_prop = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(ext_prop);
-        DispatchGetPhysicalDeviceProperties2Helper(gpu, &prop2);
-    }
 
     VkFormatFeatureFlags2KHR GetImageFormatFeatures(VkPhysicalDevice physical_device, bool has_format_feature2,
                                                     bool has_drm_modifiers, VkDevice device, VkImage image, VkFormat format,
@@ -496,7 +475,12 @@ class Device : public vvl::base::Device {
 
   public:
     Device(vvl::dispatch::Device* dev, Instance* instance, LayerObjectTypeId type)
-        : BaseClass(dev, instance, type), instance_state(instance) {
+        : BaseClass(dev, instance, type),
+          instance_state(instance),
+          has_format_feature2(dev->stateless_device_data.has_format_feature2),
+          has_robust_image_access(dev->stateless_device_data.has_robust_image_access),
+          has_robust_image_access2(dev->stateless_device_data.has_robust_image_access2),
+          has_robust_buffer_access2(dev->stateless_device_data.has_robust_buffer_access2) {
         physical_device_state = instance_state->Get<vvl::PhysicalDevice>(physical_device).get();
     }
     ~Device();
@@ -616,6 +600,8 @@ class Device : public vvl::base::Device {
         return found_it->second;
     }
 
+    VkDeviceAddress GetBufferDeviceAddressHelper(VkBuffer buffer, const DeviceExtensions* exts) const;
+
     // From the spec:
     // If multiple VkBuffer objects are bound to overlapping ranges of VkDeviceMemory, implementations may return
     // address ranges which overlap. In this case, it is ambiguous which VkBuffer is associated with any given
@@ -644,7 +630,7 @@ class Device : public vvl::base::Device {
     }
 
     // Return a count pair, {written addresses count, total address ranges count}
-    using BufferAddressRange = sparse_container::range<VkDeviceAddress>;
+    using BufferAddressRange = vvl::range<VkDeviceAddress>;
     [[nodiscard]] std::pair<size_t, size_t> GetBufferAddressRanges(BufferAddressRange* ranges, size_t ranges_size) const {
         ReadLockGuard guard(buffer_address_lock_);
 
@@ -711,6 +697,11 @@ class Device : public vvl::base::Device {
     void PostCallRecordGetSemaphoreWin32HandleKHR(VkDevice device, const VkSemaphoreGetWin32HandleInfoKHR* pGetWin32HandleInfo,
                                                   HANDLE* pHandle, const RecordObject& record_obj) override;
 #endif  // VK_USE_PLATFORM_WIN32_KHR
+#ifdef VK_USE_PLATFORM_FUCHSIA
+    void PostCallRecordGetSemaphoreZirconHandleFUCHSIA(VkDevice device,
+                                                       const VkSemaphoreGetZirconHandleInfoFUCHSIA* pGetZirconHandleInfo,
+                                                       zx_handle_t* pZirconHandle, const RecordObject& record_obj) override;
+#endif  // VK_USE_PLATFORM_FUCHSIA
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     void PostCallRecordGetMemoryWin32HandleKHR(VkDevice device, const VkMemoryGetWin32HandleInfoKHR* pGetWin32HandleInfo,
                                                HANDLE* pHandle, const RecordObject& record_obj) override;
@@ -731,6 +722,11 @@ class Device : public vvl::base::Device {
                                                      const VkImportSemaphoreWin32HandleInfoKHR* pImportSemaphoreWin32HandleInfo,
                                                      const RecordObject& record_obj) override;
 #endif  // VK_USE_PLATFORM_WIN32_KHR
+#ifdef VK_USE_PLATFORM_FUCHSIA
+    void PostCallRecordImportSemaphoreZirconHandleFUCHSIA(
+        VkDevice device, const VkImportSemaphoreZirconHandleInfoFUCHSIA* pImportSemaphoreZirconHandleInfo,
+        const RecordObject& record_obj) override;
+#endif  // VK_USE_PLATFORM_FUCHSIA
     void PreCallRecordSignalSemaphoreKHR(VkDevice device, const VkSemaphoreSignalInfo* pSignalInfo,
                                          const RecordObject& record_obj) override;
     void PreCallRecordSignalSemaphore(VkDevice device, const VkSemaphoreSignalInfo* pSignalInfo,
@@ -757,7 +753,7 @@ class Device : public vvl::base::Device {
     void PostCallRecordBindImageMemory2KHR(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo* pBindInfos,
                                            const RecordObject& record_obj) override;
 
-    virtual void PostCreateDevice(const VkDeviceCreateInfo* pCreateInfo, const Location& loc);
+    virtual void FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) override;
 
     void PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator,
                                     const RecordObject& record_obj) override;
@@ -801,6 +797,9 @@ class Device : public vvl::base::Device {
                                                       const RecordObject& record_obj) override;
 
     virtual std::shared_ptr<vvl::Buffer> CreateBufferState(VkBuffer handle, const VkBufferCreateInfo* create_info);
+    void PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                                   VkBuffer* pBuffer, const RecordObject& record_obj,
+                                   chassis::CreateBuffer& chassis_state) override;
     void PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                     VkBuffer* pBuffer, const RecordObject& record_obj) override;
     void PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator,
@@ -904,7 +903,6 @@ class Device : public vvl::base::Device {
         const VkGraphicsPipelineCreateInfo* create_info, std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
         std::shared_ptr<const vvl::RenderPass>&& render_pass, std::shared_ptr<const vvl::PipelineLayout>&& layout,
         spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) const;
-
     bool PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                 const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                 const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
@@ -967,13 +965,11 @@ class Device : public vvl::base::Device {
     bool PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                     const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                    const ErrorObject& error_obj, PipelineStates& pipeline_states,
-                                                    chassis::CreateRayTracingPipelinesNV& chassis_state) const override;
+                                                    const ErrorObject& error_obj, PipelineStates& pipeline_states) const override;
     void PostCallRecordCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                    const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                    const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                   const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                   chassis::CreateRayTracingPipelinesNV& chassis_state) override;
+                                                   const RecordObject& record_obj, PipelineStates& pipeline_states) override;
     virtual std::shared_ptr<vvl::Pipeline> CreateRayTracingPipelineState(const VkRayTracingPipelineCreateInfoKHR* create_info,
                                                                          std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
                                                                          std::shared_ptr<const vvl::PipelineLayout>&& layout,
@@ -1119,6 +1115,8 @@ class Device : public vvl::base::Device {
                                          const VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj) override;
     void PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory mem, const VkAllocationCallbacks* pAllocator,
                                  const RecordObject& record_obj) override;
+    void PostCallRecordSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority,
+                                                  const RecordObject& record_obj) override;
 
     void PerformUpdateDescriptorSets(uint32_t, const VkWriteDescriptorSet*, uint32_t, const VkCopyDescriptorSet*);
 
@@ -1883,17 +1881,6 @@ class Device : public vvl::base::Device {
     // Link for derived device objects back to their parent instance object
     vvl::Instance* instance_state;
 
-    DeviceFeatures enabled_features = {};
-    // Device specific data
-    VkPhysicalDeviceMemoryProperties phys_dev_mem_props = {};
-    VkPhysicalDeviceProperties phys_dev_props = {};
-    VkPhysicalDeviceVulkan11Properties phys_dev_props_core11 = {};
-    VkPhysicalDeviceVulkan12Properties phys_dev_props_core12 = {};
-    VkPhysicalDeviceVulkan13Properties phys_dev_props_core13 = {};
-    VkPhysicalDeviceVulkan14Properties phys_dev_props_core14 = {};
-    // To store the 2 lists from VkPhysicalDeviceHostImageCopyProperties
-    std::vector<VkImageLayout> host_image_copy_props_copy_src_layouts = {};
-    std::vector<VkImageLayout> host_imape_copy_props_copy_dst_layouts = {};
     VkDeviceGroupDeviceCreateInfo device_group_create_info = {};
     uint32_t physical_device_count;
     uint32_t custom_border_color_sampler_count = 0;
@@ -1901,59 +1888,21 @@ class Device : public vvl::base::Device {
 
     // Some extensions/features changes the behavior of the app/layers/spec if present.
     // So it needs its own special boolean unlike the enabled_fatures.
-    bool has_format_feature2;  // VK_KHR_format_feature_flags2
+    const bool has_format_feature2;  // VK_KHR_format_feature_flags2
     // VK_EXT_pipeline_robustness was designed to be a subset of robustness extensions
     // Enabling the other robustness features can reduce performance on GPU, so just the
     // support is needed to check
-    bool has_robust_image_access;  // VK_EXT_image_robustness
+    const bool has_robust_image_access;  // VK_EXT_image_robustness
     // Validation requires special handling for VkPhysicalDeviceRobustness2FeaturesEXT, because for some cases robustness features
     // // need to only be supported, not enabled
-    bool has_robust_image_access2;   // VK_EXT_robustness2
-    bool has_robust_buffer_access2;  // VK_EXT_robustness2
+    const bool has_robust_image_access2;   // VK_EXT_robustness2
+    const bool has_robust_buffer_access2;  // VK_EXT_robustness2
 
-    // Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2::pNext chain
-    struct DeviceExtensionProperties {
-        VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props;
-        VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props_nv;
-        VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext;
-        VkPhysicalDeviceCooperativeMatrixPropertiesNV cooperative_matrix_props;
-        VkPhysicalDeviceCooperativeMatrixPropertiesKHR cooperative_matrix_props_khr;
-        VkPhysicalDeviceCooperativeMatrix2PropertiesNV cooperative_matrix_props2_nv;
-        VkPhysicalDeviceTransformFeedbackPropertiesEXT transform_feedback_props;
-        VkPhysicalDeviceRayTracingPropertiesNV ray_tracing_props_nv;
-        VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_props_khr;
-        VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props;
-        VkPhysicalDeviceFragmentDensityMapPropertiesEXT fragment_density_map_props;
-        VkPhysicalDeviceFragmentDensityMap2PropertiesEXT fragment_density_map2_props;
-        VkPhysicalDeviceFragmentDensityMapOffsetPropertiesQCOM fragment_density_map_offset_props;
-        VkPhysicalDevicePerformanceQueryPropertiesKHR performance_query_props;
-        VkPhysicalDeviceSampleLocationsPropertiesEXT sample_locations_props;
-        VkPhysicalDeviceCustomBorderColorPropertiesEXT custom_border_color_props;
-        VkPhysicalDeviceMultiviewProperties multiview_props;
-        VkPhysicalDevicePortabilitySubsetPropertiesKHR portability_props;
-        VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props;
-        VkPhysicalDeviceProvokingVertexPropertiesEXT provoking_vertex_props;
-        VkPhysicalDeviceMultiDrawPropertiesEXT multi_draw_props;
-        VkPhysicalDeviceDiscardRectanglePropertiesEXT discard_rectangle_props;
-        VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT blend_operation_advanced_props;
-        VkPhysicalDeviceConservativeRasterizationPropertiesEXT conservative_rasterization_props;
-        VkPhysicalDeviceSubgroupProperties subgroup_props;
-        VkPhysicalDeviceExtendedDynamicState3PropertiesEXT extended_dynamic_state3_props;
-        VkPhysicalDeviceImageProcessingPropertiesQCOM image_processing_props;
-        VkPhysicalDeviceImageAlignmentControlPropertiesMESA image_alignment_control_props;
-        VkPhysicalDeviceMaintenance7PropertiesKHR maintenance7_props;
-        VkPhysicalDeviceNestedCommandBufferPropertiesEXT nested_command_buffer_props;
-        VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_props;
-        VkPhysicalDeviceDescriptorBufferDensityMapPropertiesEXT descriptor_buffer_density_props;
-        VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props;
-        VkPhysicalDevicePipelineBinaryPropertiesKHR pipeline_binary_props;
-        VkPhysicalDeviceMapMemoryPlacedPropertiesEXT map_memory_placed_props;
-        VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR compute_shader_derivatives_props;
-    };
-    DeviceExtensionProperties phys_dev_ext_props = {};
     std::vector<VkCooperativeMatrixPropertiesNV> cooperative_matrix_properties_nv;
     std::vector<VkCooperativeMatrixPropertiesKHR> cooperative_matrix_properties_khr;
     std::vector<VkCooperativeMatrixFlexibleDimensionsPropertiesNV> cooperative_matrix_flexible_dimensions_properties;
+
+    std::vector<VkCooperativeVectorPropertiesNV> cooperative_vector_properties_nv;
 
     // Features and properties that depend on platforms being defined
     // They will be false if platform is not defined

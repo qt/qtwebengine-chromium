@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
-import re
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
+
+from typing_extensions import override
 
 from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.browser import Browser
+from crossbench.browsers.firefox.version import FirefoxVersion
 from crossbench.browsers.viewport import Viewport
 from crossbench.browsers.webdriver import WebDriverBrowser
 
@@ -46,34 +48,32 @@ class Firefox(Browser):
         linux=["firefox-nightly", "firefox-trunk"],
         win=["Firefox Nightly/firefox.exe"])
 
-  def _setup_cache_dir(self, settings: Settings) -> None:
-    cache_dir = settings.cache_dir
-    if cache_dir:
-      self.cache_dir = cache_dir
-      self.clear_cache_dir = False
-    else:
-      self.cache_dir: AnyPath = settings.platform.mkdtemp(prefix="firefox")
-      self.clear_cache_dir = True
-
-  @property
-  def type_name(self) -> str:
+  @classmethod
+  @override
+  def type_name(cls) -> str:
     return "firefox"
 
-  @property
-  def attributes(self) -> BrowserAttributes:
+  @classmethod
+  @override
+  def attributes(cls) -> BrowserAttributes:
     return BrowserAttributes.FIREFOX
 
-  def _extract_version(self) -> str:
-    assert self.path
-    version_string = self.platform.app_version(self.path)
-    # "Firefox 107.0" => "107.0"
-    return str(re.findall(r"[\d\.]+", version_string)[0])
+  @override
+  def _setup_cache_dir(self) -> Optional[AnyPath]:
+    if cache_dir := self.settings.cache_dir:
+      return cache_dir
+    return self.platform.mkdtemp(prefix="firefox")
 
+  @override
+  def _extract_version(self) -> FirefoxVersion:
+    return FirefoxVersion.parse(self.platform.app_version(self.path))
+
+  @override
   def _get_browser_flags_for_session(
       self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
     flags_copy = self.flags.copy()
     flags_copy.update(session.extra_flags)
-    flags_copy.update(self.network.extra_flags(self.attributes))
+    flags_copy.update(self.network.extra_flags(self.attributes()))
     self._handle_viewport_flags(flags_copy)
     if self.log_file:
       flags_copy["--MOZ_LOG_FILE"] = str(self.log_file)
@@ -113,7 +113,6 @@ class Firefox(Browser):
                         WebDriverBrowser) and self.viewport.size != (0, 0):
         raise ValueError(f"Browser {self} cannot handle viewport position: "
                          f"{self.viewport.position}")
-    else:
-      if not isinstance(self, WebDriverBrowser):
-        raise ValueError(
-            f"Browser {self} cannot handle viewport mode: {self.viewport}")
+    elif not isinstance(self, WebDriverBrowser):
+      raise ValueError(
+          f"Browser {self} cannot handle viewport mode: {self.viewport}")

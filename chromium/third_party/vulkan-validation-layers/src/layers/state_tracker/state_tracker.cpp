@@ -24,7 +24,6 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/utility/vk_struct_helper.hpp>
 
-#include "containers/custom_containers.h"
 #include "utils/vk_layer_utils.h"
 
 #include "state_tracker/state_tracker.h"
@@ -47,6 +46,25 @@
 
 namespace vvl {
 Device::~Device() { DestroyObjectMaps(); }
+
+VkDeviceAddress Device::GetBufferDeviceAddressHelper(VkBuffer buffer, const DeviceExtensions *exts = nullptr) const {
+    // GPU-AV needs to pass in the modified extensions, since it may turn on BDA on its own
+    if (!exts) {
+        exts = &extensions;
+    }
+    VkBufferDeviceAddressInfo address_info = vku::InitStructHelper();
+    address_info.buffer = buffer;
+
+    if (api_version >= VK_API_VERSION_1_2) {
+        return DispatchGetBufferDeviceAddress(device, &address_info);
+    } else {
+        if (IsExtEnabled(exts->vk_khr_buffer_device_address)) {
+            return DispatchGetBufferDeviceAddressKHR(device, &address_info);
+        } else {
+            return 0;
+        }
+    }
+}
 
 // NOTE:  Beware the lifespan of the rp_begin when holding  the return.  If the rp_begin isn't a "safe" copy, "IMAGELESS"
 //        attachments won't persist past the API entry point exit.
@@ -162,7 +180,7 @@ VkFormatFeatureFlags2 Instance::GetImageFormatFeatures(VkPhysicalDevice physical
         auto fmt_props_3 = vku::InitStruct<VkFormatProperties3KHR>(has_drm_modifiers ? &fmt_drm_props : nullptr);
         VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
-        DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+        DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
         fmt_props_3.linearTilingFeatures |= fmt_props_2.formatProperties.linearTilingFeatures;
         fmt_props_3.optimalTilingFeatures |= fmt_props_2.formatProperties.optimalTilingFeatures;
@@ -179,7 +197,7 @@ VkFormatFeatureFlags2 Instance::GetImageFormatFeatures(VkPhysicalDevice physical
             fmt_drm_props.pDrmFormatModifierProperties = &drm_mod_props[0];
 
             // Second query to have all the modifiers filled
-            DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+            DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
             // Look for the image modifier in the list
             for (uint32_t i = 0; i < fmt_drm_props.drmFormatModifierCount; i++) {
@@ -199,11 +217,11 @@ VkFormatFeatureFlags2 Instance::GetImageFormatFeatures(VkPhysicalDevice physical
         VkFormatProperties2 format_properties_2 = vku::InitStructHelper();
         VkDrmFormatModifierPropertiesListEXT drm_properties_list = vku::InitStructHelper();
         format_properties_2.pNext = (void *)&drm_properties_list;
-        DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &format_properties_2);
+        DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &format_properties_2);
         std::vector<VkDrmFormatModifierPropertiesEXT> drm_properties;
         drm_properties.resize(drm_properties_list.drmFormatModifierCount);
         drm_properties_list.pDrmFormatModifierProperties = &drm_properties[0];
-        DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &format_properties_2);
+        DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &format_properties_2);
 
         for (uint32_t i = 0; i < drm_properties_list.drmFormatModifierCount; i++) {
             if (drm_properties_list.pDrmFormatModifierProperties[i].drmFormatModifier == drm_format_properties.drmFormatModifier) {
@@ -368,6 +386,21 @@ std::shared_ptr<Buffer> Device::CreateBufferState(VkBuffer handle, const VkBuffe
     return std::make_shared<Buffer>(*this, handle, create_info);
 }
 
+void Device::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo *pCreateInfo,
+                                       const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer, const RecordObject &record_obj,
+                                       chassis::CreateBuffer &chassis_state) {
+    if (pCreateInfo->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) {
+        // When it comes to validation acceleration memory overlaps, it is much faster to
+        // work on device address ranges directly, but for that to be possible,
+        // buffers used to back acceleration structures must have been created with the
+        // VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT usage flag
+        // => Enforce it.
+        // Doing so will not modify VVL state tracking, and if the application forgot to set
+        // this flag, it will still be detected.
+        chassis_state.modified_create_info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
+}
+
 void Device::PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreateInfo *pCreateInfo,
                                         const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer,
                                         const RecordObject &record_obj) {
@@ -420,7 +453,7 @@ void Device::PostCallRecordCreateBufferView(VkDevice device, const VkBufferViewC
     if (has_format_feature2) {
         VkFormatProperties3KHR fmt_props_3 = vku::InitStructHelper();
         VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
-        instance_state->DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, pCreateInfo->format, &fmt_props_2);
+        DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, pCreateInfo->format, &fmt_props_2);
         buffer_features = fmt_props_3.bufferFeatures | fmt_props_2.formatProperties.bufferFeatures;
     } else {
         VkFormatProperties format_properties;
@@ -470,8 +503,8 @@ void Device::PostCallRecordCreateImageView(VkDevice device, const VkImageViewCre
 
         VkImageFormatProperties2 image_format_properties = vku::InitStructHelper(&filter_cubic_props);
 
-        instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(physical_device, &image_format_info,
-                                                                              &image_format_properties);
+        DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &image_format_info,
+                                                              &image_format_properties);
     }
 
     Add(CreateImageViewState(image_state, *pView, pCreateInfo, format_features, filter_cubic_props));
@@ -629,7 +662,7 @@ VkFormatFeatureFlags2KHR Device::GetPotentialFormatFeatures(VkFormat format) con
                 IsExtEnabled(extensions.vk_ext_image_drm_format_modifier) ? &fmt_drm_props : nullptr);
             VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
-            instance_state->DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+            DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
             format_features |= fmt_props_2.formatProperties.linearTilingFeatures;
             format_features |= fmt_props_2.formatProperties.optimalTilingFeatures;
@@ -641,7 +674,7 @@ VkFormatFeatureFlags2KHR Device::GetPotentialFormatFeatures(VkFormat format) con
                 std::vector<VkDrmFormatModifierProperties2EXT> drm_properties;
                 drm_properties.resize(fmt_drm_props.drmFormatModifierCount);
                 fmt_drm_props.pDrmFormatModifierProperties = drm_properties.data();
-                instance_state->DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+                DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
                 for (uint32_t i = 0; i < fmt_drm_props.drmFormatModifierCount; i++) {
                     format_features |= fmt_drm_props.pDrmFormatModifierProperties[i].drmFormatModifierTilingFeatures;
@@ -657,12 +690,12 @@ VkFormatFeatureFlags2KHR Device::GetPotentialFormatFeatures(VkFormat format) con
                 VkDrmFormatModifierPropertiesListEXT fmt_drm_props = vku::InitStructHelper();
                 VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_drm_props);
 
-                instance_state->DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+                DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
                 std::vector<VkDrmFormatModifierPropertiesEXT> drm_properties;
                 drm_properties.resize(fmt_drm_props.drmFormatModifierCount);
                 fmt_drm_props.pDrmFormatModifierProperties = drm_properties.data();
-                instance_state->DispatchGetPhysicalDeviceFormatProperties2Helper(physical_device, format, &fmt_props_2);
+                DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
 
                 for (uint32_t i = 0; i < fmt_drm_props.drmFormatModifierCount; i++) {
                     format_features |= fmt_drm_props.pDrmFormatModifierProperties[i].drmFormatModifierTilingFeatures;
@@ -674,56 +707,12 @@ VkFormatFeatureFlags2KHR Device::GetPotentialFormatFeatures(VkFormat format) con
     return format_features;
 }
 
-void Instance::PostCallRecordCreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo *pCreateInfo,
-                                          const VkAllocationCallbacks *pAllocator, VkDevice *pDevice,
-                                          const RecordObject &record_obj) {
-    if (VK_SUCCESS != record_obj.result) return;
-
-    // The current object represents the VkInstance, look up / create the object for the device.
-    dispatch::Device *device_object = dispatch::GetData(*pDevice);
-    auto *validation_data = device_object->GetValidationObject(this->container_type);
-    auto *device_state = static_cast<Device *>(validation_data);
-
-    // finish setup in the object representing the device
-    device_state->PostCreateDevice(pCreateInfo, record_obj.location);
-
-#if defined(VVL_TRACY_GPU)
-    std::vector<VkTimeDomainKHR> time_domains;
-    uint32_t time_domain_count = 0;
-    VkResult result = DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(gpu, &time_domain_count, nullptr);
-    assert(result == VK_SUCCESS);
-    time_domains.resize(time_domain_count);
-    result = DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(gpu, &time_domain_count, time_domains.data());
-    assert(result == VK_SUCCESS);
-
-    bool found_tracy_required_time_domain = false;
-    for (VkTimeDomainEXT time_domain : time_domains) {
-#if defined(VK_USE_PLATFORM_WIN32_KHR)
-        if (time_domain == VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT) {
-            found_tracy_required_time_domain = true;
-            break;
-        }
-#else
-        if (time_domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT) {
-            found_tracy_required_time_domain = true;
-            break;
-        }
-#endif
-    }
-    (void)found_tracy_required_time_domain;
-    assert(found_tracy_required_time_domain);
-
-#endif
-}
-
 std::shared_ptr<Queue> Device::CreateQueue(VkQueue handle, uint32_t family_index, uint32_t queue_index,
                                            VkDeviceQueueCreateFlags flags, const VkQueueFamilyProperties &queueFamilyProperties) {
     return std::make_shared<Queue>(*this, handle, family_index, queue_index, flags, queueFamilyProperties);
 }
 
-void Device::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
-    GetEnabledDeviceFeatures(pCreateInfo, &enabled_features, api_version);
-
+void Device::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
     const auto *device_group_ci = vku::FindStructInPNextChain<VkDeviceGroupDeviceCreateInfo>(pCreateInfo->pNext);
     if (device_group_ci) {
         physical_device_count = device_group_ci->physicalDeviceCount;
@@ -737,494 +726,6 @@ void Device::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Locat
         device_group_create_info.physicalDeviceCount = 1;  // see previous VkDeviceGroupDeviceCreateInfo link
         device_group_create_info.pPhysicalDevices = &physical_device;
         physical_device_count = 1;
-    }
-
-    // Store physical device properties and physical device mem limits into CoreChecks structs
-    DispatchGetPhysicalDeviceMemoryProperties(physical_device, &phys_dev_mem_props);
-    DispatchGetPhysicalDeviceProperties(physical_device, &phys_dev_props);
-
-    {
-        uint32_t n_props = 0;
-        std::vector<VkExtensionProperties> props;
-        DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, NULL);
-        props.resize(n_props);
-        DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, props.data());
-
-        unordered_set<Extension> phys_dev_extensions;
-        for (const auto &ext_prop : props) {
-            phys_dev_extensions.insert(GetExtension(ext_prop.extensionName));
-        }
-
-        // Even if VK_KHR_format_feature_flags2 is available, we need to have
-        // a path to grab that information from the physical device. This
-        // requires to have VK_KHR_get_physical_device_properties2 enabled or
-        // Vulkan 1.1 (which made this core).
-        has_format_feature2 =
-            (api_version >= VK_API_VERSION_1_1 || IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) &&
-            phys_dev_extensions.find(Extension::_VK_KHR_format_feature_flags2) != phys_dev_extensions.end();
-
-        // feature is required if 1.3 or extension is supported
-        has_robust_image_access =
-            (api_version >= VK_API_VERSION_1_3 || IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) &&
-            phys_dev_extensions.find(Extension::_VK_EXT_image_robustness) != phys_dev_extensions.end();
-
-        if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2) &&
-            phys_dev_extensions.find(Extension::_VK_EXT_robustness2) != phys_dev_extensions.end()) {
-            VkPhysicalDeviceRobustness2FeaturesEXT robustness_2_features = vku::InitStructHelper();
-            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&robustness_2_features);
-            instance_state->DispatchGetPhysicalDeviceFeatures2Helper(physical_device, &features2);
-            has_robust_image_access2 = robustness_2_features.robustImageAccess2;
-            has_robust_buffer_access2 = robustness_2_features.robustBufferAccess2;
-        } else {
-            has_robust_image_access2 = false;
-            has_robust_buffer_access2 = false;
-        }
-    }
-
-    const auto &dev_ext = extensions;
-    auto *phys_dev_props = &phys_dev_ext_props;
-
-    // Vulkan 1.1 and later can get properties from single struct.
-    // The goal is to only use the phys_dev_props_core field and funnel the properties from promoted extensions
-    if (dev_ext.vk_feature_version_1_2) {
-        // 1.1 struct wasn't available until 1.2
-        instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_feature_version_1_2, &phys_dev_props_core11);
-        instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_feature_version_1_2, &phys_dev_props_core12);
-    } else {
-        // VkPhysicalDeviceVulkan11Properties
-        //
-        // Can ingnore VkPhysicalDeviceIDProperties as it has no validation purpose
-
-        if (dev_ext.vk_khr_multiview) {
-            VkPhysicalDeviceMultiviewProperties multiview_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_multiview, &multiview_props);
-            phys_dev_props_core11.maxMultiviewViewCount = multiview_props.maxMultiviewViewCount;
-            phys_dev_props_core11.maxMultiviewInstanceIndex = multiview_props.maxMultiviewInstanceIndex;
-        }
-
-        if (dev_ext.vk_khr_maintenance3) {
-            VkPhysicalDeviceMaintenance3Properties maintenance3_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_maintenance3, &maintenance3_props);
-            phys_dev_props_core11.maxPerSetDescriptors = maintenance3_props.maxPerSetDescriptors;
-            phys_dev_props_core11.maxMemoryAllocationSize = maintenance3_props.maxMemoryAllocationSize;
-        }
-
-        // Some 1.1 properties were added to core without previous extensions
-        if (api_version >= VK_API_VERSION_1_1) {
-            VkPhysicalDeviceSubgroupProperties subgroup_prop = vku::InitStructHelper();
-            VkPhysicalDeviceProtectedMemoryProperties protected_memory_prop = vku::InitStructHelper(&subgroup_prop);
-            VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&protected_memory_prop);
-            DispatchGetPhysicalDeviceProperties2(physical_device, &prop2);
-
-            phys_dev_props_core11.subgroupSize = subgroup_prop.subgroupSize;
-            phys_dev_props_core11.subgroupSupportedStages = subgroup_prop.supportedStages;
-            phys_dev_props_core11.subgroupSupportedOperations = subgroup_prop.supportedOperations;
-            phys_dev_props_core11.subgroupQuadOperationsInAllStages = subgroup_prop.quadOperationsInAllStages;
-
-            phys_dev_props_core11.protectedNoFault = protected_memory_prop.protectedNoFault;
-        }
-
-        // VkPhysicalDeviceVulkan12Properties
-
-        if (dev_ext.vk_khr_driver_properties) {
-            VkPhysicalDeviceDriverProperties driver_properties = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_driver_properties, &driver_properties);
-            phys_dev_props_core12.driverID = driver_properties.driverID;
-            memcpy(phys_dev_props_core12.driverName, driver_properties.driverName, VK_MAX_DRIVER_NAME_SIZE);
-            memcpy(phys_dev_props_core12.driverInfo, driver_properties.driverName, VK_MAX_DRIVER_INFO_SIZE);
-            phys_dev_props_core12.conformanceVersion = driver_properties.conformanceVersion;
-        }
-
-        if (dev_ext.vk_ext_descriptor_indexing) {
-            VkPhysicalDeviceDescriptorIndexingProperties descriptor_indexing_prop = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_descriptor_indexing,
-                                                           &descriptor_indexing_prop);
-            phys_dev_props_core12.maxUpdateAfterBindDescriptorsInAllPools =
-                descriptor_indexing_prop.maxUpdateAfterBindDescriptorsInAllPools;
-            phys_dev_props_core12.shaderUniformBufferArrayNonUniformIndexingNative =
-                descriptor_indexing_prop.shaderUniformBufferArrayNonUniformIndexingNative;
-            phys_dev_props_core12.shaderSampledImageArrayNonUniformIndexingNative =
-                descriptor_indexing_prop.shaderSampledImageArrayNonUniformIndexingNative;
-            phys_dev_props_core12.shaderStorageBufferArrayNonUniformIndexingNative =
-                descriptor_indexing_prop.shaderStorageBufferArrayNonUniformIndexingNative;
-            phys_dev_props_core12.shaderStorageImageArrayNonUniformIndexingNative =
-                descriptor_indexing_prop.shaderStorageImageArrayNonUniformIndexingNative;
-            phys_dev_props_core12.shaderInputAttachmentArrayNonUniformIndexingNative =
-                descriptor_indexing_prop.shaderInputAttachmentArrayNonUniformIndexingNative;
-            phys_dev_props_core12.robustBufferAccessUpdateAfterBind = descriptor_indexing_prop.robustBufferAccessUpdateAfterBind;
-            phys_dev_props_core12.quadDivergentImplicitLod = descriptor_indexing_prop.quadDivergentImplicitLod;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindSamplers =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindSamplers;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindUniformBuffers =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindUniformBuffers;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindStorageBuffers =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindStorageBuffers;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindSampledImages =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindSampledImages;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindStorageImages =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindStorageImages;
-            phys_dev_props_core12.maxPerStageDescriptorUpdateAfterBindInputAttachments =
-                descriptor_indexing_prop.maxPerStageDescriptorUpdateAfterBindInputAttachments;
-            phys_dev_props_core12.maxPerStageUpdateAfterBindResources =
-                descriptor_indexing_prop.maxPerStageUpdateAfterBindResources;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindSamplers =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindSamplers;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindUniformBuffers =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindUniformBuffers;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindUniformBuffersDynamic =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindUniformBuffersDynamic;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindStorageBuffers =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindStorageBuffers;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindStorageBuffersDynamic =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindStorageBuffersDynamic;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindSampledImages =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindSampledImages;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindStorageImages =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindStorageImages;
-            phys_dev_props_core12.maxDescriptorSetUpdateAfterBindInputAttachments =
-                descriptor_indexing_prop.maxDescriptorSetUpdateAfterBindInputAttachments;
-        }
-
-        if (dev_ext.vk_khr_depth_stencil_resolve) {
-            VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_depth_stencil_resolve,
-                                                           &depth_stencil_resolve_props);
-            phys_dev_props_core12.supportedDepthResolveModes = depth_stencil_resolve_props.supportedDepthResolveModes;
-            phys_dev_props_core12.supportedStencilResolveModes = depth_stencil_resolve_props.supportedStencilResolveModes;
-            phys_dev_props_core12.independentResolveNone = depth_stencil_resolve_props.independentResolveNone;
-            phys_dev_props_core12.independentResolve = depth_stencil_resolve_props.independentResolve;
-        }
-
-        if (dev_ext.vk_khr_timeline_semaphore) {
-            VkPhysicalDeviceTimelineSemaphoreProperties timeline_semaphore_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_timeline_semaphore,
-                                                           &timeline_semaphore_props);
-            phys_dev_props_core12.maxTimelineSemaphoreValueDifference =
-                timeline_semaphore_props.maxTimelineSemaphoreValueDifference;
-        }
-
-        if (dev_ext.vk_ext_sampler_filter_minmax) {
-            VkPhysicalDeviceSamplerFilterMinmaxProperties sampler_filter_minmax_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_sampler_filter_minmax,
-                                                           &sampler_filter_minmax_props);
-            phys_dev_props_core12.filterMinmaxSingleComponentFormats =
-                sampler_filter_minmax_props.filterMinmaxSingleComponentFormats;
-            phys_dev_props_core12.filterMinmaxImageComponentMapping = sampler_filter_minmax_props.filterMinmaxImageComponentMapping;
-        }
-
-        if (dev_ext.vk_khr_shader_float_controls) {
-            VkPhysicalDeviceFloatControlsProperties float_controls_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_shader_float_controls,
-                                                           &float_controls_props);
-            phys_dev_props_core12.denormBehaviorIndependence = float_controls_props.denormBehaviorIndependence;
-            phys_dev_props_core12.roundingModeIndependence = float_controls_props.roundingModeIndependence;
-            phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat16 =
-                float_controls_props.shaderSignedZeroInfNanPreserveFloat16;
-            phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat32 =
-                float_controls_props.shaderSignedZeroInfNanPreserveFloat32;
-            phys_dev_props_core12.shaderSignedZeroInfNanPreserveFloat64 =
-                float_controls_props.shaderSignedZeroInfNanPreserveFloat64;
-            phys_dev_props_core12.shaderDenormPreserveFloat16 = float_controls_props.shaderDenormPreserveFloat16;
-            phys_dev_props_core12.shaderDenormPreserveFloat32 = float_controls_props.shaderDenormPreserveFloat32;
-            phys_dev_props_core12.shaderDenormPreserveFloat64 = float_controls_props.shaderDenormPreserveFloat64;
-            phys_dev_props_core12.shaderDenormFlushToZeroFloat16 = float_controls_props.shaderDenormFlushToZeroFloat16;
-            phys_dev_props_core12.shaderDenormFlushToZeroFloat32 = float_controls_props.shaderDenormFlushToZeroFloat32;
-            phys_dev_props_core12.shaderDenormFlushToZeroFloat64 = float_controls_props.shaderDenormFlushToZeroFloat64;
-            phys_dev_props_core12.shaderRoundingModeRTEFloat16 = float_controls_props.shaderRoundingModeRTEFloat16;
-            phys_dev_props_core12.shaderRoundingModeRTEFloat32 = float_controls_props.shaderRoundingModeRTEFloat32;
-            phys_dev_props_core12.shaderRoundingModeRTEFloat64 = float_controls_props.shaderRoundingModeRTEFloat64;
-            phys_dev_props_core12.shaderRoundingModeRTZFloat16 = float_controls_props.shaderRoundingModeRTZFloat16;
-            phys_dev_props_core12.shaderRoundingModeRTZFloat32 = float_controls_props.shaderRoundingModeRTZFloat32;
-            phys_dev_props_core12.shaderRoundingModeRTZFloat64 = float_controls_props.shaderRoundingModeRTZFloat64;
-        }
-    }
-
-    // funnel promoted extensions into a VkPhysicalDeviceVulkan13Properties
-    //
-    // Can ingnore VkPhysicalDeviceShaderIntegerDotProductProperties as it has no validation purpose
-    if (dev_ext.vk_feature_version_1_3) {
-        instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_feature_version_1_3, &phys_dev_props_core13);
-    } else {
-        if (dev_ext.vk_ext_subgroup_size_control) {
-            VkPhysicalDeviceSubgroupSizeControlProperties subgroup_size_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_subgroup_size_control,
-                                                           &subgroup_size_props);
-            phys_dev_props_core13.minSubgroupSize = subgroup_size_props.minSubgroupSize;
-            phys_dev_props_core13.maxSubgroupSize = subgroup_size_props.maxSubgroupSize;
-            phys_dev_props_core13.maxComputeWorkgroupSubgroups = subgroup_size_props.maxComputeWorkgroupSubgroups;
-            phys_dev_props_core13.requiredSubgroupSizeStages = subgroup_size_props.requiredSubgroupSizeStages;
-        }
-
-        if (dev_ext.vk_ext_inline_uniform_block) {
-            VkPhysicalDeviceInlineUniformBlockProperties inline_uniform_block_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_inline_uniform_block,
-                                                           &inline_uniform_block_props);
-            phys_dev_props_core13.maxInlineUniformBlockSize = inline_uniform_block_props.maxInlineUniformBlockSize;
-            phys_dev_props_core13.maxPerStageDescriptorInlineUniformBlocks =
-                inline_uniform_block_props.maxPerStageDescriptorInlineUniformBlocks;
-            phys_dev_props_core13.maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks =
-                inline_uniform_block_props.maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks;
-            phys_dev_props_core13.maxDescriptorSetInlineUniformBlocks =
-                inline_uniform_block_props.maxDescriptorSetInlineUniformBlocks;
-            phys_dev_props_core13.maxDescriptorSetUpdateAfterBindInlineUniformBlocks =
-                inline_uniform_block_props.maxDescriptorSetUpdateAfterBindInlineUniformBlocks;
-        }
-
-        if (dev_ext.vk_ext_texel_buffer_alignment) {
-            VkPhysicalDeviceTexelBufferAlignmentProperties texel_buffer_alignment_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_texel_buffer_alignment,
-                                                           &texel_buffer_alignment_props);
-            phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes =
-                texel_buffer_alignment_props.storageTexelBufferOffsetAlignmentBytes;
-            phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment =
-                texel_buffer_alignment_props.storageTexelBufferOffsetSingleTexelAlignment;
-            phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes =
-                texel_buffer_alignment_props.uniformTexelBufferOffsetAlignmentBytes;
-            phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment =
-                texel_buffer_alignment_props.uniformTexelBufferOffsetSingleTexelAlignment;
-        }
-
-        if (dev_ext.vk_khr_maintenance4) {
-            VkPhysicalDeviceMaintenance4Properties maintenance4_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_maintenance4, &maintenance4_props);
-            phys_dev_props_core13.maxBufferSize = maintenance4_props.maxBufferSize;
-        }
-    }
-
-    // funnel promoted extensions into a VkPhysicalDeviceVulkan14Properties
-    if (dev_ext.vk_feature_version_1_4) {
-        // First query to get list properties size from host image copy extension,
-        // second to get actual properties
-        phys_dev_props_core14.copySrcLayoutCount = 0;
-        phys_dev_props_core14.pCopySrcLayouts = nullptr;
-        phys_dev_props_core14.copyDstLayoutCount = 0;
-        phys_dev_props_core14.pCopyDstLayouts = nullptr;
-        instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_feature_version_1_4, &phys_dev_props_core14);
-        host_image_copy_props_copy_src_layouts.resize(phys_dev_props_core14.copySrcLayoutCount);
-        host_imape_copy_props_copy_dst_layouts.resize(phys_dev_props_core14.copyDstLayoutCount);
-        phys_dev_props_core14.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
-        phys_dev_props_core14.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
-        instance_state->GetPhysicalDeviceExtProperties<false>(physical_device, dev_ext.vk_feature_version_1_4,
-                                                              &phys_dev_props_core14);
-    } else {
-        if (dev_ext.vk_khr_line_rasterization) {
-            VkPhysicalDeviceLineRasterizationPropertiesKHR line_rasterization_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_line_rasterization,
-                                                           &line_rasterization_props);
-            phys_dev_props_core14.lineSubPixelPrecisionBits = line_rasterization_props.lineSubPixelPrecisionBits;
-        } else if (dev_ext.vk_ext_line_rasterization) {
-            VkPhysicalDeviceLineRasterizationPropertiesEXT line_rasterization_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_line_rasterization,
-                                                           &line_rasterization_props);
-            phys_dev_props_core14.lineSubPixelPrecisionBits = line_rasterization_props.lineSubPixelPrecisionBits;
-        }
-
-        if (dev_ext.vk_ext_vertex_attribute_divisor) {
-            VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT vtx_attrib_divisor_props_ext;
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_vertex_attribute_divisor,
-                                                           &vtx_attrib_divisor_props_ext);
-            phys_dev_props_core14.maxVertexAttribDivisor = vtx_attrib_divisor_props_ext.maxVertexAttribDivisor;
-        } else if (dev_ext.vk_khr_vertex_attribute_divisor) {
-            VkPhysicalDeviceVertexAttributeDivisorPropertiesKHR vtx_attrib_divisor_props_khr;
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_vertex_attribute_divisor,
-                                                           &vtx_attrib_divisor_props_khr);
-            phys_dev_props_core14.maxVertexAttribDivisor = vtx_attrib_divisor_props_khr.maxVertexAttribDivisor;
-            phys_dev_props_core14.supportsNonZeroFirstInstance = vtx_attrib_divisor_props_khr.supportsNonZeroFirstInstance;
-        }
-
-        if (dev_ext.vk_khr_push_descriptor) {
-            VkPhysicalDevicePushDescriptorPropertiesKHR push_descriptor_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_push_descriptor, &push_descriptor_props);
-            phys_dev_props_core14.maxPushDescriptors = push_descriptor_props.maxPushDescriptors;
-        }
-
-        if (dev_ext.vk_khr_maintenance5) {
-            VkPhysicalDeviceMaintenance5PropertiesKHR maintenance_5_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_maintenance5, &maintenance_5_props);
-            phys_dev_props_core14.earlyFragmentMultisampleCoverageAfterSampleCounting =
-                maintenance_5_props.earlyFragmentMultisampleCoverageAfterSampleCounting;
-            phys_dev_props_core14.earlyFragmentSampleMaskTestBeforeSampleCounting =
-                maintenance_5_props.earlyFragmentSampleMaskTestBeforeSampleCounting;
-            phys_dev_props_core14.depthStencilSwizzleOneSupport = maintenance_5_props.depthStencilSwizzleOneSupport;
-            phys_dev_props_core14.polygonModePointSize = maintenance_5_props.polygonModePointSize;
-            phys_dev_props_core14.nonStrictSinglePixelWideLinesUseParallelogram =
-                maintenance_5_props.nonStrictSinglePixelWideLinesUseParallelogram;
-            phys_dev_props_core14.nonStrictWideLinesUseParallelogram = maintenance_5_props.nonStrictWideLinesUseParallelogram;
-        }
-
-        if (dev_ext.vk_khr_maintenance6) {
-            VkPhysicalDeviceMaintenance6PropertiesKHR maintenance_6_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_maintenance6, &maintenance_6_props);
-            phys_dev_props_core14.blockTexelViewCompatibleMultipleLayers =
-                maintenance_6_props.blockTexelViewCompatibleMultipleLayers;
-            phys_dev_props_core14.maxCombinedImageSamplerDescriptorCount =
-                maintenance_6_props.maxCombinedImageSamplerDescriptorCount;
-            phys_dev_props_core14.fragmentShadingRateClampCombinerInputs =
-                maintenance_6_props.fragmentShadingRateClampCombinerInputs;
-        }
-
-        if (dev_ext.vk_ext_pipeline_robustness) {
-            VkPhysicalDevicePipelineRobustnessProperties pipeline_robustness_props = vku::InitStructHelper();
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_pipeline_robustness,
-                                                           &pipeline_robustness_props);
-            phys_dev_props_core14.defaultRobustnessStorageBuffers = pipeline_robustness_props.defaultRobustnessStorageBuffers;
-            phys_dev_props_core14.defaultRobustnessUniformBuffers = pipeline_robustness_props.defaultRobustnessUniformBuffers;
-            phys_dev_props_core14.defaultRobustnessVertexInputs = pipeline_robustness_props.defaultRobustnessVertexInputs;
-            phys_dev_props_core14.defaultRobustnessImages = pipeline_robustness_props.defaultRobustnessImages;
-        }
-
-        if (dev_ext.vk_ext_host_image_copy) {
-            VkPhysicalDeviceHostImageCopyPropertiesEXT host_image_copy_props = vku::InitStructHelper();
-            // First call, get copySrcLayoutCount and copyDstLayoutCount
-            instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_host_image_copy, &host_image_copy_props);
-            host_image_copy_props_copy_src_layouts.resize(host_image_copy_props.copySrcLayoutCount);
-            host_imape_copy_props_copy_dst_layouts.resize(host_image_copy_props.copyDstLayoutCount);
-            host_image_copy_props.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
-            host_image_copy_props.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
-            instance_state->GetPhysicalDeviceExtProperties<false>(physical_device, dev_ext.vk_ext_host_image_copy,
-                                                                  &host_image_copy_props);
-
-            phys_dev_props_core14.copySrcLayoutCount = host_image_copy_props.copySrcLayoutCount;
-            phys_dev_props_core14.pCopySrcLayouts = host_image_copy_props_copy_src_layouts.data();
-            phys_dev_props_core14.copyDstLayoutCount = host_image_copy_props.copyDstLayoutCount;
-            phys_dev_props_core14.pCopyDstLayouts = host_imape_copy_props_copy_dst_layouts.data();
-            std::memcpy(phys_dev_props_core14.optimalTilingLayoutUUID, host_image_copy_props.optimalTilingLayoutUUID,
-                        sizeof(host_image_copy_props.optimalTilingLayoutUUID));
-            phys_dev_props_core14.identicalMemoryTypeRequirements = host_image_copy_props.identicalMemoryTypeRequirements;
-        }
-    }
-
-    // Extensions with properties to extract to DeviceExtensionProperties
-
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_nv_shading_rate_image,
-                                                   &phys_dev_props->shading_rate_image_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_nv_mesh_shader,
-                                                   &phys_dev_props->mesh_shader_props_nv);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_mesh_shader,
-                                                   &phys_dev_props->mesh_shader_props_ext);
-
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_transform_feedback,
-                                                   &phys_dev_props->transform_feedback_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_nv_ray_tracing,
-                                                   &phys_dev_props->ray_tracing_props_nv);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_ray_tracing_pipeline,
-                                                   &phys_dev_props->ray_tracing_props_khr);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_acceleration_structure,
-                                                   &phys_dev_props->acc_structure_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_fragment_density_map,
-                                                   &phys_dev_props->fragment_density_map_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_fragment_density_map2,
-                                                   &phys_dev_props->fragment_density_map2_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_qcom_fragment_density_map_offset,
-                                                   &phys_dev_props->fragment_density_map_offset_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_performance_query,
-                                                   &phys_dev_props->performance_query_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_sample_locations,
-                                                   &phys_dev_props->sample_locations_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_custom_border_color,
-                                                   &phys_dev_props->custom_border_color_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_multiview, &phys_dev_props->multiview_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_portability_subset,
-                                                   &phys_dev_props->portability_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_fragment_shading_rate,
-                                                   &phys_dev_props->fragment_shading_rate_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_provoking_vertex,
-                                                   &phys_dev_props->provoking_vertex_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_multi_draw, &phys_dev_props->multi_draw_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_discard_rectangles,
-                                                   &phys_dev_props->discard_rectangle_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_blend_operation_advanced,
-                                                   &phys_dev_props->blend_operation_advanced_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_conservative_rasterization,
-                                                   &phys_dev_props->conservative_rasterization_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_qcom_image_processing,
-                                                   &phys_dev_props->image_processing_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_mesa_image_alignment_control,
-                                                   &phys_dev_props->image_alignment_control_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_nested_command_buffer,
-                                                   &phys_dev_props->nested_command_buffer_props);
-
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_maintenance7,
-                                                   &phys_dev_props->maintenance7_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_descriptor_buffer,
-                                                   &phys_dev_props->descriptor_buffer_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_descriptor_buffer,
-                                                   &phys_dev_props->descriptor_buffer_density_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_device_generated_commands,
-                                                   &phys_dev_props->device_generated_commands_props);
-
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_map_memory_placed,
-                                                   &phys_dev_props->map_memory_placed_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_pipeline_binary,
-                                                   &phys_dev_props->pipeline_binary_props);
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_khr_compute_shader_derivatives,
-                                                   &phys_dev_props->compute_shader_derivatives_props);
-
-    if (api_version >= VK_API_VERSION_1_1) {
-        instance_state->GetPhysicalDeviceExtProperties(physical_device, &phys_dev_props->subgroup_props);
-    }
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_ext_extended_dynamic_state3,
-                                                   &phys_dev_props->extended_dynamic_state3_props);
-
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-    VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
-    instance_state->GetPhysicalDeviceExtProperties(physical_device, dev_ext.vk_android_external_format_resolve,
-                                                   &android_format_resolve_props);
-    android_external_format_resolve_null_color_attachment_prop =
-        android_format_resolve_props.nullColorAttachmentWithExternalFormatResolve;
-#endif
-
-    if (IsExtEnabled(dev_ext.vk_nv_cooperative_matrix)) {
-        // Get the needed cooperative_matrix properties
-        VkPhysicalDeviceCooperativeMatrixPropertiesNV cooperative_matrix_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&cooperative_matrix_props);
-        DispatchGetPhysicalDeviceProperties2KHR(physical_device, &prop2);
-        phys_dev_ext_props.cooperative_matrix_props = cooperative_matrix_props;
-
-        uint32_t num_cooperative_matrix_properties_nv = 0;
-        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesNV(physical_device,
-                                                                               &num_cooperative_matrix_properties_nv, NULL);
-        cooperative_matrix_properties_nv.resize(num_cooperative_matrix_properties_nv,
-                                                vku::InitStruct<VkCooperativeMatrixPropertiesNV>());
-
-        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesNV(
-            physical_device, &num_cooperative_matrix_properties_nv, cooperative_matrix_properties_nv.data());
-    }
-
-    if (IsExtEnabled(dev_ext.vk_khr_cooperative_matrix)) {
-        // Get the needed KHR cooperative_matrix properties
-        VkPhysicalDeviceCooperativeMatrixPropertiesKHR cooperative_matrix_props_khr = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&cooperative_matrix_props_khr);
-        DispatchGetPhysicalDeviceProperties2KHR(physical_device, &prop2);
-        phys_dev_ext_props.cooperative_matrix_props_khr = cooperative_matrix_props_khr;
-
-        uint32_t num_cooperative_matrix_properties_khr = 0;
-        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical_device,
-                                                                                &num_cooperative_matrix_properties_khr, NULL);
-        cooperative_matrix_properties_khr.resize(num_cooperative_matrix_properties_khr,
-                                                 vku::InitStruct<VkCooperativeMatrixPropertiesKHR>());
-
-        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(
-            physical_device, &num_cooperative_matrix_properties_khr, cooperative_matrix_properties_khr.data());
-    }
-
-    if (IsExtEnabled(dev_ext.vk_nv_cooperative_matrix2)) {
-        // Get the needed NV cooperative_matrix2 properties
-        VkPhysicalDeviceCooperativeMatrix2PropertiesNV cooperative_matrix_props2_nv = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&cooperative_matrix_props2_nv);
-        DispatchGetPhysicalDeviceProperties2KHR(physical_device, &prop2);
-        phys_dev_ext_props.cooperative_matrix_props2_nv = cooperative_matrix_props2_nv;
-
-        uint32_t num_cooperative_matrix_flexible_dimensions_properties = 0;
-        DispatchGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
-            physical_device, &num_cooperative_matrix_flexible_dimensions_properties, NULL);
-        cooperative_matrix_flexible_dimensions_properties.resize(
-            num_cooperative_matrix_flexible_dimensions_properties,
-            vku::InitStruct<VkCooperativeMatrixFlexibleDimensionsPropertiesNV>());
-
-        DispatchGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
-            physical_device, &num_cooperative_matrix_flexible_dimensions_properties,
-            cooperative_matrix_flexible_dimensions_properties.data());
     }
 
     // Store queue family data
@@ -1269,7 +770,7 @@ void Device::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Locat
 
         std::vector<VkQueueFamilyProperties2> props(queue_family_count, vku::InitStruct<VkQueueFamilyProperties2>());
 
-        if (dev_ext.vk_khr_video_queue) {
+        if (extensions.vk_khr_video_queue) {
             for (uint32_t i = 0; i < queue_family_count; ++i) {
                 ext_props[i].query_result_status_props = vku::InitStructHelper();
                 ext_props[i].video_props = vku::InitStructHelper(&ext_props[i].query_result_status_props);
@@ -1277,10 +778,10 @@ void Device::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Locat
             }
         }
 
-        instance_state->DispatchGetPhysicalDeviceQueueFamilyProperties2Helper(physical_device, &queue_family_count, props.data());
+        DispatchGetPhysicalDeviceQueueFamilyProperties2Helper(api_version, physical_device, &queue_family_count, props.data());
     }
 
-    if (IsExtEnabled(dev_ext.vk_khr_performance_query)) {
+    if (IsExtEnabled(extensions.vk_khr_performance_query)) {
         uint32_t queue_family_count = (uint32_t)physical_device_state->queue_family_properties.size();
         for (uint32_t i = 0; i < queue_family_count; ++i) {
             uint32_t counterCount;
@@ -1300,6 +801,81 @@ void Device::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Locat
     // internal pipeline cache control
     const auto *cache_control = vku::FindStructInPNextChain<VkDevicePipelineBinaryInternalCacheControlKHR>(pCreateInfo->pNext);
     disable_internal_pipeline_cache = cache_control && cache_control->disableInternalCache;
+
+    if (IsExtEnabled(extensions.vk_nv_cooperative_matrix)) {
+        uint32_t num_cooperative_matrix_properties_nv = 0;
+        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesNV(physical_device, &num_cooperative_matrix_properties_nv, NULL);
+        cooperative_matrix_properties_nv.resize(num_cooperative_matrix_properties_nv,
+                                                vku::InitStruct<VkCooperativeMatrixPropertiesNV>());
+
+        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesNV(physical_device, &num_cooperative_matrix_properties_nv,
+                                                               cooperative_matrix_properties_nv.data());
+    }
+
+    if (IsExtEnabled(extensions.vk_khr_cooperative_matrix)) {
+        uint32_t num_cooperative_matrix_properties_khr = 0;
+        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical_device, &num_cooperative_matrix_properties_khr, NULL);
+        cooperative_matrix_properties_khr.resize(num_cooperative_matrix_properties_khr,
+                                                 vku::InitStruct<VkCooperativeMatrixPropertiesKHR>());
+
+        DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(physical_device, &num_cooperative_matrix_properties_khr,
+                                                                cooperative_matrix_properties_khr.data());
+    }
+
+    if (IsExtEnabled(extensions.vk_nv_cooperative_matrix2)) {
+        uint32_t num_cooperative_matrix_flexible_dimensions_properties = 0;
+        DispatchGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
+            physical_device, &num_cooperative_matrix_flexible_dimensions_properties, NULL);
+        cooperative_matrix_flexible_dimensions_properties.resize(
+            num_cooperative_matrix_flexible_dimensions_properties,
+            vku::InitStruct<VkCooperativeMatrixFlexibleDimensionsPropertiesNV>());
+
+        DispatchGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
+            physical_device, &num_cooperative_matrix_flexible_dimensions_properties,
+            cooperative_matrix_flexible_dimensions_properties.data());
+    }
+
+    if (IsExtEnabled(extensions.vk_nv_cooperative_vector)) {
+        uint32_t num_cooperative_vector_properties_nv = 0;
+        DispatchGetPhysicalDeviceCooperativeVectorPropertiesNV(physical_device, &num_cooperative_vector_properties_nv, NULL);
+        cooperative_vector_properties_nv.resize(num_cooperative_vector_properties_nv,
+                                                vku::InitStruct<VkCooperativeVectorPropertiesNV>());
+
+        DispatchGetPhysicalDeviceCooperativeVectorPropertiesNV(physical_device, &num_cooperative_vector_properties_nv,
+                                                               cooperative_vector_properties_nv.data());
+    }
+
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+    android_external_format_resolve_null_color_attachment_prop =
+        phys_dev_ext_props.android_format_resolve_props.nullColorAttachmentWithExternalFormatResolve;
+#endif
+#if defined(VVL_TRACY_GPU)
+    std::vector<VkTimeDomainKHR> time_domains;
+    uint32_t time_domain_count = 0;
+    VkResult result = DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(physical_device, &time_domain_count, nullptr);
+    assert(result == VK_SUCCESS);
+    time_domains.resize(time_domain_count);
+    result = DispatchGetPhysicalDeviceCalibrateableTimeDomainsEXT(physical_device, &time_domain_count, time_domains.data());
+    assert(result == VK_SUCCESS);
+
+    bool found_tracy_required_time_domain = false;
+    for (VkTimeDomainEXT time_domain : time_domains) {
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+        if (time_domain == VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_EXT) {
+            found_tracy_required_time_domain = true;
+            break;
+        }
+#else
+        if (time_domain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_RAW_EXT) {
+            found_tracy_required_time_domain = true;
+            break;
+        }
+#endif
+    }
+    (void)found_tracy_required_time_domain;
+    assert(found_tracy_required_time_domain);
+
+#endif
 }
 
 void Device::DestroyObjectMaps() {
@@ -1408,7 +984,7 @@ void Device::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const
 
     PreSubmitResult result = queue_state->PreSubmit(std::move(submissions));
     if (result.has_external_fence) {
-        queue_state->NotifyAndWait(record_obj.location, result.submission_with_external_fence_seq);
+        queue_state->NotifyAndWait(record_obj.location, result.submission_seq);
     }
 }
 
@@ -1464,7 +1040,7 @@ void Device::PreCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, cons
     }
     PreSubmitResult result = queue_state->PreSubmit(std::move(submissions));
     if (result.has_external_fence) {
-        queue_state->NotifyAndWait(record_obj.location, result.submission_with_external_fence_seq);
+        queue_state->NotifyAndWait(record_obj.location, result.submission_seq);
     }
 }
 
@@ -1549,6 +1125,14 @@ void Device::PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory mem, const 
     Destroy<DeviceMemory>(mem);
 }
 
+void Device::PostCallRecordSetDeviceMemoryPriorityEXT(VkDevice device, VkDeviceMemory memory, float priority,
+                                                      const RecordObject &record_obj) {
+    auto mem_info = Get<vvl::DeviceMemory>(memory);
+    if (mem_info) {
+        mem_info->dynamic_priority.emplace(priority);
+    }
+}
+
 void Device::PreCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo *pBindInfo, VkFence fence,
                                           const RecordObject &record_obj) {
     auto queue_state = Get<Queue>(queue);
@@ -1573,12 +1157,6 @@ void Device::PreCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount,
                 auto sparse_binding = bind_info.pImageOpaqueBinds[j].pBinds[k];
                 auto memory_state = Get<DeviceMemory>(sparse_binding.memory);
                 if (auto image_state = Get<Image>(bind_info.pImageOpaqueBinds[j].image)) {
-                    // An Android special image cannot get VkSubresourceLayout until the image binds a memory.
-                    // See: VUID-vkGetImageSubresourceLayout-image-09432
-                    if (!image_state->fragment_encoder) {
-                        image_state->fragment_encoder =
-                            std::make_unique<const subresource_adapter::ImageRangeEncoder>(*image_state);
-                    }
                     image_state->BindMemory(image_state.get(), memory_state, sparse_binding.memoryOffset,
                                             sparse_binding.resourceOffset, sparse_binding.size);
                 }
@@ -1592,12 +1170,6 @@ void Device::PreCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount,
                 VkDeviceSize offset = sparse_binding.offset.z * sparse_binding.offset.y * sparse_binding.offset.x * 4;
                 auto memory_state = Get<DeviceMemory>(sparse_binding.memory);
                 if (auto image_state = Get<Image>(bind_info.pImageBinds[j].image)) {
-                    // An Android special image cannot get VkSubresourceLayout until the image binds a memory.
-                    // See: VUID-vkGetImageSubresourceLayout-image-09432
-                    if (!image_state->fragment_encoder) {
-                        image_state->fragment_encoder =
-                            std::make_unique<const subresource_adapter::ImageRangeEncoder>(*image_state);
-                    }
                     image_state->BindMemory(image_state.get(), memory_state, sparse_binding.memoryOffset, offset, size);
                 }
             }
@@ -1631,7 +1203,7 @@ void Device::PreCallRecordQueueBindSparse(VkQueue queue, uint32_t bindInfoCount,
 
     PreSubmitResult result = queue_state->PreSubmit(std::move(submissions));
     if (result.has_external_fence) {
-        queue_state->NotifyAndWait(record_obj.location, result.submission_with_external_fence_seq);
+        queue_state->NotifyAndWait(record_obj.location, result.submission_seq);
     }
 }
 
@@ -2135,11 +1707,16 @@ bool Device::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineC
         if (pCreateInfos[i].renderPass != VK_NULL_HANDLE) {
             render_pass = Get<RenderPass>(create_info.renderPass);
         } else if (enabled_features.dynamicRendering) {
-            auto dynamic_rendering = vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(create_info.pNext);
-            const bool rasterization_enabled = Pipeline::EnablesRasterizationStates(*this, create_info);
+            auto pipeline_rendering_ci = vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(create_info.pNext);
+
+            // The rasterization_enabled is our way to hint to vvl::RenderPass to ignore a possible VkPipelineRenderingCreateInfo
+            // that contains bad pointers (when using GPL)
             const bool has_fragment_output_state =
                 Pipeline::ContainsSubState(this, create_info, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
-            render_pass = std::make_shared<RenderPass>(dynamic_rendering, rasterization_enabled && has_fragment_output_state);
+            const bool rasterization_enabled =
+                has_fragment_output_state && Pipeline::EnablesRasterizationStates(*this, create_info);
+
+            render_pass = std::make_shared<RenderPass>(pipeline_rendering_ci, rasterization_enabled);
         } else {
             const bool is_graphics_lib = GetGraphicsLibType(create_info) != static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
             const bool has_link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext) != nullptr;
@@ -2147,7 +1724,6 @@ bool Device::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineC
                 skip = true;
             }
         }
-
         pipeline_states.push_back(CreateGraphicsPipelineState(&create_info, pipeline_cache, std::move(render_pass),
                                                               std::move(layout_state), chassis_state.stateless_data));
     }
@@ -2217,8 +1793,7 @@ std::shared_ptr<Pipeline> Device::CreateRayTracingPipelineState(const VkRayTraci
 bool Device::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                         const VkRayTracingPipelineCreateInfoNV *pCreateInfos,
                                                         const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
-                                                        const ErrorObject &error_obj, PipelineStates &pipeline_states,
-                                                        chassis::CreateRayTracingPipelinesNV &chassis_state) const {
+                                                        const ErrorObject &error_obj, PipelineStates &pipeline_states) const {
     pipeline_states.reserve(count);
     auto pipeline_cache = Get<PipelineCache>(pipelineCache);
     for (uint32_t i = 0; i < count; i++) {
@@ -2232,8 +1807,7 @@ bool Device::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipel
 void Device::PostCallRecordCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                        const VkRayTracingPipelineCreateInfoNV *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
-                                                       const RecordObject &record_obj, PipelineStates &pipeline_states,
-                                                       chassis::CreateRayTracingPipelinesNV &chassis_state) {
+                                                       const RecordObject &record_obj, PipelineStates &pipeline_states) {
     // This API may create pipelines regardless of the return value
     for (uint32_t i = 0; i < count; i++) {
         if (pPipelines[i] != VK_NULL_HANDLE) {
@@ -2652,7 +2226,19 @@ void Device::PostCallRecordCreateAccelerationStructureNV(VkDevice device, const 
 std::shared_ptr<AccelerationStructureKHR> Device::CreateAccelerationStructureState(
     VkAccelerationStructureKHR handle, const VkAccelerationStructureCreateInfoKHR *create_info,
     std::shared_ptr<Buffer> &&buf_state) {
-    return std::make_shared<AccelerationStructureKHR>(handle, create_info, std::move(buf_state));
+    // If the buffer's device address has not been queried,
+    // get it here. Since it is used for the purpose of
+    // validation, do not try to update buffer_state, since
+    // it only tracks application state.
+    VkDeviceAddress buffer_address = 0;
+    if (buf_state) {
+        if (buf_state->deviceAddress != 0) {
+            buffer_address = buf_state->deviceAddress;
+        } else if (buf_state->Binding()) {
+            buffer_address = GetBufferDeviceAddressHelper(buf_state->VkHandle());
+        }
+    }
+    return std::make_shared<AccelerationStructureKHR>(handle, create_info, std::move(buf_state), buffer_address);
 }
 
 void Device::PostCallRecordCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR *pCreateInfo,
@@ -3690,10 +3276,6 @@ void Device::UpdateBindImageMemoryState(const VkBindImageMemoryInfo &bind_info) 
     auto image_state = Get<Image>(bind_info.image);
     if (!image_state) return;
 
-    // An Android sepcial image cannot get VkSubresourceLayout until the image binds a memory.
-    // See: VUID-vkGetImageSubresourceLayout-image-09432
-    image_state->fragment_encoder =
-        std::unique_ptr<const subresource_adapter::ImageRangeEncoder>(new subresource_adapter::ImageRangeEncoder(*image_state));
     const auto swapchain_info = vku::FindStructInPNextChain<VkBindImageMemorySwapchainInfoKHR>(bind_info.pNext);
     if (swapchain_info) {
         if (auto swapchain = Get<Swapchain>(swapchain_info->swapchain)) {
@@ -3803,6 +3385,25 @@ void Device::PostCallRecordGetFenceWin32HandleKHR(VkDevice device, const VkFence
     RecordGetExternalFenceState(pGetWin32HandleInfo->fence, pGetWin32HandleInfo->handleType, record_obj.location);
 }
 #endif
+
+#ifdef VK_USE_PLATFORM_FUCHSIA
+void Device::PostCallRecordImportSemaphoreZirconHandleFUCHSIA(
+    VkDevice device, const VkImportSemaphoreZirconHandleInfoFUCHSIA *pImportSemaphoreZirconHandleInfo,
+    const RecordObject &record_obj) {
+    if (VK_SUCCESS != record_obj.result) return;
+    RecordImportSemaphoreState(pImportSemaphoreZirconHandleInfo->semaphore, pImportSemaphoreZirconHandleInfo->handleType,
+                               pImportSemaphoreZirconHandleInfo->flags);
+}
+
+void Device::PostCallRecordGetSemaphoreZirconHandleFUCHSIA(VkDevice device,
+                                                           const VkSemaphoreGetZirconHandleInfoFUCHSIA *pGetZirconHandleInfo,
+                                                           zx_handle_t *pZirconHandle, const RecordObject &record_obj) {
+    if (VK_SUCCESS != record_obj.result) return;
+    if (auto semaphore_state = Get<vvl::Semaphore>(pGetZirconHandleInfo->semaphore)) {
+        RecordGetExternalSemaphoreState(*semaphore_state, pGetZirconHandleInfo->handleType);
+    }
+}
+#endif  // VK_USE_PLATFORM_FUCHSIA
 
 void Device::PostCallRecordGetSemaphoreFdKHR(VkDevice device, const VkSemaphoreGetFdInfoKHR *pGetFdInfo, int *pFd,
                                              const RecordObject &record_obj) {
@@ -4000,12 +3601,8 @@ void Device::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR
         }
     }
 
-    AcquireFenceSync acquire_fence_sync;
     for (uint32_t i = 0; i < pPresentInfo->waitSemaphoreCount; ++i) {
         if (auto semaphore_state = Get<Semaphore>(pPresentInfo->pWaitSemaphores[i])) {
-            if (auto submission_ref = semaphore_state->GetPendingBinarySignalSubmission()) {
-                acquire_fence_sync.submission_refs.emplace_back(submission_ref.value());
-            }
             // Register present wait semaphores only in the first present batch.
             // NOTE: when presenting images from multiple swapchains, if some swapchains use
             // present fences, waiting on any present fence will retire all previous present batches.
@@ -4016,6 +3613,10 @@ void Device::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR
         }
     }
 
+    auto queue_state = Get<Queue>(queue);
+    PreSubmitResult result = queue_state->PreSubmit(std::move(present_submissions));
+    const SubmissionReference present_submission_ref(queue_state.get(), result.submission_seq);
+
     const auto *present_id_info = vku::FindStructInPNextChain<VkPresentIdKHR>(pPresentInfo->pNext);
     for (uint32_t i = 0; i < pPresentInfo->swapchainCount; ++i) {
         // For multi-swapchain present pResults are always available (chassis adds pResults if necessary)
@@ -4025,15 +3626,12 @@ void Device::PostCallRecordQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR
         // Mark the image as having been released to the WSI
         if (auto swapchain_data = Get<Swapchain>(pPresentInfo->pSwapchains[i])) {
             uint64_t present_id = (present_id_info && i < present_id_info->swapchainCount) ? present_id_info->pPresentIds[i] : 0;
-            swapchain_data->PresentImage(pPresentInfo->pImageIndices[i], present_id, acquire_fence_sync);
+            swapchain_data->PresentImage(pPresentInfo->pImageIndices[i], present_id, present_submission_ref);
         }
     }
 
-    auto queue_state = Get<Queue>(queue);
-    PreSubmitResult result = queue_state->PreSubmit(std::move(present_submissions));
-
     if (result.has_external_fence) {
-        queue_state->NotifyAndWait(record_obj.location, result.submission_with_external_fence_seq);
+        queue_state->NotifyAndWait(record_obj.location, result.submission_seq);
     }
 }
 
@@ -4320,6 +3918,10 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalD
                                                                      VkSurfaceCapabilitiesKHR *pSurfaceCapabilities,
                                                                      const RecordObject &record_obj) {
     if (VK_SUCCESS != record_obj.result) return;
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    ASSERT_AND_RETURN(pd_state);
+    pd_state->call_state[record_obj.location.function] = QUERY_DETAILS;
+
     auto surface_state = Get<Surface>(surface);
     ASSERT_AND_RETURN(surface_state);
     surface_state->UpdateCapabilitiesCache(physicalDevice, *pSurfaceCapabilities);
@@ -4330,6 +3932,11 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysical
                                                                       VkSurfaceCapabilities2KHR *pSurfaceCapabilities,
                                                                       const RecordObject &record_obj) {
     if (VK_SUCCESS != record_obj.result) return;
+
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    ASSERT_AND_RETURN(pd_state);
+
+    pd_state->call_state[record_obj.location.function] = QUERY_DETAILS;
 
     if (pSurfaceInfo->surface) {
         auto surface_state = Get<Surface>(pSurfaceInfo->surface);
@@ -4351,8 +3958,6 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysical
         }
     } else if (IsExtEnabled(extensions.vk_google_surfaceless_query) &&
                vku::FindStructInPNextChain<VkSurfaceProtectedCapabilitiesKHR>(pSurfaceCapabilities->pNext)) {
-        auto pd_state = Get<PhysicalDevice>(physicalDevice);
-        ASSERT_AND_RETURN(pd_state);
         pd_state->surfaceless_query_state.capabilities = vku::safe_VkSurfaceCapabilities2KHR(pSurfaceCapabilities);
     }
 }
@@ -4360,6 +3965,10 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysical
 void Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2EXT(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
                                                                       VkSurfaceCapabilities2EXT *pSurfaceCapabilities,
                                                                       const RecordObject &record_obj) {
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    ASSERT_AND_RETURN(pd_state);
+    pd_state->call_state[record_obj.location.function] = QUERY_DETAILS;
+
     const VkSurfaceCapabilitiesKHR caps{
         pSurfaceCapabilities->minImageCount,           pSurfaceCapabilities->maxImageCount,
         pSurfaceCapabilities->currentExtent,           pSurfaceCapabilities->minImageExtent,
@@ -4386,14 +3995,17 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalD
                                                                      const RecordObject &record_obj) {
     if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) return;
 
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    ASSERT_AND_RETURN(pd_state);
+
+    pd_state->SetCallState(record_obj.location.function, pPresentModes != nullptr);
+
     if (pPresentModes) {
         if (surface) {
             auto surface_state = Get<Surface>(surface);
             ASSERT_AND_RETURN(surface_state);
             surface_state->SetPresentModes(physicalDevice, span<const VkPresentModeKHR>(pPresentModes, *pPresentModeCount));
         } else if (IsExtEnabled(extensions.vk_google_surfaceless_query)) {
-            auto pd_state = Get<PhysicalDevice>(physicalDevice);
-            ASSERT_AND_RETURN(pd_state);
             pd_state->surfaceless_query_state.present_modes =
                 std::vector<VkPresentModeKHR>(pPresentModes, pPresentModes + *pPresentModeCount);
         }
@@ -4405,6 +4017,16 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice
                                                                 const RecordObject &record_obj) {
     if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) return;
 
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    if (!pd_state) {
+        return;
+    }
+
+    pd_state->SetCallState(record_obj.location.function, pSurfaceFormats != nullptr);
+
+    if (pSurfaceFormatCount) {
+        pd_state->surface_formats_count = *pSurfaceFormatCount;
+    }
     if (pSurfaceFormats) {
         std::vector<vku::safe_VkSurfaceFormat2KHR> formats2(*pSurfaceFormatCount);
         for (uint32_t surface_format_index = 0; surface_format_index < *pSurfaceFormatCount; surface_format_index++) {
@@ -4415,7 +4037,6 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice
             ASSERT_AND_RETURN(surface_state);
             surface_state->SetFormats(physicalDevice, std::move(formats2));
         } else if (IsExtEnabled(extensions.vk_google_surfaceless_query)) {
-            auto pd_state = Get<PhysicalDevice>(physicalDevice);
             ASSERT_AND_RETURN(pd_state);
             pd_state->surfaceless_query_state.formats = std::move(formats2);
         }
@@ -4429,6 +4050,12 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevic
                                                                  const RecordObject &record_obj) {
     if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) return;
 
+    auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    ASSERT_AND_RETURN(pd_state);
+    pd_state->SetCallState(record_obj.location.function, pSurfaceFormats != nullptr);
+    if (*pSurfaceFormatCount) {
+        pd_state->surface_formats_count = *pSurfaceFormatCount;
+    }
     if (pSurfaceFormats) {
         if (pSurfaceInfo->surface) {
             auto surface_state = Get<Surface>(pSurfaceInfo->surface);
@@ -4439,8 +4066,6 @@ void Instance::PostCallRecordGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevic
             }
             surface_state->SetFormats(physicalDevice, std::move(formats2));
         } else if (IsExtEnabled(extensions.vk_google_surfaceless_query)) {
-            auto pd_state = Get<PhysicalDevice>(physicalDevice);
-            ASSERT_AND_RETURN(pd_state);
             pd_state->surfaceless_query_state.formats.clear();
             pd_state->surfaceless_query_state.formats.reserve(*pSurfaceFormatCount);
             for (uint32_t surface_format_index = 0; surface_format_index < *pSurfaceFormatCount; ++surface_format_index) {
@@ -4592,13 +4217,12 @@ void Device::PreCallRecordCmdPushDescriptorSetWithTemplate2KHR(
 }
 
 void Instance::RecordGetPhysicalDeviceDisplayPlanePropertiesState(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
-                                                                  void *pProperties) {
+                                                                  void *pProperties, const RecordObject &record_obj) {
     auto pd_state = Get<PhysicalDevice>(physicalDevice);
+    pd_state->SetCallState(record_obj.location.function, pProperties != nullptr);
+
     if (*pPropertyCount) {
         pd_state->display_plane_property_count = *pPropertyCount;
-    }
-    if (*pPropertyCount || pProperties) {
-        pd_state->vkGetPhysicalDeviceDisplayPlanePropertiesKHR_called = true;
     }
 }
 
@@ -4606,14 +4230,14 @@ void Instance::PostCallRecordGetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhysic
                                                                         VkDisplayPlanePropertiesKHR *pProperties,
                                                                         const RecordObject &record_obj) {
     if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) return;
-    RecordGetPhysicalDeviceDisplayPlanePropertiesState(physicalDevice, pPropertyCount, pProperties);
+    RecordGetPhysicalDeviceDisplayPlanePropertiesState(physicalDevice, pPropertyCount, pProperties, record_obj);
 }
 
 void Instance::PostCallRecordGetPhysicalDeviceDisplayPlaneProperties2KHR(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
                                                                          VkDisplayPlaneProperties2KHR *pProperties,
                                                                          const RecordObject &record_obj) {
     if ((VK_SUCCESS != record_obj.result) && (VK_INCOMPLETE != record_obj.result)) return;
-    RecordGetPhysicalDeviceDisplayPlanePropertiesState(physicalDevice, pPropertyCount, pProperties);
+    RecordGetPhysicalDeviceDisplayPlanePropertiesState(physicalDevice, pPropertyCount, pProperties, record_obj);
 }
 
 void Device::PostCallRecordCmdBeginQueryIndexedEXT(VkCommandBuffer commandBuffer, VkQueryPool queryPool, uint32_t slot,
@@ -4756,8 +4380,12 @@ void Device::UpdateAllocateDescriptorSetsData(const VkDescriptorSetAllocateInfo 
                 uint32_t type_index = static_cast<uint32_t>(binding_layout->descriptorType);
                 uint32_t descriptor_count = binding_layout->descriptorCount;
                 if (count_allocate_info && i < count_allocate_info->descriptorSetCount) {
-                    descriptor_count = count_allocate_info->pDescriptorCounts[i];
+                    // Only binding will have this flag
+                    if (layout->GetDescriptorBindingFlagsFromIndex(j) & VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT) {
+                        descriptor_count = count_allocate_info->pDescriptorCounts[i];
+                    }
                 }
+
                 ds_data.required_descriptors_by_type[type_index] += descriptor_count;
             }
         }
@@ -4997,6 +4625,10 @@ void Device::PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModu
                                              const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule,
                                              const RecordObject &record_obj, chassis::CreateShaderModule &chassis_state) {
     if (pCreateInfo->codeSize == 0 || !pCreateInfo->pCode) {
+        return;
+    } else if (chassis_state.module_state) {
+        // We store the shader module at a chassis stack level (because we need it for PostCallRecord in things like GPU-AV)
+        // Only one validaiton object needs to create it
         return;
     }
 
@@ -5574,6 +5206,7 @@ void Device::PostCallRecordCmdSetAlphaToOneEnableEXT(VkCommandBuffer commandBuff
                                                      const RecordObject &record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordStateCmd(record_obj.location.function, CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT);
+    cb_state->dynamic_state_value.alpha_to_one_enable = alphaToOneEnable;
 }
 
 void Device::PostCallRecordCmdSetLogicOpEnableEXT(VkCommandBuffer commandBuffer, VkBool32 logicOpEnable,

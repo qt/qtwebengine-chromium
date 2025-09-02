@@ -8,19 +8,21 @@ import abc
 import datetime as dt
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Sequence, Type, Tuple, cast
+from typing import (TYPE_CHECKING, Any, Iterable, List, Optional, Sequence,
+                    Tuple, Type, cast)
 
 from selenium.webdriver.chromium.options import ChromiumOptions
 from selenium.webdriver.chromium.service import ChromiumService
 from selenium.webdriver.chromium.webdriver import ChromiumDriver
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chromium import helper
 from crossbench.browsers.chromium.driver_finder import (ChromeDriverFinder,
                                                         DriverNotFoundError)
 from crossbench.browsers.chromium.version import (ChromeDriverVersion,
                                                   ChromiumVersion)
+from crossbench.browsers.chromium_based import helper
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 from crossbench.browsers.webdriver import WebDriverBrowser
 from crossbench.flags.base import FlagsT
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 
   from selenium import webdriver
 
+  from crossbench.browsers.version import BrowserVersion
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
@@ -42,13 +45,14 @@ class ChromiumBasedWebDriver(
   WEB_DRIVER_SERVICE: Type[ChromiumService] = ChromiumService
   UNSUPPORTED_FLAGS: Tuple[str, ...] = ()
 
-  @property
-  def attributes(self) -> BrowserAttributes:
+  @classmethod
+  @override
+  def attributes(cls) -> BrowserAttributes:
     return (BrowserAttributes.CHROMIUM | BrowserAttributes.CHROMIUM_BASED
             | BrowserAttributes.WEBDRIVER)
 
   def use_local_chromedriver(self) -> bool:
-    return self.major_version == 0 or self.is_locally_compiled()
+    return self.version.major == 0 or self.is_locally_compiled()
 
   def is_locally_compiled(self) -> bool:
     return pth.LocalPath(self.app_path.parent / "args.gn").exists()
@@ -60,6 +64,7 @@ class ChromiumBasedWebDriver(
         "params": cmd_args
     })["value"]
 
+  @override
   def _filter_flags_for_run(self, flags: FlagsT) -> FlagsT:
     assert isinstance(flags, ChromeFlags)
     chrome_flags: ChromeFlags = cast(ChromeFlags, flags)
@@ -71,6 +76,7 @@ class ChromiumBasedWebDriver(
                     flag_value)
     return chrome_flags  # type: ignore
 
+  @override
   def _find_driver(self) -> pth.AnyPath:
     if self._driver_path:
       return self._driver_path
@@ -92,6 +98,7 @@ class ChromiumBasedWebDriver(
       # to make an old pytype version happy
       return pth.LocalPath()
 
+  @override
   def _start_driver(self, session: BrowserSessionRunGroup,
                     driver_path: pth.AnyPath) -> webdriver.Remote:
     return self._start_chromedriver(session, driver_path)
@@ -105,20 +112,29 @@ class ChromiumBasedWebDriver(
 
     self._log_browser_start(args, driver_path)
     service_args: List[str] = []
-    driver_log_path: Optional[str] = None
     if self._settings.driver_logging:
-      service_args += ["--verbose"]
-      driver_log_path = os.fspath(self._setup_driver_log_file())
+      service_args += [
+          "--verbose", f"--log-path={os.fspath(self._setup_driver_log_file())}"
+      ]
+
     adb_port = os.environ.get("ANDROID_ADB_SERVER_PORT")
     if adb_port and adb_port.isdigit():
       service_args += ["--adb-port=" + adb_port]
+
     # pytype: disable=wrong-keyword-args
+    assert self._stdout_log_file is None
+    self._stdout_log_file = self.log_file.with_suffix(
+        ".browser.stdout.log").open("w+")
     service = self.WEB_DRIVER_SERVICE(
         executable_path=os.fspath(driver_path),
-        log_output=driver_log_path,  # type: ignore
-        # TODO: remove after upgrading the vpython selenium version.
-        log_path=driver_log_path,
-        service_args=service_args)
+        service_args=service_args,
+        log_output=self._stdout_log_file,
+    )
+    if hasattr(service, "log_file"):
+      # TODO: remove once we upgrade the min selenium version
+      # Workaround for older selenium versions which ignore the log_file kwarg.
+      setattr(service, "log_file", self._stdout_log_file)
+
     # TODO: support remote platforms
     driver = self._create_driver(options, service)
     # pytype: enable=wrong-keyword-args
@@ -131,9 +147,9 @@ class ChromiumBasedWebDriver(
                       args: Sequence[str]) -> ChromiumOptions:
     assert not self._is_running
     options: ChromiumOptions = self.WEB_DRIVER_OPTIONS()
-    options.set_capability("browserVersion", str(self.major_version))
+    options.set_capability("browserVersion", str(self.version.major))
     # Don't wait for document-ready.
-    options.set_capability("pageLoadStrategy", "eager")
+    options.set_capability("pageLoadStrategy", "none")
     for arg in args:
       options.add_argument(arg)
     options.binary_location = os.fspath(self.path)
@@ -145,6 +161,7 @@ class ChromiumBasedWebDriver(
                      service: ChromiumService) -> ChromiumDriver:
     pass
 
+  @override
   def _validate_driver_version(self) -> None:
     assert self._driver_path, "No driver available"
     error_message = None
@@ -160,7 +177,8 @@ class ChromiumBasedWebDriver(
   def _validate_locally_built_driver(
       self, driver_path: pth.LocalPath) -> Optional[Iterable[str]]:
     # TODO: migrate to version object on the browser
-    browser_version = ChromiumVersion.parse(self.version)
+    browser_version: BrowserVersion = self.version
+    assert isinstance(browser_version, ChromiumVersion)
     driver_version = ChromeDriverVersion.parse(
         self.platform.app_version(driver_path))
     if browser_version.parts == driver_version.parts:
@@ -173,29 +191,33 @@ class ChromiumBasedWebDriver(
       self, driver_path: pth.AnyPath) -> Optional[Iterable[str]]:
     raw_version_str = self.host_platform.sh_stdout(driver_path, "--version")
     driver_version = ChromeDriverVersion.parse(raw_version_str)
-    if driver_version.major == self.major_version:
+    if driver_version.major == self.version.major:
       return None
     return (f"Chromedriver version mismatch: driver={driver_version} "
             f"browser={self.version} ({self})",)
 
+  @override
   def run_script_on_new_document(self, script: str) -> None:
     self._execute_cdp_cmd(self._private_driver,
                           "Page.addScriptToEvaluateOnNewDocument",
                           {"source": script})
 
+  @override
   def current_window_id(self) -> str:
     return str(self._private_driver.current_window_handle)
 
+  @override
   def switch_window(self, window_id: str) -> None:
     self._private_driver.switch_to.window(window_id)
 
+  @override
   def switch_tab(
       self,
       title: Optional[re.Pattern] = None,
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
-  ) -> None:
+  ) -> str:
     driver = self._private_driver
     original_handle = driver.current_window_handle
     for _ in wait.wait_with_backoff(timeout):
@@ -208,7 +230,7 @@ class ChromiumBasedWebDriver(
       if tab_index is not None:
         handles = [driver.window_handles[tab_index]]
       else:
-        handles = driver.window_handles[i + 1:] + driver.window_handles[:i]
+        handles = driver.window_handles[i:] + driver.window_handles[:i]
 
       for handle in handles:
         driver.switch_to.window(handle)
@@ -218,7 +240,7 @@ class ChromiumBasedWebDriver(
         if url is not None:
           if url.match(driver.current_url) is None:
             continue
-        return
+        return handle
     error = "No new tab found"
     if title is not None:
       error += f" with title matching {repr(title.pattern)}"
@@ -227,6 +249,34 @@ class ChromiumBasedWebDriver(
     if tab_index is not None:
       error += f" with tab_index matching {tab_index}"
     raise RuntimeError(error)
+
+  @override
+  def close_tab(
+      self,
+      title: Optional[re.Pattern] = None,
+      url: Optional[re.Pattern] = None,
+      tab_index: Optional[int] = None,
+      timeout: dt.timedelta = dt.timedelta(seconds=0)
+  ) -> None:
+    driver = self._private_driver
+    original_handle = driver.current_window_handle
+    tab_to_close = original_handle
+
+    if title or url or (tab_index is not None):
+      tab_to_close = self.switch_tab(title, url, tab_index, timeout)
+
+    driver.close()
+
+    if tab_to_close != original_handle:
+      driver.switch_to.window(original_handle)
+    else:
+      # When a tab closes itself, arbitrarily default
+      # to switching to the first tab.
+      driver.switch_to.window(driver.window_handles[0])
+
+  @property
+  def current_url(self) -> str:
+    return self._private_driver.current_url
 
   def start_profiling(self) -> None:
     assert isinstance(self._private_driver, ChromiumDriver)

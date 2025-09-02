@@ -14,13 +14,14 @@ from typing import TYPE_CHECKING
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
+from typing_extensions import override
 
 import crossbench
 import crossbench.exception
 from crossbench import path as pth
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.chromium.webdriver import ChromiumBasedWebDriver
-from crossbench.browsers.edge.edge import EdgePathMixin
+from crossbench.browsers.edge.base import EdgeBaseMixin
 
 if TYPE_CHECKING:
   from selenium.webdriver.chromium.webdriver import ChromiumDriver
@@ -28,27 +29,31 @@ if TYPE_CHECKING:
   from crossbench import plt
 
 
-class EdgeWebDriver(EdgePathMixin, ChromiumBasedWebDriver):
+class EdgeWebDriver(EdgeBaseMixin, ChromiumBasedWebDriver):
 
   WEB_DRIVER_OPTIONS = EdgeOptions
   WEB_DRIVER_SERVICE = EdgeService
 
-  @property
-  def type_name(self) -> str:
+  @classmethod
+  @override
+  def type_name(cls) -> str:
     return "edge"
 
+  @override
   def _find_driver(self) -> pth.AnyPath:
     finder = EdgeWebDriverDownloader(self)
     return finder.download()
 
+  @override
   def _create_driver(
       self,
       options: EdgeOptions,  # type: ignore
       service: EdgeService) -> ChromiumDriver:  # type: ignore
     return webdriver.Edge(options=options, service=service)
 
-  @property
-  def attributes(self) -> BrowserAttributes:
+  @classmethod
+  @override
+  def attributes(cls) -> BrowserAttributes:
     return (BrowserAttributes.EDGE | BrowserAttributes.CHROMIUM_BASED
             | BrowserAttributes.WEBDRIVER)
 
@@ -66,7 +71,7 @@ class EdgeWebDriverDownloader:
       self.extension = ".exe"
     cache_dir = self.platform.host_platform.local_cache_dir("driver")
     self.driver_path: pth.LocalPath = (
-        cache_dir / f"edgedriver-{self.browser.major_version}{self.extension}")
+        cache_dir / f"edgedriver-{self.browser.version.major}{self.extension}")
 
   def download(self) -> pth.LocalPath:
     if not self.driver_path.exists():
@@ -78,7 +83,7 @@ class EdgeWebDriverDownloader:
   def _download(self) -> None:
     arch = self._arch_identifier()
     archive_name = f"edgedriver_{arch}.zip"
-    url = self.BASE_URL + f"/{self.browser.version}/{archive_name}"
+    url = self.BASE_URL + f"/{self.browser.version.parts_str}/{archive_name}"
     logging.info("EDGEDRIVER downloading %s: %s", self.browser.version, url)
     with tempfile.TemporaryDirectory() as tmp_dir:
       archive_file = pth.LocalPath(tmp_dir) / archive_name

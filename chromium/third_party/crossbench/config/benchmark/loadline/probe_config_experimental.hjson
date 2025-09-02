@@ -21,6 +21,7 @@
       merge_runs: false,
     },
     perfetto: {
+      trace_browser_startup: true,
       textproto: '''
         buffers {
           size_kb: 300000

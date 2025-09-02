@@ -2,30 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-const button_selector = 'button[id=onetrust-accept-btn-handler]'
-const headline_text_id = 'maincontent'
+const button_selector = 'button[id=onetrust-accept-btn-handler]';
+const headline_text_id = 'maincontent';
 
 const button_observer = new MutationObserver(mutations => {
-  const button = document.querySelector(button_selector)
+  const button = document.querySelector(button_selector);
   if (!button) {
-    return
+    return;
   }
   // This script can run multiple times.
   if (localStorage.getItem('already_run') === 'already_run') {
-    return
+    return;
   }
-  localStorage.setItem('already_run', 'already_run')
-  button.click()
-})
+  localStorage.setItem('already_run', 'already_run');
+  button_observer.disconnect();
+  button.click();
+});
 
 button_observer.observe(document, {childList: true, subtree: true});
 
 const headline_observer = new MutationObserver(mutations => {
-  performance.mark('update');
-  const headline = document.getElementById(headline_text_id)
+  const headline = document.getElementById(headline_text_id);
   if (!headline) {
-    return
+    return;
   }
+  headline_observer.disconnect();
   performance.mark('maincontent.created');
 });
 

@@ -8,7 +8,9 @@ import argparse
 import enum
 import logging
 import sys
-from typing import TYPE_CHECKING, Dict, Optional, Sequence, Set, Type
+from typing import FrozenSet, TYPE_CHECKING, Dict, Optional, Self, Sequence, Set, Type
+
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.config import ConfigEnum
@@ -24,13 +26,13 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
 
 # TODO: go over these again and clean the categories.
-MINIMAL_CONFIG = frozenset((
+MINIMAL_CONFIG: FrozenSet[str] = frozenset((
     "blink.user_timing",
     "toplevel",
     "v8",
     "v8.execute",
 ))
-DEVTOOLS_TRACE_CONFIG = frozenset((
+DEVTOOLS_TRACE_CONFIG: FrozenSet[str] = frozenset((
     "blink.console",
     "blink.user_timing",
     "devtools.timeline",
@@ -48,7 +50,7 @@ DEVTOOLS_TRACE_CONFIG = frozenset((
     "toplevel",
     "v8.execute",
 ))
-V8_TRACE_CONFIG = frozenset((
+V8_TRACE_CONFIG: FrozenSet[str] = frozenset((
     "blink",
     "blink.user_timing",
     "browser",
@@ -84,7 +86,7 @@ V8_TRACE_CONFIG = frozenset((
     "v8.execute",
     "wayland",
 ))
-V8_GC_STATS_TRACE_CONFIG = V8_TRACE_CONFIG | frozenset(
+V8_GC_STATS_TRACE_CONFIG: FrozenSet[str] = V8_TRACE_CONFIG | frozenset(
     ("disabled-by-default-v8.gc_stats",))
 
 TRACE_PRESETS: Dict[str, frozenset[str]] = {
@@ -158,7 +160,8 @@ class TracingProbe(ChromiumProbe):
   CHROMIUM_FLAGS = ("--enable-perfetto",)
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "preset",
@@ -220,9 +223,9 @@ class TracingProbe(ChromiumProbe):
                record_format: RecordFormat = RecordFormat.PROTO,
                traceconv: Optional[pth.LocalPath] = None) -> None:
     super().__init__()
-    self._trace_config: Optional[pth.LocalPath] = trace_config
+    self._trace_config: pth.LocalPath | None = trace_config
     self._categories: Set[str] = set(categories or MINIMAL_CONFIG)
-    self._preset: Optional[str] = preset
+    self._preset: str | None = preset
     if preset:
       self._categories.update(TRACE_PRESETS[preset])
     if self._trace_config:
@@ -235,7 +238,7 @@ class TracingProbe(ChromiumProbe):
     self._startup_duration: int = startup_duration
     self._record_mode: RecordMode = record_mode
     self._record_format: RecordFormat = record_format
-    self._traceconv: Optional[pth.LocalPath] = traceconv
+    self._traceconv: pth.LocalPath | None = traceconv
     if not traceconv and self._record_format == RecordFormat.PROTO:
       self._find_traceconv()
 
@@ -245,6 +248,7 @@ class TracingProbe(ChromiumProbe):
       logging.debug("Using default traceconv: %s", traceconv)
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (("preset", self._preset),
                           ("categories", tuple(self._categories)),
@@ -254,6 +258,7 @@ class TracingProbe(ChromiumProbe):
                           ("traceconv", str(self._traceconv)))
 
   @property
+  @override
   def result_path_name(self) -> str:
     return f"trace.{self._record_format.value}"  # pylint: disable=no-member
 
@@ -281,8 +286,9 @@ class TracingProbe(ChromiumProbe):
   def startup_duration(self) -> int:
     return self._startup_duration
 
+  @override
   def attach(self, browser: Browser) -> None:
-    assert browser.attributes.is_chromium_based
+    assert browser.attributes().is_chromium_based
     flags = browser.flags
     flags.update(self.CHROMIUM_FLAGS)
     # Force proto file so we can convert it to legacy json as well.
@@ -300,12 +306,13 @@ class TracingProbe(ChromiumProbe):
       flags["--enable-tracing"] = ",".join(self._categories)
     super().attach(browser)
 
+  @override
   def get_context_cls(self) -> Type[TracingProbeContext]:
     return TracingProbeContext
 
 
 class TracingProbeContext(ProbeContext[TracingProbe]):
-  _traceconv: Optional[pth.AnyPath]
+  _traceconv: pth.AnyPath | None
   _record_format: RecordFormat
 
   def setup(self) -> None:
@@ -321,7 +328,7 @@ class TracingProbeContext(ProbeContext[TracingProbe]):
   def teardown(self) -> ProbeResult:
     if self._record_format == RecordFormat.JSON:
       return self.browser_result(json=(self.result_path,))
-    traceconv: Optional[pth.LocalPath] = self.probe.traceconv
+    traceconv: pth.LocalPath | None = self.probe.traceconv
     result = self.browser_result(proto=(self.result_path,))
     if not traceconv:
       logging.info(

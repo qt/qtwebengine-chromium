@@ -27,7 +27,7 @@ ProbeContextT = TypeVar("ProbeContextT", bound=BaseProbeContext)
 class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
 
   def __init__(self, result_origin: ResultOriginT,
-               probe_results: ProbeResultDict):
+               probe_results: ProbeResultDict) -> None:
     self._state = StateMachine(State.INITIAL)
     self._origin = result_origin
     self._probe_results = probe_results
@@ -51,7 +51,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
   def is_success(self) -> bool:
     return self._exceptions.is_success
 
-  def _measure(self, name):
+  def _measure(self, name: str):
     return self._origin.measure(name)
 
   @contextlib.contextmanager
@@ -63,7 +63,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
         with self._origin.durations.measure(label):
           yield
 
-  def setup(self, probes: Iterable[Probe], is_dry_run: bool):
+  def setup(self, probes: Iterable[Probe], is_dry_run: bool) -> None:
     self._state.transition(State.INITIAL, to=State.SETUP)
     if not is_dry_run:
       self._setup_probes(tuple(probes))
@@ -78,7 +78,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       self._setup_contexts()
     return self.is_success
 
-  def _validate_probes(self, probes: Tuple[Probe, ...]):
+  def _validate_probes(self, probes: Tuple[Probe, ...]) -> None:
     assert not self._probe_contexts, "Wrong probe context initialization order"
     probe_set = set()
     for probe in probes:
@@ -87,7 +87,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       assert probe.is_attached, (
           f"Probe {probe.name} is not properly attached to a browser")
 
-  def _create_contexts(self, probes: Tuple[Probe, ...]):
+  def _create_contexts(self, probes: Tuple[Probe, ...]) -> None:
     unique_contexts = set()
     for probe in probes:
       if probe.PRODUCES_DATA:
@@ -100,7 +100,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
           assert probe_cls not in self._probe_contexts
           self._probe_contexts[probe_cls] = probe_context
 
-  def _setup_contexts(self):
+  def _setup_contexts(self) -> None:
     for probe_context in self._probe_contexts.values():
       with self._capture(f"probes-setup {probe_context.name}"):
         try:
@@ -157,11 +157,10 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
   def get_probe_context(self, probe: Probe) -> Optional[ProbeContextT]:
     pass
 
-  def find_probe_context(self,
-                         cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
-    if probe_context := self._probe_contexts.get(cls):
-      assert isinstance(
-          probe_context.probe,
-          cls), (f"Expected instance of {cls}: got {probe_context.probe}")
+  def find_probe_context(
+      self, probe_cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
+    if probe_context := self._probe_contexts.get(probe_cls):
+      assert isinstance(probe_context.probe, probe_cls), (
+          f"Expected instance of {probe_cls}: got {probe_context.probe}")
       return probe_context  # type: ignore
     return None

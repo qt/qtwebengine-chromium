@@ -158,6 +158,8 @@ DeprecationData GetDeprecatedData(vvl::Extension extension_name) {
         {vvl::Extension::_VK_EXT_load_store_op_none, {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_load_store_op_none}}},
         {vvl::Extension::_VK_EXT_depth_clamp_zero_one,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_depth_clamp_zero_one}}},
+        {vvl::Extension::_VK_QCOM_fragment_density_map_offset,
+         {DeprecationReason::Promoted, {vvl::Extension::_VK_EXT_fragment_density_map_offset}}},
         {vvl::Extension::_VK_EXT_pipeline_protected_access, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_4}}},
     };
 
@@ -511,7 +513,6 @@ void BestPractices::PostCallRecordAllocateDescriptorSets(VkDevice device, const 
                                                          VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj,
                                                          vvl::AllocateDescriptorSetsData& chassis_state) {
     BaseClass::PostCallRecordAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, record_obj, chassis_state);
-    ManualPostCallRecordAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, record_obj, chassis_state);
     bp_state::LogResult(*this, device, record_obj);
 }
 
@@ -713,7 +714,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilitiesKHR(V
                                                                                VkSurfaceCapabilitiesKHR* pSurfaceCapabilities,
                                                                                const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, pSurfaceCapabilities, record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, pSurfaceCapabilities, record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -723,8 +723,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfaceFormatsKHR(VkPhys
                                                                           const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, pSurfaceFormatCount, pSurfaceFormats,
                                                                 record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, pSurfaceFormatCount, pSurfaceFormats,
-                                                           record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -734,8 +732,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfacePresentModesKHR(V
                                                                                const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, pPresentModeCount, pPresentModes,
                                                                      record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, pPresentModeCount, pPresentModes,
-                                                                record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -749,7 +745,6 @@ void BestPractices::PostCallRecordCreateSwapchainKHR(VkDevice device, const VkSw
 void BestPractices::PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t* pSwapchainImageCount,
                                                         VkImage* pSwapchainImages, const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount, pSwapchainImages, record_obj);
-    ManualPostCallRecordGetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount, pSwapchainImages, record_obj);
     bp_state::LogResult(*this, device, record_obj);
 }
 
@@ -806,7 +801,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceDisplayPlanePropertiesKH
                                                                                   VkDisplayPlanePropertiesKHR* pProperties,
                                                                                   const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceDisplayPlanePropertiesKHR(physicalDevice, pPropertyCount, pProperties, record_obj);
-    ManualPostCallRecordGetPhysicalDeviceDisplayPlanePropertiesKHR(physicalDevice, pPropertyCount, pProperties, record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -1097,7 +1091,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(
                                                                                 const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(physicalDevice, pSurfaceInfo, pSurfaceCapabilities,
                                                                       record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfaceCapabilities2KHR(physicalDevice, pSurfaceInfo, pSurfaceCapabilities, record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -1108,8 +1101,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfaceFormats2KHR(VkPhy
                                                                            const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfaceFormats2KHR(physicalDevice, pSurfaceInfo, pSurfaceFormatCount, pSurfaceFormats,
                                                                  record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfaceFormats2KHR(physicalDevice, pSurfaceInfo, pSurfaceFormatCount, pSurfaceFormats,
-                                                            record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -1421,7 +1412,6 @@ void bp_state::Instance::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2EXT(
                                                                                 VkSurfaceCapabilities2EXT* pSurfaceCapabilities,
                                                                                 const RecordObject& record_obj) {
     BaseClass::PostCallRecordGetPhysicalDeviceSurfaceCapabilities2EXT(physicalDevice, surface, pSurfaceCapabilities, record_obj);
-    ManualPostCallRecordGetPhysicalDeviceSurfaceCapabilities2EXT(physicalDevice, surface, pSurfaceCapabilities, record_obj);
     bp_state::LogResult(*this, physicalDevice, record_obj);
 }
 
@@ -1579,10 +1569,9 @@ void BestPractices::PostCallRecordCreateRayTracingPipelinesNV(VkDevice device, V
                                                               uint32_t createInfoCount,
                                                               const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                               const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                              const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                              chassis::CreateRayTracingPipelinesNV& chassis_state) {
+                                                              const RecordObject& record_obj, PipelineStates& pipeline_states) {
     BaseClass::PostCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
-                                                         pPipelines, record_obj, pipeline_states, chassis_state);
+                                                         pPipelines, record_obj, pipeline_states);
     bp_state::LogResult(*this, device, record_obj);
 }
 
@@ -1832,6 +1821,7 @@ void BestPractices::PostCallRecordSetPrivateDataEXT(VkDevice device, VkObjectTyp
     PostCallRecordSetPrivateData(device, objectType, objectHandle, privateDataSlot, data, record_obj);
 }
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 void BestPractices::PostCallRecordCreateCudaModuleNV(VkDevice device, const VkCudaModuleCreateInfoNV* pCreateInfo,
                                                      const VkAllocationCallbacks* pAllocator, VkCudaModuleNV* pModule,
                                                      const RecordObject& record_obj) {
@@ -1851,6 +1841,7 @@ void BestPractices::PostCallRecordCreateCudaFunctionNV(VkDevice device, const Vk
     BaseClass::PostCallRecordCreateCudaFunctionNV(device, pCreateInfo, pAllocator, pFunction, record_obj);
     bp_state::LogResult(*this, device, record_obj);
 }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 
 void BestPractices::PostCallRecordGetBufferOpaqueCaptureDescriptorDataEXT(VkDevice device,
                                                                           const VkBufferCaptureDescriptorDataInfoEXT* pInfo,

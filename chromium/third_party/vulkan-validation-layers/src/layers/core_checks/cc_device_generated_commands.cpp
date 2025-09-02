@@ -27,6 +27,7 @@
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/shader_object_state.h"
 #include "state_tracker/shader_module.h"
+#include "containers/limits.h"
 #include "cc_buffer_address.h"
 
 static inline bool IsActionCommand(VkIndirectCommandsTokenTypeEXT type) {
@@ -589,7 +590,7 @@ bool CoreChecks::PreCallValidateCmdExecuteGeneratedCommandsEXT(VkCommandBuffer c
         }
         if (view_mask != 0) {
             skip |= LogError("VUID-vkCmdExecuteGeneratedCommandsEXT-None-11062", commandBuffer, error_obj.location,
-                             "The active render pass contains a non-zero view mask (%" PRIu32 ").", view_mask);
+                             "The active render pass contains a non-zero viewMask (0x%" PRIx32 ").", view_mask);
         }
     }
 
@@ -629,7 +630,7 @@ bool CoreChecks::ValidateGeneratedCommandsInitialShaderState(const vvl::CommandB
 
     const VkPipelineBindPoint bind_point = ConvertToPipelineBindPoint(shader_stage_flags);
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
-    const auto& last_bound = cb_state.lastBound[lv_bind_point];
+    const LastBound& last_bound = cb_state.lastBound[lv_bind_point];
 
     if (indirect_execution_set.is_pipeline) {
         const vvl::Pipeline* pipeline = last_bound.pipeline_state;

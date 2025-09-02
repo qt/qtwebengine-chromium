@@ -629,6 +629,9 @@ class db_dxil(object):
         ).split(","):
             self.name_idx[i].category = "Inline Ray Query"
             self.name_idx[i].shader_model = 6, 5
+        for i in "AllocateRayQuery2".split(","):
+            self.name_idx[i].category = "Inline Ray Query"
+            self.name_idx[i].shader_model = 6, 9
         for i in "Unpack4x8".split(","):
             self.name_idx[i].category = "Unpacking intrinsics"
             self.name_idx[i].shader_model = 6, 6
@@ -696,6 +699,15 @@ class db_dxil(object):
             self.name_idx[i].category = "Extended Command Information"
             self.name_idx[i].shader_stages = ("vertex",)
             self.name_idx[i].shader_model = 6, 8
+        for i in ("HitObject_MakeMiss,HitObject_MakeNop").split(","):
+            self.name_idx[i].category = "Shader Execution Reordering"
+            self.name_idx[i].shader_model = 6, 9
+            self.name_idx[i].shader_stages = (
+                "library",
+                "raygeneration",
+                "closesthit",
+                "miss",
+            )
 
     def populate_llvm_instructions(self):
         # Add instructions that map to LLVM instructions.
@@ -1172,6 +1184,37 @@ class db_dxil(object):
         self.add_llvm_instr(
             "OTHER", 53, "VAArg", "VAArgInst", "vaarg instruction", "", []
         )
+
+        self.add_llvm_instr(
+            "OTHER",
+            54,
+            "ExtractElement",
+            "ExtractElementInst",
+            "extracts from vector",
+            "",
+            [],
+        )
+
+        self.add_llvm_instr(
+            "OTHER",
+            55,
+            "InsertElement",
+            "InsertElementInst",
+            "inserts into vector",
+            "",
+            [],
+        )
+
+        self.add_llvm_instr(
+            "OTHER",
+            56,
+            "ShuffleVector",
+            "ShuffleVectorInst",
+            "Shuffle two vectors",
+            "",
+            [],
+        )
+
         self.add_llvm_instr(
             "OTHER",
             57,
@@ -5515,6 +5558,79 @@ class db_dxil(object):
             % next_op_idx
         )
 
+        # RayQuery
+        self.add_dxil_op(
+            "AllocateRayQuery2",
+            next_op_idx,
+            "AllocateRayQuery2",
+            "allocates space for RayQuery and return handle",
+            "v",
+            "",
+            [
+                db_dxil_param(0, "i32", "", "handle to RayQuery state"),
+                db_dxil_param(
+                    2,
+                    "u32",
+                    "constRayFlags",
+                    "Valid combination of RAY_FLAGS",
+                    is_const=True,
+                ),
+                db_dxil_param(
+                    3,
+                    "u32",
+                    "constRayQueryFlags",
+                    "Valid combination of RAYQUERY_FLAGS",
+                    is_const=True,
+                ),
+            ],
+        )
+        next_op_idx += 1
+
+        # Reserved block A
+        next_op_idx = self.reserve_dxil_op_range("ReservedA", next_op_idx, 3)
+
+        # Shader Execution Reordering
+        next_op_idx = self.reserve_dxil_op_range("ReservedB", next_op_idx, 3)
+
+        self.add_dxil_op(
+            "HitObject_MakeMiss",
+            next_op_idx,
+            "HitObject_MakeMiss",
+            "Creates a new HitObject representing a miss",
+            "v",
+            "rn",
+            [
+                db_dxil_param(0, "hit_object", "", "HitObject with a committed miss"),
+                db_dxil_param(2, "i32", "RayFlags", "ray flags"),
+                db_dxil_param(3, "i32", "MissShaderIndex", "Miss shader index"),
+                db_dxil_param(4, "f", "Origin_X", "Origin x of the ray"),
+                db_dxil_param(5, "f", "Origin_Y", "Origin y of the ray"),
+                db_dxil_param(6, "f", "Origin_Z", "Origin z of the ray"),
+                db_dxil_param(7, "f", "TMin", "Tmin of the ray"),
+                db_dxil_param(8, "f", "Direction_X", "Direction x of the ray"),
+                db_dxil_param(9, "f", "Direction_Y", "Direction y of the ray"),
+                db_dxil_param(10, "f", "Direction_Z", "Direction z of the ray"),
+                db_dxil_param(11, "f", "TMax", "Tmax of the ray"),
+            ],
+        )
+        next_op_idx += 1
+
+        self.add_dxil_op(
+            "HitObject_MakeNop",
+            next_op_idx,
+            "HitObject_MakeNop",
+            "Creates an empty nop HitObject",
+            "v",
+            "rn",
+            [db_dxil_param(0, "hit_object", "", "Empty nop HitObject")],
+        )
+        next_op_idx += 1
+
+        next_op_idx = self.reserve_dxil_op_range("ReservedB", next_op_idx, 26, 5)
+
+        # Reserved block C
+        next_op_idx = self.reserve_dxil_op_range("ReservedC", next_op_idx, 10)
+
         # Set interesting properties.
         self.build_indices()
         for (
@@ -7903,6 +8019,21 @@ class db_dxil(object):
             "Function '%0' uses rayquery object in function signature.",
         )
         self.add_valrule_msg(
+            "Decl.AllocateRayQueryFlagsAreConst",
+            "RayFlags for AllocateRayQuery must be constant",
+            "constRayFlags argument of AllocateRayQuery must be constant",
+        )
+        self.add_valrule_msg(
+            "Decl.AllocateRayQuery2FlagsAreConst",
+            "constRayFlags and RayQueryFlags for AllocateRayQuery2 must be constant",
+            "constRayFlags and RayQueryFlags arguments of AllocateRayQuery2 must be constant",
+        )
+        self.add_valrule_msg(
+            "Decl.AllowOpacityMicromapsExpectedGivenForceOMM2State",
+            "When the ForceOMM2State ConstRayFlag is given as an argument to a RayQuery object, AllowOpacityMicromaps is expected as a RayQueryFlag argument",
+            "RAYQUERY_FLAG_ALLOW_OPACITY_MICROMAPS must be set for RayQueryFlags when RAY_FLAG_FORCE_OMM_2_STATE is set for constRayFlags on AllocateRayQuery2 operation.",
+        )
+        self.add_valrule_msg(
             "Decl.PayloadStruct",
             "Payload parameter must be struct type",
             "Argument '%0' must be a struct type for payload in shader function '%1'.",
@@ -8090,6 +8221,14 @@ class db_dxil(object):
         )
         self.instr.append(i)
 
+    def reserve_dxil_op_range(self, group_name, start_id, count, start_reserved_id=0):
+        "Reserve a range of dxil opcodes for future use; returns next id"
+        for i in range(0, count):
+            self.add_dxil_op_reserved(
+                "{0}{1}".format(group_name, start_reserved_id + i), start_id + i
+            )
+        return start_id + count
+
     def get_instr_by_llvm_name(self, llvm_name):
         "Return the instruction with the given LLVM name"
         return next(i for i in self.instr if i.llvm_name == llvm_name)
@@ -8147,6 +8286,9 @@ class db_hlsl_intrinsic(object):
         unsigned_op,
         overload_idx,
         hidden,
+        min_shader_model,
+        static_member,
+        class_prefix,
     ):
         self.name = name  # Function name
         self.idx = idx  # Unique number within namespace
@@ -8155,14 +8297,27 @@ class db_hlsl_intrinsic(object):
         self.ns = ns  # Function namespace
         self.ns_idx = ns_idx  # Namespace index
         self.doc = doc  # Documentation
-        id_prefix = "IOP" if ns == "Intrinsics" else "MOP"
+        id_prefix = "IOP" if ns.endswith("Intrinsics") else "MOP"
+
+        class_name = None
+        if ns.endswith("Methods"):
+            class_name = ns[0 : -len("Methods")]
+
         # SPIR-V Change Starts
         if ns == "VkIntrinsics":
             name = "Vk" + name
             self.name = "Vk" + self.name
             id_prefix = "IOP"
         # SPIR-V Change Ends
-        self.enum_name = "%s_%s" % (id_prefix, name)  # enum name
+        if ns.startswith("Dx"):
+            if not class_prefix:
+                name = "Dx" + name
+            self.name = name
+
+        if class_prefix:
+            self.enum_name = "%s_%s_%s" % (id_prefix, class_name, name)
+        else:
+            self.enum_name = "%s_%s" % (id_prefix, name)
         self.readonly = ro  # Only read memory
         self.readnone = rn  # Not read memory
         self.argmemonly = amo  # Only accesses memory through argument pointers
@@ -8174,6 +8329,13 @@ class db_hlsl_intrinsic(object):
             overload_idx  # Parameter determines the overload type, -1 means ret type
         )
         self.hidden = hidden  # Internal high-level op, not exposed to HLSL
+        # Encoded minimum shader model for this intrinsic
+        self.min_shader_model = 0
+        if min_shader_model:
+            self.min_shader_model = (min_shader_model[0] << 4) | (
+                min_shader_model[1] & 0x0F
+            )
+        self.static_member = static_member  # HLSL static member function
         self.key = (
             ("%3d" % ns_idx)
             + "!"
@@ -8186,6 +8348,8 @@ class db_hlsl_intrinsic(object):
         self.vulkanSpecific = ns.startswith(
             "Vk"
         )  # Vulkan specific intrinsic - SPIRV change
+        self.opcode = None  # high-level opcode assigned later
+        self.unsigned_opcode = None  # unsigned high-level opcode if appicable
 
 
 class db_hlsl_namespace(object):
@@ -8227,11 +8391,10 @@ class db_hlsl_intrisic_param(object):
         self.template_id_idx = template_id_idx  # Template ID numeric value
         self.component_id_idx = component_id_idx  # Component ID numeric value
 
-
 class db_hlsl(object):
     "A database of HLSL language data"
 
-    def __init__(self, intrinsic_defs):
+    def __init__(self, intrinsic_defs, opcode_data):
         self.base_types = {
             "bool": "LICOMPTYPE_BOOL",
             "int": "LICOMPTYPE_INT",
@@ -8286,6 +8449,7 @@ class db_hlsl(object):
             "AnyNodeOutputRecord": "LICOMPTYPE_ANY_NODE_OUTPUT_RECORD",
             "GroupNodeOutputRecords": "LICOMPTYPE_GROUP_NODE_OUTPUT_RECORDS",
             "ThreadNodeOutputRecords": "LICOMPTYPE_THREAD_NODE_OUTPUT_RECORDS",
+            "DxHitObject": "LICOMPTYPE_HIT_OBJECT",
         }
 
         self.trans_rowcol = {"r": "IA_R", "c": "IA_C", "r2": "IA_R2", "c2": "IA_C2"}
@@ -8303,6 +8467,13 @@ class db_hlsl(object):
         self.create_namespaces()
         self.populate_attributes()
         self.opcode_namespace = "hlsl::IntrinsicOp"
+
+        # Populate opcode data for HLSL intrinsics.
+        self.opcode_data = opcode_data
+        # If opcode data is empty, create the default structure.
+        if not self.opcode_data:
+            self.opcode_data["IntrinsicOpCodes"] = {"Num_Intrinsics": 0}
+        self.assign_opcodes()
 
     def create_namespaces(self):
         last_ns = None
@@ -8338,7 +8509,7 @@ class db_hlsl(object):
             r"""(
             sampler\w* | string |
             (?:RW)?(?:Texture\w*|ByteAddressBuffer) |
-            acceleration_struct | ray_desc |
+            acceleration_struct | ray_desc | RayQuery | DxHitObject |
             Node\w* | RWNode\w* | EmptyNode\w* |
             AnyNodeOutput\w* | NodeOutputRecord\w* | GroupShared\w*
             $)""",
@@ -8544,13 +8715,16 @@ class db_hlsl(object):
             readonly = False  # Only read memory
             readnone = False  # Not read memory
             argmemonly = False  # Only reads memory through pointer arguments
+            static_member = False  # Static member function
             is_wave = False
+            class_prefix = False  # Insert class name as enum_prefix
             # Is wave-sensitive
             unsigned_op = ""  # Unsigned opcode if exist
             overload_param_index = (
                 -1
             )  # Parameter determines the overload type, -1 means ret type.
             hidden = False
+            min_shader_model = (0, 0)
             for a in attrs:
                 if a == "":
                     continue
@@ -8569,6 +8743,12 @@ class db_hlsl(object):
                 if a == "hidden":
                     hidden = True
                     continue
+                if a == "static":
+                    static_member = True
+                    continue
+                if a == "class_prefix":
+                    class_prefix = True
+                    continue
 
                 assign = a.split("=")
 
@@ -8583,6 +8763,24 @@ class db_hlsl(object):
                 if d == "overload":
                     overload_param_index = int(v)
                     continue
+                if d == "min_sm":
+                    # min_sm is a string like "6.0" or "6.5"
+                    # Convert to a tuple of integers (major, minor)
+                    try:
+                        major_minor = v.split(".")
+                        if len(major_minor) != 2:
+                            raise ValueError
+                        major, minor = major_minor
+                        major = int(major)
+                        minor = int(minor)
+                        # minor of 15 has special meaning, and larger values
+                        # cannot be encoded in the version DWORD.
+                        if major < 0 or minor < 0 or minor > 14:
+                            raise ValueError
+                        min_shader_model = (major, minor)
+                    except ValueError:
+                        assert False, "invalid min_sm: %s" % (v)
+                    continue
                 assert False, "invalid attr %s" % (a)
 
             return (
@@ -8593,6 +8791,9 @@ class db_hlsl(object):
                 unsigned_op,
                 overload_param_index,
                 hidden,
+                min_shader_model,
+                static_member,
+                class_prefix,
             )
 
         current_namespace = None
@@ -8640,6 +8841,9 @@ class db_hlsl(object):
                     unsigned_op,
                     overload_param_index,
                     hidden,
+                    min_shader_model,
+                    static_member,
+                    class_prefix,
                 ) = process_attr(attr)
                 # Add an entry for this intrinsic.
                 if bracket_cleanup_re.search(opts):
@@ -8656,6 +8860,8 @@ class db_hlsl(object):
                 for in_arg in in_args:
                     args.append(process_arg(in_arg, arg_idx, args, name))
                     arg_idx += 1
+                if class_prefix:
+                    assert current_namespace.endswith("Methods")
                 # We have to process the return type description last
                 # to match the compiler's handling of it and allow
                 # the return type to match an input type.
@@ -8678,6 +8884,9 @@ class db_hlsl(object):
                         unsigned_op,
                         overload_param_index,
                         hidden,
+                        min_shader_model,
+                        static_member,
+                        class_prefix,
                     )
                 )
                 num_entries += 1
@@ -8807,6 +9016,29 @@ class db_hlsl(object):
             [{"name": "Count", "type": "int"}],
         )
         self.attributes = attributes
+
+    # Iterate through all intrinsics, assigning opcodes to each one.
+    # This uses the opcode_data to preserve already-assigned opcodes.
+    def assign_opcodes(self):
+        "Assign opcodes to the intrinsics."
+        IntrinsicOpDict = self.opcode_data["IntrinsicOpCodes"]
+        Num_Intrinsics = self.opcode_data["IntrinsicOpCodes"]["Num_Intrinsics"]
+
+        def add_intrinsic(name):
+            nonlocal Num_Intrinsics
+            opcode = IntrinsicOpDict.setdefault(name, Num_Intrinsics)
+            if opcode == Num_Intrinsics:
+                Num_Intrinsics += 1
+            return opcode
+
+        sorted_intrinsics = sorted(self.intrinsics, key=lambda x: x.key)
+        for i in sorted_intrinsics:
+            i.opcode = add_intrinsic(i.enum_name)
+        for i in sorted_intrinsics:
+            if i.unsigned_op == "":
+                continue
+            i.unsigned_opcode = add_intrinsic(i.unsigned_op)
+        self.opcode_data["IntrinsicOpCodes"]["Num_Intrinsics"] = Num_Intrinsics
 
 
 if __name__ == "__main__":

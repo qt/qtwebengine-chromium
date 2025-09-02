@@ -8,11 +8,12 @@ import abc
 import functools
 import logging
 import pathlib
-import re
 import shlex
 import subprocess
-from typing import (TYPE_CHECKING, Any, Dict, Generator, Iterator, Mapping,
-                    Optional, Type)
+from typing import (TYPE_CHECKING, Any, Dict, Generator, Iterator, List,
+                    Mapping, Optional, Set, Type)
+
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.plt import proc_helper
@@ -26,63 +27,94 @@ if TYPE_CHECKING:
   from crossbench.types import JsonDict
 
 
-_GETCONF_PROC_RE: re.Pattern = re.compile(
-    r".*PROCESSORS_CONF[^0-9]+(?P<cores>[0-9]+)")
-
 class PosixPlatform(Platform, metaclass=abc.ABCMeta):
   # pylint: disable=locally-disabled, redefined-builtin
 
   def __init__(self) -> None:
     super().__init__()
-    self._default_tmp_dir: Optional[pth.AnyPath] = None
+    self._default_tmp_dir: pth.AnyPath | None = None
 
   @property
   def signals(self) -> Type[AnyPosixSignals]:
     return PosixBaseSignal
 
   @functools.cached_property
+  @override
   def version(self) -> str:  #pylint: disable=invalid-overridden-method
     return self.sh_stdout("uname", "-r").strip()
 
   @functools.lru_cache(maxsize=1)
-  def _raw_machine_arch(self):
+  def _raw_machine_arch(self) -> str:
     if self.is_local:
       return super()._raw_machine_arch()
     return self.sh_stdout("uname", "-m").strip()
 
-  def _read_possible_cpu_count(self) -> int:
-    try:
-      max_cores_file = self.path("/sys/devices/system/cpu/possible")
-      _, max_core = self.cat(max_cores_file).strip().split("-", maxsplit=1)
-      return int(max_core) + 1
-    except Exception as e:  # pylint: disable=broad-except
-      logging.debug("Failed to get detailed CPU stats: %s", e)
-      return 0
-
-  @functools.cached_property
-  def cpu_cores(self) -> int:
+  @functools.lru_cache(maxsize=2)
+  @override
+  def cpu_cores(self, logical: bool) -> int:
     if self.is_local:
-      return super().cpu_cores
-    if num_cores := self._read_possible_cpu_count():
-      return num_cores
-    if nproc := self.which("nproc"):
-      return int(self.sh_stdout(nproc))
-    if getconf := self.which("getconf"):
-      if result := _GETCONF_PROC_RE.search(self.sh_stdout(getconf, "-a")):
-        return int(result["cores"])
+      return super().cpu_cores(logical)
+    if cores := self._parse_cpuinfo(logical):
+      return cores
+    if logical:
+      if getconf := self.which("getconf"):
+        if result := self.sh_stdout(getconf, "_NPROCESSORS_ONLN"):
+          return int(result)
     logging.debug("Failed to get num CPU cores")
     return 0
 
+  def _parse_cpuinfo(self, logical: bool) -> int:
+    assert not self.is_macos, "unsupported operation on macos"
+    entries = self.sh_stdout("grep", "-E", "processor|core id|physical id",
+                             "/proc/cpuinfo")
+    logical_cores: Set[int] = set()
+    core_ids: List[int] = []
+    physical_ids: List[int] = []
+
+    for line in entries.splitlines():
+      line = line.strip()
+      if line:
+        key, value = line.rsplit(": ", maxsplit=1)
+        match key.strip():
+          case "processor":
+            logical_cores.add(int(value))
+          case "core id":
+            core_ids.append(int(value))
+          case "physical id":
+            physical_ids.append(int(value))
+
+    if logical:
+      return len(logical_cores)
+
+    if core_ids:
+      if len(core_ids) == len(physical_ids):
+        pairs = set(zip(core_ids, physical_ids))
+        return len(pairs)
+      logging.debug("Invalid cpuinfo data: Cannot determine core counts.")
+
+    # Android doesn't report core-id in cpuinfo, assuming single-threaded
+    # CPUs and report physical_cores
+    if self.is_android:
+      return len(logical_cores)
+    return 0
+
+
   @functools.lru_cache(maxsize=1)
+  @override
   def cpu_details(self) -> Dict[str, Any]:
     if self.is_local:
       return super().cpu_details()
     return {
-        "physical cores": self.cpu_cores,
         "info": self.cpu,
+        "physical cores": self.cpu_cores(logical=False),
+        "logical cores": self.cpu_cores(logical=True),
+        "min frequency": "n/a",
+        "max frequency": "n/a",
+        "current frequency": "n/a",
     }
 
   @functools.lru_cache(maxsize=1)
+  @override
   def os_details(self) -> JsonDict:
     if self.is_local:
       return super().os_details()
@@ -96,6 +128,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
   _PY_VERSION: str = "import sys; print(64 if sys.maxsize > 2**32 else 32)"
 
   @functools.lru_cache(maxsize=1)
+  @override
   def python_details(self) -> JsonDict:
     if self.is_local:
       return super().python_details()
@@ -106,6 +139,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       }
     return {"version": "unknown", "bits": 64}
 
+  @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     app_or_bin = self.path(app_or_bin)
     if not self.exists(app_or_bin):
@@ -113,6 +147,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     return self.sh_stdout(app_or_bin, "--version")
 
   @property
+  @override
   def default_tmp_dir(self) -> pth.AnyPath:
     if self._default_tmp_dir and self._default_tmp_dir.parts:
       return self._default_tmp_dir
@@ -134,6 +169,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
         f"Fallback tmp dir does not exist: {self._default_tmp_dir}")
     return self._default_tmp_dir
 
+  @override
   def path(self, path: pth.AnyPathLike) -> pth.AnyPath:
     converted_path = path
     if isinstance(path, pathlib.PureWindowsPath):
@@ -148,13 +184,14 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       return pth.LocalPosixPath(converted_path)
     return pth.AnyPosixPath(converted_path)
 
+  @override
   def which(self, binary_name: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     if self.is_local:
       return super().which(binary_name)
     if not binary_name:
       raise ValueError("Got empty path")
-    if override := self.lookup_binary_override(binary_name):
-      return override
+    if binary_override := self.lookup_binary_override(binary_name):
+      return binary_override
     try:
       if maybe_path := self.sh_stdout("which", self.path(binary_name)).strip():
         maybe_bin = self.path(maybe_path)
@@ -164,16 +201,19 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       pass
     return None
 
+  @override
   def cat(self, file: pth.AnyPathLike, encoding: str = "utf-8") -> str:
     if self.is_local:
       return super().cat(file, encoding)
     return self.sh_stdout("cat", self.path(file), encoding=encoding)
 
+  @override
   def cat_bytes(self, file: pth.AnyPathLike) -> bytes:
     if self.is_local:
       return super().cat_bytes(file)
     return self.sh_stdout_bytes("cat", self.path(file))
 
+  @override
   def rm(self,
          path: pth.AnyPathLike,
          dir: bool = False,
@@ -188,6 +228,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     else:
       self.sh("rm", self.path(path))
 
+  @override
   def rename(self, src_path: pth.AnyPathLike,
              dst_path: pth.AnyPathLike) -> pth.AnyPath:
     if self.is_local:
@@ -196,17 +237,20 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     self.sh("mv", self.path(src_path), dst_path)
     return dst_path
 
+  @override
   def home(self) -> pth.AnyPath:
     if self.is_local:
       return super().home()
     return self.path(self.sh_stdout("printenv", "HOME").strip())
 
+  @override
   def touch(self, path: pth.AnyPathLike) -> None:
     if self.is_local:
       super().touch(path)
     else:
       self.sh("touch", self.path(path))
 
+  @override
   def mkdir(self,
             path: pth.AnyPathLike,
             parents: bool = True,
@@ -218,6 +262,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     else:
       self.sh("mkdir", "-p", self.path(path))
 
+  @override
   def mkdtemp(self,
               prefix: Optional[str] = None,
               dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
@@ -225,6 +270,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       return super().mkdtemp(prefix, dir)
     return self._mktemp_sh(is_dir=True, prefix=prefix, dir=dir)
 
+  @override
   def mktemp(self,
              prefix: Optional[str] = None,
              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
@@ -244,6 +290,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     result = self.sh_stdout(*args)
     return self.path(result.strip())
 
+  @override
   def copy_dir(self, from_path: pth.AnyPathLike,
                to_path: pth.AnyPathLike) -> pth.AnyPath:
     if self.is_local:
@@ -257,6 +304,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       self.sh("cp", "-R", from_path, to_path)
     return to_path
 
+  @override
   def copy_file(self, from_path: pth.AnyPathLike,
                 to_path: pth.AnyPathLike) -> pth.AnyPath:
     if self.is_local:
@@ -270,6 +318,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       self.sh("cp", from_path, to_path)
     return to_path
 
+  @override
   def set_file_contents(self,
                         file: pth.AnyPathLike,
                         data: str,
@@ -283,21 +332,25 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       self.host_platform.set_file_contents(tmp_file, data, encoding=encoding)
       self.push(tmp_file, dest_file)
 
+  @override
   def exists(self, path: pth.AnyPathLike) -> bool:
     if self.is_local:
       return super().exists(path)
     return self.sh("[", "-e", self.path(path), "]", check=False).returncode == 0
 
+  @override
   def is_file(self, path: pth.AnyPathLike) -> bool:
     if self.is_local:
       return super().is_file(path)
     return self.sh("[", "-f", self.path(path), "]", check=False).returncode == 0
 
+  @override
   def is_dir(self, path: pth.AnyPathLike) -> bool:
     if self.is_local:
       return super().is_dir(path)
     return self.sh("[", "-d", self.path(path), "]", check=False).returncode == 0
 
+  @override
   def iterdir(self,
               path: pth.AnyPathLike) -> Generator[pth.AnyPath, None, None]:
     if self.is_local:
@@ -309,10 +362,11 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       raise NotADirectoryError(f"Not a directory: {remote_path}")
 
     for name in self.sh_stdout("ls", "-1",
-                               remote_path).rstrip("\n").split("\n"):
+                               remote_path).rstrip("\n").splitlines():
       yield remote_path / name
 
-  def chmod(self, path: pth.AnyPathLike, mode: int):
+  @override
+  def chmod(self, path: pth.AnyPathLike, mode: int) -> None:
     if self.is_local:
       super().chmod(path, mode)
     else:
@@ -320,7 +374,8 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       oct_mode = oct(mode)[2:]
       self.sh("chmod", oct_mode, self.path(path))
 
-  def send_signal(self, process: ProcessLike, signal: Signals):
+  @override
+  def send_signal(self, process: ProcessLike, signal: Signals) -> None:
     if self.is_local:
       super().send_signal(process, signal)
       return
@@ -333,6 +388,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
         error_str += kill_process.stderr.decode("utf-8")
         raise ProcessLookupError(f"{self}: {error_str}")
 
+  @override
   def terminate(self, process: ProcessLike) -> None:
     if self.is_local:
       super().terminate(process)
@@ -342,6 +398,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
         pass
 
+  @override
   def kill(self, process: ProcessLike) -> None:
     if self.is_local:
       super().kill(process)
@@ -351,6 +408,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
         pass
 
+  @override
   def process_info(self, process: ProcessLike) -> Optional[Dict[str, Any]]:
     if self.is_local:
       return super().process_info(process)
@@ -367,13 +425,20 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       return None
 
   @property
+  @override
   def environ(self) -> Environ:
     if self.is_local:
       return super().environ
     return RemotePosixEnviron(self)
 
+  @override
   def is_port_used(self, port: int) -> bool:
     return bool(self.sh_stdout("ss", "-HOlnt", "sport", "=", f"{port}"))
+
+  def user_id(self) -> int:
+    if self.is_local:
+      return super().user_id()
+    return int(self.sh_stdout("id", "-u").strip())
 
 
 class RemotePosixEnviron(Environ):
@@ -407,11 +472,12 @@ class RemotePosixEnviron(Environ):
     return self._environ.__len__()
 
 
-
 class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
+
+  @override
   def popen(self,
             *args: CmdArg,
-            bufsize=-1,
+            bufsize: int = -1,
             shell: bool = False,
             stdout=None,
             stderr=None,
@@ -428,7 +494,7 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
       if not quiet:
         logging.debug("REMOTE SHELL: %s", shell_cmd)
 
-      host_platform_cmd = self.build_shell_cmd(shell_cmd)
+      host_platform_cmd = self.build_shell_cmd(shell_cmd, shell=True)
 
       remote_popen = RemotePopen(
           self, host_platform_cmd, bufsize=bufsize, stdout=stdout,

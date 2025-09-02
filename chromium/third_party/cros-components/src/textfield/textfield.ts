@@ -8,8 +8,8 @@ import '@material/web/textfield/outlined-text-field.js';
 
 import {MdOutlinedTextField, TextFieldType} from '@material/web/textfield/outlined-text-field.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
 import {classMap} from 'lit/directives/class-map';
+import {ifDefined} from 'lit/directives/if-defined';
 
 /**
  * Textfields have two variants that differ only by the container background,
@@ -270,6 +270,7 @@ export class Textfield extends LitElement {
     autofix: {type: String, attribute: true},
     required: {type: Boolean, attribute: true},
     noSpinner: {type: Boolean, attribute: true},
+    rows: {type: Number, attribute: true},
     useEllipsis: {type: Boolean, attribute: true},
   };
 
@@ -418,6 +419,13 @@ export class Textfield extends LitElement {
    */
   noSpinner: boolean;
 
+
+  /**
+   * The number of rows to display for a `type="textarea"` text field.
+   * @export
+   */
+  rows: number;
+
   /**
    * When true, adds an ellipsis to the end of the input text if it is
    * overflowing the available width. Only applies when the cursor is not
@@ -462,6 +470,7 @@ export class Textfield extends LitElement {
     this.autofix = 'preserve';
     this.required = false;
     this.noSpinner = false;
+    this.rows = 2;
     this.useEllipsis = false;
   }
 
@@ -477,8 +486,7 @@ export class Textfield extends LitElement {
     this.mdTextfield!.shadowRoot!.adoptedStyleSheets = [
       ...this.mdTextfield!.shadowRoot!.adoptedStyleSheets,
       // Added by MWC team to be removed in b/278960272.
-      MWC_SELECTION_STYLES.styleSheet!,
-      TEXT_ELLISION_STYLES.styleSheet!
+      MWC_SELECTION_STYLES.styleSheet!, TEXT_ELLISION_STYLES.styleSheet!
     ];
   }
 
@@ -512,6 +520,7 @@ export class Textfield extends LitElement {
             max=${this.max > -1 ? this.max : nothing}
             ?required=${this.required}
             ?no-spinner=${this.noSpinner}
+            rows=${this.rows}
             supporting-text=${this.hint}
             ?error=${this.error ?? nothing}
             error-text=${ifDefined(errorTextOrUndef)}

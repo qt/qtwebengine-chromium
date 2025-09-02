@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import functools
 from typing import TYPE_CHECKING, Tuple, Type
+
+from typing_extensions import override
 
 from crossbench.action_runner.action.action import ACTION_TIMEOUT, ActionT
 from crossbench.action_runner.action.action_type import ActionType
@@ -24,6 +27,8 @@ class TextInputAction(InputSourceAction):
   TYPE: ActionType = ActionType.TEXT_INPUT
 
   @classmethod
+  @override
+  @functools.lru_cache(maxsize=1)
   def config_parser(cls: Type[ActionT]) -> ConfigParser[ActionT]:
     parser = super().config_parser()
     parser.add_argument("text", type=ObjectParser.non_empty_str, required=True)
@@ -46,21 +51,26 @@ class TextInputAction(InputSourceAction):
   def text(self) -> str:
     return self._text
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:
     action_runner.text_input(run, self)
 
+  @override
   def validate(self) -> None:
     super().validate()
     if not self._text:
       raise ValueError(f"{self}.text is missing.")
 
+  @override
   def validate_duration(self) -> None:
     # A text input action is allowed to have a zero duration.
     return
 
+  @override
   def supported_input_sources(self) -> Tuple[InputSource, ...]:
     return (InputSource.JS, InputSource.KEYBOARD)
 
+  @override
   def to_json(self) -> JsonDict:
     details = super().to_json()
     details["text"] = self._text

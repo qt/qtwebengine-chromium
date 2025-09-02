@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2024 The Khronos Group Inc.
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
- * Copyright (C) 2019-2024 Google Inc.
+/* Copyright (c) 2019-2025 The Khronos Group Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
+ * Copyright (C) 2019-2025 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,10 @@
 
 #include <functional>
 
-#include "containers/range_vector.h"
+#include "containers/range.h"
 #include "containers/subresource_adapter.h"
+#include "containers/small_vector.h"
+#include "containers/container_utils.h"
 #include "utils/vk_layer_utils.h"
 #include "vulkan/vulkan.h"
 #include "error_message/logging.h"
@@ -39,7 +41,7 @@ const static VkImageLayout kInvalidLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
 
 // Common types for this namespace
 using IndexType = subresource_adapter::IndexType;
-using IndexRange = sparse_container::range<IndexType>;
+using IndexRange = vvl::range<IndexType>;
 using Encoder = subresource_adapter::RangeEncoder;
 using RangeGenerator = subresource_adapter::RangeGenerator;
 
@@ -55,18 +57,6 @@ struct InitialLayoutState {
 class ImageLayoutRegistry {
   public:
     typedef std::function<bool(const VkImageSubresource&, VkImageLayout, VkImageLayout)> Callback;
-
-    struct SubresourceLayout {
-        VkImageSubresource subresource;
-        VkImageLayout current_layout;
-        VkImageLayout initial_layout;
-
-        bool operator==(const SubresourceLayout& rhs) const;
-        bool operator!=(const SubresourceLayout& rhs) const { return !(*this == rhs); }
-        SubresourceLayout(const VkImageSubresource& subresource_, VkImageLayout current_layout_, VkImageLayout initial_layout_)
-            : subresource(subresource_), current_layout(current_layout_), initial_layout(initial_layout_) {}
-        SubresourceLayout() = default;
-    };
 
     struct LayoutEntry {
         VkImageLayout initial_layout;
@@ -173,7 +163,6 @@ class ImageLayoutRegistry {
 class GlobalImageLayoutRangeMap : public subresource_adapter::BothRangeMap<VkImageLayout, 16> {
   public:
     using RangeGenerator = image_layout_map::RangeGenerator;
-    using RangeType = key_type;
 
     GlobalImageLayoutRangeMap(index_type index) : BothRangeMap<VkImageLayout, 16>(index) {}
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock_); }

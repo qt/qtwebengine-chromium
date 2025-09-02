@@ -24,7 +24,7 @@ const UIStrings = {
    * which allows the user to edit CSS shadow properties.
    */
   openShadowEditor: 'Open shadow editor',
-};
+} as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ColorSwatchPopoverIcon.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
@@ -342,6 +342,7 @@ export class ShadowSwatchPopoverHelper extends Common.ObjectWrapper.ObjectWrappe
     }
 
     this.cssShadowEditor = new InlineEditor.CSSShadowEditor.CSSShadowEditor();
+    this.cssShadowEditor.element.classList.toggle('with-padding', true);
     this.cssShadowEditor.setModel(this.shadowSwatch.model());
     this.cssShadowEditor.addEventListener(InlineEditor.CSSShadowEditor.Events.SHADOW_CHANGED, this.boundShadowChanged);
     this.swatchPopoverHelper.show(this.cssShadowEditor, this.iconElement, this.onPopoverHidden.bind(this));
@@ -423,7 +424,7 @@ export class FontEditorSectionManager {
 
   private async updateFontProperty(propertyName: string, value: string, treeElement?: StylePropertyTreeElement):
       Promise<void> {
-    if (treeElement && treeElement.treeOutline && treeElement.valueElement && treeElement.property.parsedOk &&
+    if (treeElement?.treeOutline && treeElement.valueElement && treeElement.property.parsedOk &&
         treeElement.property.range) {
       let elementRemoved = false;
       treeElement.valueElement.textContent = value;
@@ -472,7 +473,7 @@ export class FontEditorSectionManager {
   private createPropertyValueMap(): Map<string, string> {
     const propertyMap = new Map<string, string>();
     for (const fontProperty of this.treeElementMap) {
-      const propertyName = (fontProperty[0] as string);
+      const propertyName = (fontProperty[0]);
       const treeElement = fontProperty[1];
       if (treeElement.property.value.length) {
         propertyMap.set(propertyName, treeElement.property.value);
@@ -487,7 +488,7 @@ export class FontEditorSectionManager {
     const propertyName = treeElement.property.name;
     if (this.treeElementMap.has(propertyName)) {
       const treeElementFromMap = this.treeElementMap.get(propertyName);
-      if (!treeElement.overloaded() || (treeElementFromMap && treeElementFromMap.overloaded())) {
+      if (!treeElement.overloaded() || (treeElementFromMap?.overloaded())) {
         this.treeElementMap.set(propertyName, treeElement);
       }
     } else {

@@ -7,14 +7,13 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import List, Optional, Self, Sequence, Tuple
+
+from typing_extensions import override
 
 from crossbench.parse import ObjectParser
 from crossbench.runner.run import Run
 from crossbench.stories.story import Story
-
-PressBenchmarkStoryT = TypeVar(
-    "PressBenchmarkStoryT", bound="PressBenchmarkStory")
 
 
 class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
@@ -25,6 +24,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
   SUBSTORIES: Tuple[str, ...] = ()
 
   @classmethod
+  @override
   def all_story_names(cls) -> Tuple[str, ...]:
     assert cls.SUBSTORIES
     return cls.SUBSTORIES
@@ -36,25 +36,25 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     return cls.all_story_names()
 
   @classmethod
-  def all(cls: Type[PressBenchmarkStoryT],
+  def all(cls,
           separate: bool = False,
           url: Optional[str] = None,
-          **kwargs) -> List[PressBenchmarkStoryT]:
+          **kwargs) -> List[Self]:
     return cls.from_names(cls.all_story_names(), separate, url, **kwargs)
 
   @classmethod
-  def default(cls: Type[PressBenchmarkStoryT],
+  def default(cls,
               separate: bool = False,
               url: Optional[str] = None,
-              **kwargs) -> List[PressBenchmarkStoryT]:
+              **kwargs) -> List[Self]:
     return cls.from_names(cls.default_story_names(), separate, url, **kwargs)
 
   @classmethod
-  def from_names(cls: Type[PressBenchmarkStoryT],
+  def from_names(cls,
                  substories: Sequence[str],
                  separate: bool = False,
                  url: Optional[str] = None,
-                 **kwargs) -> List[PressBenchmarkStoryT]:
+                 **kwargs) -> List[Self]:
     if not substories:
       raise ValueError("No substories provided")
     if separate:
@@ -91,7 +91,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     super().__init__(*args, **kwargs)
     # If the _custom_url is empty, we generate a matching URL when the
     # local file server is used.
-    self._custom_url: Optional[str] = url
+    self._custom_url: str | None = url
 
   def _get_unique_name(self) -> str:
     substories_set = set(self._substories)
@@ -125,8 +125,9 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     return self.url
 
   @property
-  def substories(self) -> List[str]:
-    return list(self._substories)
+  @override
+  def substories(self) -> Tuple[str, ...]:
+    return tuple(self._substories)
 
   @property
   def has_default_substories(self) -> bool:
@@ -170,6 +171,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
       assert substory in self.SUBSTORIES, (f"Unknown {self.NAME} substory %s" %
                                            substory)
 
+  @override
   def log_run_details(self, run: Run) -> None:
     super().log_run_details(run)
     self.log_run_test_url(run)
@@ -178,6 +180,6 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
   def test_url(self) -> str:
     return self.URL
 
-  def log_run_test_url(self, run: Run):
+  def log_run_test_url(self, run: Run) -> None:
     del run
-    logging.info("STORY PUBLIC TEST URL: %s", self.test_url)
+    logging.info("🔗 STORY PUBLIC TEST URL:    %s", self.test_url)

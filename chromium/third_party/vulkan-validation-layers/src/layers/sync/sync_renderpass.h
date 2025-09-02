@@ -1,6 +1,6 @@
-/* Copyright (c) 2019-2024 The Khronos Group Inc.
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+/* Copyright (c) 2019-2025 The Khronos Group Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,19 @@
 #include "sync/sync_access_context.h"
 #include "sync/sync_op.h"
 
-class CommandExecutionContext;
-struct ClearAttachmentInfo;
-
 struct LastBound;
 
+namespace vvl {
+class CommandBuffer;
+}
 namespace syncval_state {
 enum class AttachmentType { kColor, kDepth, kStencil };
 
 struct DynamicRenderingInfo {
     struct Attachment {
         const vku::safe_VkRenderingAttachmentInfo &info;
-        std::shared_ptr<const ImageViewState> view;
-        std::shared_ptr<const ImageViewState> resolve_view;
+        std::shared_ptr<const vvl::ImageView> view;
+        std::shared_ptr<const vvl::ImageView> resolve_view;
         ImageRangeGen view_gen;
         std::optional<ImageRangeGen> resolve_gen;
         AttachmentType type;
@@ -58,16 +58,18 @@ struct DynamicRenderingInfo {
     DynamicRenderingInfo &operator=(DynamicRenderingInfo &&) = delete;
 
     DynamicRenderingInfo(const SyncValidator &state, const VkRenderingInfo &rendering_info);
-    ClearAttachmentInfo GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, const VkClearRect &rect) const;
+
+    const vvl::ImageView *GetClearAttachmentView(const VkClearAttachment &clear_attachment) const;
+
     vku::safe_VkRenderingInfo info;
     std::vector<Attachment> attachments;  // All attachments (with internal typing)
 };
 
 struct BeginRenderingCmdState {
-    BeginRenderingCmdState(std::shared_ptr<const syncval_state::CommandBuffer> &&cb_state_) : cb_state(std::move(cb_state_)) {}
+    BeginRenderingCmdState(std::shared_ptr<const vvl::CommandBuffer> &&cb_state_) : cb_state(std::move(cb_state_)) {}
     void AddRenderingInfo(const SyncValidator &state, const VkRenderingInfo &rendering_info);
     const DynamicRenderingInfo &GetRenderingInfo() const;
-    std::shared_ptr<const CommandBuffer> cb_state;
+    std::shared_ptr<const vvl::CommandBuffer> cb_state;
     std::unique_ptr<DynamicRenderingInfo> info;
 };
 }  // namespace syncval_state
@@ -75,38 +77,13 @@ struct BeginRenderingCmdState {
 void InitSubpassContexts(VkQueueFlags queue_flags, const vvl::RenderPass &rp_state, const AccessContext *external_context,
                          std::vector<AccessContext> &subpass_contexts);
 
-struct ClearAttachmentInfo {
-    using ImageViewState = syncval_state::ImageViewState;
-
-    const ImageViewState *view = nullptr;
-    VkImageAspectFlags aspects_to_clear = {};
-    VkImageSubresourceRange subresource_range{};
-    VkOffset3D offset = {};
-    VkExtent3D extent = {};
-    uint32_t attachment_index = VK_ATTACHMENT_UNUSED;
-    uint32_t subpass = 0;
-
-    static VkImageSubresourceRange RestrictSubresourceRange(const VkClearRect &clear_rect, const ImageViewState &view);
-    static VkImageAspectFlags GetAspectsToClear(VkImageAspectFlags clear_aspect_mask, const ImageViewState &view);
-    ClearAttachmentInfo() = default;
-    ClearAttachmentInfo(const VkClearAttachment &clear_attachment, const VkClearRect &rect, const ImageViewState &view_,
-                        uint32_t attachment_index_ = VK_ATTACHMENT_UNUSED /* renderpass instance only */,
-                        uint32_t subpass_ = 0 /* renderpass instance only */);
-
-    // ClearAttachmentInfo can be invalid for several reasons based on the VkClearAttachment and the rendering
-    // attachment state, including some caught by the constructor.  Consumers *must* check validity before use
-    bool IsValid() const { return view && (aspects_to_clear != 0U) && (subresource_range.layerCount != 0U); }
-    std::string GetSubpassAttachmentText() const;
-};
-
 class RenderPassAccessContext {
   public:
-    static AttachmentViewGenVector CreateAttachmentViewGen(
-        const VkRect2D &render_area, const std::vector<const syncval_state::ImageViewState *> &attachment_views);
+    static AttachmentViewGenVector CreateAttachmentViewGen(const VkRect2D &render_area,
+                                                           const std::vector<const vvl::ImageView *> &attachment_views);
     RenderPassAccessContext() : rp_state_(nullptr), render_area_(VkRect2D()), current_subpass_(0) {}
     RenderPassAccessContext(const vvl::RenderPass &rp_state, const VkRect2D &render_area, VkQueueFlags queue_flags,
-                            const std::vector<const syncval_state::ImageViewState *> &attachment_views,
-                            const AccessContext *external_context);
+                            const std::vector<const vvl::ImageView *> &attachment_views, const AccessContext *external_context);
 
     static bool ValidateLayoutTransitions(const CommandBufferAccessContext &cb_context, const AccessContext &access_context,
                                           const vvl::RenderPass &rp_state, const VkRect2D &render_area, uint32_t subpass,
@@ -132,8 +109,7 @@ class RenderPassAccessContext {
     bool ValidateDrawSubpassAttachment(const CommandBufferAccessContext &cb_context, vvl::Func command) const;
     void RecordDrawSubpassAttachment(const vvl::CommandBuffer &cmd_buffer, ResourceUsageTag tag);
 
-    uint32_t GetAttachmentIndex(const VkClearAttachment &clear_attachment) const;
-    ClearAttachmentInfo GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, const VkClearRect &rect) const;
+    const vvl::ImageView *GetClearAttachmentView(const VkClearAttachment &clear_attachment) const;
 
     bool ValidateNextSubpass(const CommandBufferAccessContext &cb_context, vvl::Func command) const;
     bool ValidateEndRenderPass(const CommandBufferAccessContext &cb_context, vvl::Func command) const;

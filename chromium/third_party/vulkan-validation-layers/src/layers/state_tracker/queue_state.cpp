@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,9 @@
  */
 #include "state_tracker/queue_state.h"
 #include "state_tracker/cmd_buffer_state.h"
+#include "containers/small_vector.h"
+
+#include "profiling/profiling.h"
 
 void vvl::QueueSubmission::BeginUse() {
     for (SemaphoreInfo &wait : wait_semaphores) {
@@ -53,6 +56,9 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
     if (!submissions.empty()) {
         submissions.back().end_batch = true;
     }
+    for (auto &item : sub_states_) {
+        item.second->PreSubmit(submissions);
+    }
     PreSubmitResult result;
     for (QueueSubmission &submission : submissions) {
         for (CommandBufferSubmission &cb_submission : submission.cb_submissions) {
@@ -62,12 +68,13 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
                 secondary_cmd_buffer->IncrementResources();
             }
             cb_submission.cb->IncrementResources();
-            cb_submission.cb->Submit(VkHandle(), submission.perf_submit_pass, submission.loc.Get());
+            cb_submission.cb->Submit(*this, submission.perf_submit_pass, submission.loc.Get());
         }
         // seq_ is atomic so we don't need a lock until updating the deque below.
         // Note that this relies on the external synchonization requirements for the
         // VkQueue
         submission.seq = ++seq_;
+        result.submission_seq = submission.seq;
         submission.BeginUse();
         for (SemaphoreInfo &wait : submission.wait_semaphores) {
             wait.semaphore->EnqueueWait(SubmissionReference(this, submission.seq), wait.payload);
@@ -81,7 +88,6 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
         if (submission.fence) {
             if (submission.fence->EnqueueSignal(this, submission.seq)) {
                 result.has_external_fence = true;
-                result.submission_with_external_fence_seq = submission.seq;
             }
         }
         {
@@ -190,6 +196,9 @@ void vvl::Queue::Destroy() {
         dead_thread->join();
         dead_thread.reset();
     }
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
     StateObject::Destroy();
 }
 
@@ -197,6 +206,12 @@ void vvl::Queue::PostSubmit() {
     auto guard = Lock();
     if (!submissions_.empty()) {
         PostSubmit(submissions_.back());
+    }
+}
+
+void vvl::Queue::PostSubmit(QueueSubmission &submission) {
+    for (auto &item : sub_states_) {
+        item.second->PostSubmit(submission);
     }
 }
 
@@ -238,6 +253,9 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
         }
         return false;
     };
+    for (auto &item : sub_states_) {
+        item.second->Retire(submission);
+    }
     submission.EndUse();
     for (auto &wait : submission.wait_semaphores) {
         wait.semaphore->RetireWait(this, wait.payload, submission.loc.Get(), true);
@@ -260,6 +278,8 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
 }
 
 void vvl::Queue::ThreadFunc() {
+    VVL_TracySetThreadName(__FUNCTION__);
+
     QueueSubmission *submission = nullptr;
 
     // Roll this queue forward, one submission at a time.

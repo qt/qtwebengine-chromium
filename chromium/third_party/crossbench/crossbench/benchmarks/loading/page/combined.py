@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Tuple
+
+from typing_extensions import override
 
 from crossbench.benchmarks.loading.page.base import Page, get_action_runner
 from crossbench.benchmarks.loading.playback_controller import \
@@ -20,12 +22,14 @@ if TYPE_CHECKING:
 
 class CombinedPage(Page):
 
-  def __init__(self,
-               pages: Iterable[Page],
-               name: str = "combined",
-               playback: PlaybackController = PlaybackController.default(),
-               tabs: TabController = TabController.default(),
-               about_blank_duration: dt.timedelta = dt.timedelta()):
+  def __init__(
+      self,
+      pages: Iterable[Page],
+      name: str = "combined",
+      playback: PlaybackController = PlaybackController.default(),
+      tabs: TabController = TabController.default(),
+      about_blank_duration: dt.timedelta = dt.timedelta()
+  ) -> None:
     self._pages = tuple(pages)
     assert self._pages, "No sub-pages provided for CombinedPage"
     assert len(self._pages) >= 1, "Combined Page needs at least one page"
@@ -39,6 +43,7 @@ class CombinedPage(Page):
     self.url = None
 
   @property
+  @override
   def tabs(self) -> TabController:
     return self._tabs
 
@@ -47,14 +52,23 @@ class CombinedPage(Page):
     return self._pages
 
   @property
+  @override
+  def substories(self) -> Tuple[str, ...]:
+    return tuple(
+        substory for page in self._pages for substory in page.substories)
+
+  @property
+  @override
   def first_url(self) -> str:
     return self._pages[0].first_url
 
+  @override
   def details_json(self) -> JsonDict:
     result = super().details_json()
     result["pages"] = list(page.details_json() for page in self._pages)
     return result
 
+  @override
   def teardown(self, run: Run) -> None:
     for page in self._pages:
       page.teardown(run)
@@ -65,6 +79,7 @@ class CombinedPage(Page):
     for _ in self._playback:
       action_runner.run_combined_page(run, self, multiple_tabs)
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner,
                multiple_tabs: bool) -> None:
     action_runner.run_combined_page(run, self, multiple_tabs)

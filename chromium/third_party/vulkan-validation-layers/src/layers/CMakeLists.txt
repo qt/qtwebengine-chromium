@@ -22,7 +22,13 @@ set(LAYER_NAME "VkLayer_khronos_validation")
 
 add_library(VkLayer_utils STATIC)
 target_sources(VkLayer_utils PRIVATE
+    containers/container_utils.h
     containers/custom_containers.h
+    containers/limits.h
+    containers/small_container.h
+    containers/small_vector.h
+    containers/span.h
+    containers/tls_guard.h
     error_message/logging.h
     error_message/logging.cpp
     error_message/error_location.cpp
@@ -57,6 +63,7 @@ target_sources(VkLayer_utils PRIVATE
     utils/hash_vk_types.h
     utils/image_layout_utils.h
     utils/image_layout_utils.cpp
+    utils/math_utils.h
     utils/vk_layer_extension_utils.cpp
     utils/vk_layer_extension_utils.h
     utils/ray_tracing_utils.cpp
@@ -81,11 +88,18 @@ target_link_libraries(VkLayer_utils PUBLIC
 target_include_directories(VkLayer_utils SYSTEM PRIVATE external)
 target_include_directories(VkLayer_utils PUBLIC . ${API_TYPE})
 
-find_package(robin_hood CONFIG)
-option(USE_ROBIN_HOOD_HASHING "robin_hood provides faster versions of std::unordered_map and std::unordered_set" ${robin_hood_FOUND})
-if (USE_ROBIN_HOOD_HASHING)
-    target_link_libraries(VkLayer_utils PUBLIC robin_hood::robin_hood)
-    target_compile_definitions(VkLayer_utils PUBLIC USE_ROBIN_HOOD_HASHING)
+option(USE_CUSTOM_HASH_MAP "Use a custom hashing library that is faster than std::unordered_map and std::unordered_set (default: ON)" ON)
+
+if(DEFINED USE_ROBIN_HOOD_HASHING)
+    message(DEPRECATION "USE_ROBIN_HOOD_HASHING has been deprecated. Please use USE_CUSTOM_HASH_MAP option instead.")
+    set(USE_CUSTOM_HASH_MAP ${USE_ROBIN_HOOD_HASHING})
+endif()
+
+if (USE_CUSTOM_HASH_MAP)
+    message(STATUS "Using parallel_hashmap as custom hash maps")
+    target_compile_definitions(VkLayer_utils PUBLIC USE_CUSTOM_HASH_MAP)
+else()
+    message(STATUS "Using STL maps instead of custom hash maps")
 endif()
 
 # Using mimalloc on non-Windows OSes currently results in unit test instability with some
@@ -147,7 +161,8 @@ target_sources(vvl PRIVATE
     chassis/chassis_manual.cpp
     chassis/dispatch_object_manual.cpp
     containers/qfo_transfer.h
-    containers/range_vector.h
+    containers/range.h
+    containers/range_map.h
     containers/subresource_adapter.cpp
     containers/subresource_adapter.h
     core_checks/cc_android.cpp
@@ -193,6 +208,15 @@ target_sources(vvl PRIVATE
     error_message/spirv_logging.cpp
     external/vma/vma.h
     external/vma/vma.cpp
+    external/parallel_hashmap/btree.h
+    external/parallel_hashmap/meminfo.h
+    external/parallel_hashmap/phmap_base.h
+    external/parallel_hashmap/phmap_bits.h
+    external/parallel_hashmap/phmap_config.h
+    external/parallel_hashmap/phmap_dump.h
+    external/parallel_hashmap/phmap_fwd_decl.h
+    external/parallel_hashmap/phmap_utils.h
+    external/parallel_hashmap/phmap.h
     ${API_TYPE}/generated/best_practices.cpp
     ${API_TYPE}/generated/best_practices_device_methods.h
     ${API_TYPE}/generated/best_practices_instance_methods.h
@@ -216,6 +240,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/object_tracker_instance_methods.h
     ${API_TYPE}/generated/spirv_grammar_helper.cpp
     ${API_TYPE}/generated/spirv_validation_helper.cpp
+    ${API_TYPE}/generated/spirv_validation_helper.h
     ${API_TYPE}/generated/stateless_device_methods.h
     ${API_TYPE}/generated/stateless_instance_methods.h
     ${API_TYPE}/generated/stateless_validation_helper.cpp
@@ -233,6 +258,8 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/validation_cmd_first_instance_comp.cpp
     ${API_TYPE}/generated/validation_cmd_draw_indexed_indirect_index_buffer_comp.h
     ${API_TYPE}/generated/validation_cmd_draw_indexed_indirect_index_buffer_comp.cpp
+    ${API_TYPE}/generated/validation_cmd_setup_draw_indexed_indirect_index_buffer_comp.h
+    ${API_TYPE}/generated/validation_cmd_setup_draw_indexed_indirect_index_buffer_comp.cpp
     ${API_TYPE}/generated/validation_cmd_draw_mesh_indirect_comp.h
     ${API_TYPE}/generated/validation_cmd_draw_mesh_indirect_comp.cpp
     ${API_TYPE}/generated/validation_cmd_trace_rays_rgen.h
@@ -258,6 +285,7 @@ target_sources(vvl PRIVATE
     gpuav/core/gpuav.h
     gpuav/core/gpuav_record.cpp
     gpuav/core/gpuav_setup.cpp
+    gpuav/core/gpuav_features.cpp
     gpuav/debug_printf/debug_printf.cpp
     gpuav/debug_printf/debug_printf.h
     gpuav/error_message/gpuav_vuids.cpp
@@ -339,6 +367,8 @@ target_sources(vvl PRIVATE
     stateless/sl_ray_tracing.cpp
     stateless/sl_render_pass.cpp
     stateless/sl_shader_object.cpp
+    stateless/sl_spirv.cpp
+    stateless/sl_spirv.h
     stateless/sl_synchronization.cpp
     stateless/sl_utils.cpp
     stateless/sl_vuid_maps.cpp
@@ -355,6 +385,7 @@ target_sources(vvl PRIVATE
     sync/sync_common.h
     sync/sync_error_messages.cpp
     sync/sync_error_messages.h
+    sync/sync_image.cpp
     sync/sync_image.h
     sync/sync_op.cpp
     sync/sync_op.h
@@ -395,6 +426,9 @@ set_target_properties(vvl PROPERTIES OUTPUT_NAME ${LAYER_NAME})
 if(MSVC)
     target_link_options(vvl PRIVATE /DEF:${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
     target_compile_options(vvl PRIVATE /bigobj)
+
+    set(VVL_NATVIS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/types.natvis")
+    target_sources(vvl PRIVATE ${VVL_NATVIS_FILE})
 elseif(MINGW)
     target_sources(vvl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.def)
     target_compile_options(vvl PRIVATE -Wa,-mbig-obj)
@@ -415,6 +449,13 @@ endif()
     # Both Apple and IOS
     target_link_options(vvl PRIVATE -exported_symbols_list ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.exp)
 elseif(ANDROID)
+    # Need 16k pages in Android 15
+    # When we bump our NDK requirement to r28 we can remove
+    # https://developer.android.com/guide/practices/page-sizes#compile-r28
+    # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9703
+    # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9170
+    target_link_options(vvl PRIVATE "-Wl,-z,max-page-size=16384")
+
     target_link_options(vvl PRIVATE LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}-android.map)
 else()
     target_link_options(vvl PRIVATE LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.map)
@@ -452,8 +493,8 @@ if (VVL_ENABLE_TRACY)
     include(FetchContent)
     FetchContent_Declare(
         tracy
-        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-        GIT_TAG v0.11.1
+        GIT_REPOSITORY https://github.com/arno-lunarg/tracy.git
+        GIT_TAG v0.11.1-arno
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE)
 

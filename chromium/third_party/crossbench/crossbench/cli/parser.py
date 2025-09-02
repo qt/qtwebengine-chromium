@@ -7,20 +7,23 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from typing import Never, Optional
 
 import colorama
 
 from crossbench.cli import ui
 
 
-# Needed to gap the diff between 3.8 and 3.9 default args that change throwing
-# behavior.
-class _BaseCrossBenchArgumentParser(argparse.ArgumentParser):
+class CrossBenchArgumentParser(argparse.ArgumentParser):
 
-  def fail(self, message) -> None:
+  def __init__(self, *args, **kwargs) -> None:
+    kwargs["exit_on_error"] = False
+    super().__init__(*args, **kwargs)
+
+  def fail(self, message: str) -> None:
     super().error(message)
 
-  def exit(self, status=0, message=None):
+  def exit(self, status: int = 0, message: Optional[str] = None) -> Never:
     if message:
       if status == 0:
         logging.info(message)
@@ -32,23 +35,3 @@ class _BaseCrossBenchArgumentParser(argparse.ArgumentParser):
         if ui.COLOR_LOGGING:
           print(str(colorama.Style.RESET_ALL))
     sys.exit(status)
-
-
-if sys.version_info < (3, 9, 0):
-
-  class CrossBenchArgumentParser(_BaseCrossBenchArgumentParser):
-
-    def error(self, message):
-      # Let the CrossBenchCLI handle all errors and simplify testing.
-      exception = sys.exc_info()[1]
-      if isinstance(exception, BaseException):
-        raise exception
-      raise argparse.ArgumentError(None, message)
-
-else:
-
-  class CrossBenchArgumentParser(_BaseCrossBenchArgumentParser):  # type: ignore
-
-    def __init__(self, *args, **kwargs) -> None:
-      kwargs["exit_on_error"] = False
-      super().__init__(*args, **kwargs)

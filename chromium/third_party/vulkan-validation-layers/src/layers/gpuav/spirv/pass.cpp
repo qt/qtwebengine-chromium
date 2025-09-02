@@ -16,8 +16,9 @@
 #include "pass.h"
 #include <cstdint>
 #include <spirv/unified1/spirv.hpp>
+#include "function_basic_block.h"
 #include "generated/spirv_grammar_helper.h"
-#include "instruction.h"
+#include "state_tracker/shader_instruction.h"
 #include "module.h"
 #include "gpuav/shaders/gpuav_error_codes.h"
 
@@ -26,7 +27,7 @@ namespace spirv {
 
 bool Pass::Run() {
     const bool modified = Instrument();
-    if (module_.print_debug_info_) {
+    if (module_.settings_.print_debug_info) {
         PrintDebugInfo();
     }
     return modified;
@@ -65,11 +66,14 @@ const Variable& Pass::GetBuiltinVariable(uint32_t built_in) {
 
 // To reduce having to load this information everytime we do a OpFunctionCall, instead just create it once per Function block and
 // reference it each time
-uint32_t Pass::GetStageInfo(Function& function, BasicBlockIt target_block_it, InstructionIt& target_inst_it) {
+uint32_t Pass::GetStageInfo(Function& function, const BasicBlock& target_block_it, InstructionIt& out_inst_it) {
     // Cached so only need to compute this once
     if (function.stage_info_id_ != 0) {
         return function.stage_info_id_;
     }
+
+    // Save original for later to restore
+    const Instruction& target_instruction = *out_inst_it->get();
 
     BasicBlock& block = function.GetFirstBlock();
     InstructionIt inst_it = block.GetFirstInjectableInstrution();
@@ -83,10 +87,36 @@ uint32_t Pass::GetStageInfo(Function& function, BasicBlockIt target_block_it, In
     if (module_.entry_points_.size() > 1) {
         // For Multi Entry Points it currently a lot of work to scan every function to see where it will be called from
         // For now we will just report it is "unknown" and skip printing that part of the error message
-        stage_info[0] = module_.type_manager_.GetConstantUInt32(glsl::kHeaderStageIdMultiEntryPoint).Id();
+        stage_info[0] = module_.type_manager_.GetConstantUInt32(glsl::kExecutionModelMultiEntryPoint).Id();
     } else {
         spv::ExecutionModel execution_model = spv::ExecutionModel(module_.entry_points_.begin()->get()->Operand(0));
-        stage_info[0] = module_.type_manager_.GetConstantUInt32(execution_model).Id();
+
+        // Need to map how GenerateStageMessage() will consume it
+        uint32_t normalized_execution_model = execution_model;
+        if (execution_model == spv::ExecutionModelTaskNV) {
+            normalized_execution_model = glsl::kExecutionModelTaskNV;
+        } else if (execution_model == spv::ExecutionModelMeshNV) {
+            normalized_execution_model = glsl::kExecutionModelMeshNV;
+        } else if (execution_model == spv::ExecutionModelRayGenerationKHR) {
+            normalized_execution_model = glsl::kExecutionModelRayGenerationKHR;
+        } else if (execution_model == spv::ExecutionModelIntersectionKHR) {
+            normalized_execution_model = glsl::kExecutionModelIntersectionKHR;
+        } else if (execution_model == spv::ExecutionModelAnyHitKHR) {
+            normalized_execution_model = glsl::kExecutionModelAnyHitKHR;
+        } else if (execution_model == spv::ExecutionModelClosestHitKHR) {
+            normalized_execution_model = glsl::kExecutionModelClosestHitKHR;
+        } else if (execution_model == spv::ExecutionModelMissKHR) {
+            normalized_execution_model = glsl::kExecutionModelMissKHR;
+        } else if (execution_model == spv::ExecutionModelCallableKHR) {
+            normalized_execution_model = glsl::kExecutionModelCallableKHR;
+        } else if (execution_model == spv::ExecutionModelCallableKHR) {
+            normalized_execution_model = glsl::kExecutionModelCallableKHR;
+        } else if (execution_model == spv::ExecutionModelTaskEXT) {
+            normalized_execution_model = glsl::kExecutionModelTaskEXT;
+        } else if (execution_model == spv::ExecutionModelMeshEXT) {
+            normalized_execution_model = glsl::kExecutionModelMeshEXT;
+        }
+        stage_info[0] = module_.type_manager_.GetConstantUInt32(normalized_execution_model).Id();
 
         // Gets BuiltIn variable and creates a valid OpLoad of it
         auto create_load = [this, &block, &inst_it](spv::BuiltIn built_in) {
@@ -135,11 +165,22 @@ uint32_t Pass::GetStageInfo(Function& function, BasicBlockIt target_block_it, In
             case spv::ExecutionModelMeshNV:
             case spv::ExecutionModelTaskEXT:
             case spv::ExecutionModelMeshEXT: {
-                const uint32_t load_id = create_load(spv::BuiltInGlobalInvocationId);
+                // This can be both a uvec3 or ivec3 so need to cast if ivec3
+                const Variable& variable = GetBuiltinVariable(spv::BuiltInGlobalInvocationId);
+                const Type* pointer_type = variable.PointerType(module_.type_manager_);
+                const uint32_t load_id = module_.TakeNextId();
+                block.CreateInstruction(spv::OpLoad, {pointer_type->Id(), load_id, variable.Id()}, &inst_it);
+                uint32_t final_load_id = load_id;
+
+                if (pointer_type->IsIVec3(module_.type_manager_)) {
+                    const Type& vec3_type = module_.type_manager_.GetTypeVector(uint32_type, 3);
+                    final_load_id = module_.TakeNextId();
+                    block.CreateInstruction(spv::OpBitcast, {vec3_type.Id(), final_load_id, load_id}, &inst_it);
+                }
 
                 for (uint32_t i = 0; i < 3; i++) {
                     const uint32_t extract_id = module_.TakeNextId();
-                    block.CreateInstruction(spv::OpCompositeExtract, {uint32_type.Id(), extract_id, load_id, i}, &inst_it);
+                    block.CreateInstruction(spv::OpCompositeExtract, {uint32_type.Id(), extract_id, final_load_id, i}, &inst_it);
                     stage_info[i + 1] = extract_id;
                 }
             } break;
@@ -160,10 +201,10 @@ uint32_t Pass::GetStageInfo(Function& function, BasicBlockIt target_block_it, In
                 stage_info[1] = CastToUint32(primitive_id, block, &inst_it);
 
                 // convert vec3 to uvec3
-                const Type& vec3_type = module_.type_manager_.GetTypeVector(uint32_type, 3);
+                const Type& uvec3_type = module_.type_manager_.GetTypeVector(uint32_type, 3);
                 const uint32_t load_id = create_load(spv::BuiltInTessCoord);
                 const uint32_t bitcast_id = module_.TakeNextId();
-                block.CreateInstruction(spv::OpBitcast, {vec3_type.Id(), bitcast_id, load_id}, &inst_it);
+                block.CreateInstruction(spv::OpBitcast, {uvec3_type.Id(), bitcast_id, load_id}, &inst_it);
 
                 // TessCoord.uv values from it
                 for (uint32_t i = 0; i < 2; i++) {
@@ -190,14 +231,25 @@ uint32_t Pass::GetStageInfo(Function& function, BasicBlockIt target_block_it, In
 
     // because we are injecting things in the first block, there is a chance we just destroyed the iterator if the target
     // instruction was also in the first block, so need to regain it for the caller
-    if ((*target_block_it)->GetLabelId() == block.GetLabelId()) {
-        target_inst_it = FindTargetInstruction(block);
+    if (target_block_it.GetLabelId() == block.GetLabelId()) {
+        out_inst_it = FindTargetInstruction(block, target_instruction);
     }
 
     return function.stage_info_id_;
 }
 
-const Instruction* Pass::GetDecoration(uint32_t id, spv::Decoration decoration) {
+InjectionData Pass::GetInjectionData(Function& function, const BasicBlock& target_block_it, InstructionIt& out_inst_it,
+                                     const Instruction& target_instruction) {
+    // Add any debug information to pass into the function call
+    InjectionData injection_data;
+    injection_data.stage_info_id = GetStageInfo(function, target_block_it, out_inst_it);
+    const uint32_t inst_position = target_instruction.GetPositionIndex();
+    auto inst_position_constant = module_.type_manager_.CreateConstantUInt32(inst_position);
+    injection_data.inst_position_id = inst_position_constant.Id();
+    return injection_data;
+}
+
+const Instruction* Pass::GetDecoration(uint32_t id, spv::Decoration decoration) const {
     for (const auto& annotation : module_.annotations_) {
         if (annotation->Opcode() == spv::OpDecorate && annotation->Word(1) == id &&
             spv::Decoration(annotation->Word(2)) == decoration) {
@@ -207,7 +259,7 @@ const Instruction* Pass::GetDecoration(uint32_t id, spv::Decoration decoration) 
     return nullptr;
 }
 
-const Instruction* Pass::GetMemberDecoration(uint32_t id, uint32_t member_index, spv::Decoration decoration) {
+const Instruction* Pass::GetMemberDecoration(uint32_t id, uint32_t member_index, spv::Decoration decoration) const {
     for (const auto& annotation : module_.annotations_) {
         if (annotation->Opcode() == spv::OpMemberDecorate && annotation->Word(1) == id && annotation->Word(2) == member_index &&
             spv::Decoration(annotation->Word(3)) == decoration) {
@@ -220,7 +272,7 @@ const Instruction* Pass::GetMemberDecoration(uint32_t id, uint32_t member_index,
 // In an ideal world, this would be baked into the Type class when we construct it. The core issue is OpTypeMatrix size can be
 // different depending where it is used. Because of this, we need to have a higher level view what is going on in order to correctly
 // figure out the size of a given type.
-uint32_t Pass::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool col_major, bool in_matrix) {
+uint32_t Pass::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool col_major, bool in_matrix) const {
     const Type& type = *module_.type_manager_.FindTypeById(type_id);
     switch (type.spv_type_) {
         case SpvType::kPointer:
@@ -311,8 +363,8 @@ uint32_t Pass::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool c
 // Find outermost buffer type and its access chain index.
 // Because access chains indexes can be runtime values, we need to build arithmetic logic in the SPIR-V to get the runtime value of
 // the indexing
-uint32_t Pass::GetLastByte(const Type& descriptor_type, std::vector<const Instruction*>& access_chain_insts, BasicBlock& block,
-                           InstructionIt* inst_it) {
+uint32_t Pass::GetLastByte(const Type& descriptor_type, const std::vector<const Instruction*>& access_chain_insts,
+                           BasicBlock& block, InstructionIt* inst_it) {
     assert(!access_chain_insts.empty());
     uint32_t current_type_id = 0;
     const uint32_t reset_ac_word = 4;  // points to first "Index" operand of an OpAccessChain
@@ -476,7 +528,7 @@ uint32_t Pass::GetLastByte(const Type& descriptor_type, std::vector<const Instru
 }
 
 // Generate code to convert integer id to 32bit, if needed.
-uint32_t Pass::ConvertTo32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) {
+uint32_t Pass::ConvertTo32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) const {
     // Find type doing the indexing into the access chain
     const Type* type = nullptr;
     const Constant* constant = module_.type_manager_.FindConstantById(id);
@@ -508,7 +560,7 @@ uint32_t Pass::ConvertTo32(uint32_t id, BasicBlock& block, InstructionIt* inst_i
 }
 
 // Generate code to cast integer it to 32bit unsigned, if needed.
-uint32_t Pass::CastToUint32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) {
+uint32_t Pass::CastToUint32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) const {
     // Convert value to 32-bit if necessary
     uint32_t int32_id = ConvertTo32(id, block, inst_it);
 
@@ -537,13 +589,13 @@ uint32_t Pass::CastToUint32(uint32_t id, BasicBlock& block, InstructionIt* inst_
     return new_id;  // Return an id to the Uint equivalent.
 }
 
-InstructionIt Pass::FindTargetInstruction(BasicBlock& block) const {
-    const uint32_t target_id = target_instruction_->ResultId();
+InstructionIt Pass::FindTargetInstruction(BasicBlock& block, const Instruction& target_instruction) const {
+    const uint32_t target_id = target_instruction.ResultId();
     for (auto inst_it = block.instructions_.begin(); inst_it != block.instructions_.end(); ++inst_it) {
         // This has to re-loop the entire block to find the instruction, using the ResultID, we can quickly compare
         if ((*inst_it)->ResultId() == target_id) {
             // Things like OpStore will have a result id of zero, so need to do deep instruction comparison
-            if (*(*inst_it) == *target_instruction_) {
+            if (*(*inst_it) == target_instruction) {
                 return inst_it;
             }
         }
@@ -551,6 +603,140 @@ InstructionIt Pass::FindTargetInstruction(BasicBlock& block) const {
 
     module_.InternalError(Name(), "failed to find instruction");
     return block.instructions_.end();
+}
+
+bool Pass::IsMaxInstrumentationsCount() const {
+    return (module_.settings_.max_instrumentations_count != 0) &&
+           (instrumentations_count_ >= module_.settings_.max_instrumentations_count);
+}
+
+// A type of common pass that will inject a function call and link it up later,
+// We will have wrap the checks to be safe from bad values crashing things
+// For OpStore we will just ignore the store if it is invalid, example:
+// Before:
+//     bda.data[index] = value;
+// After:
+//    if (isValid(bda.data, index)) {
+//         bda.data[index] = value;
+//    }
+//
+// For OpLoad we replace the value with Zero (via Phi node) if it is invalid, example
+// Before:
+//     int X = bda.data[index];
+//     int Y = bda.data[X];
+// After:
+//    if (isValid(bda.data, index)) {
+//         int X = bda.data[index];
+//    } else {
+//         int X = 0;
+//    }
+//    if (isValid(bda.data, X)) {
+//         int Y = bda.data[X];
+//    } else {
+//         int Y = 0;
+//    }
+InjectConditionalData Pass::InjectFunctionPre(Function& function, const BasicBlockIt original_block_it, InstructionIt inst_it) {
+    // We turn the block into 4 separate blocks
+    BasicBlock& original_block = **original_block_it;
+    const uint32_t original_label = original_block.GetLabelId();
+
+    // Where we call targeted instruction if it is valid
+    BasicBlockIt valid_block_it = function.InsertNewBlock(original_block_it);
+    BasicBlock& valid_block = **valid_block_it;
+    const uint32_t valid_block_label = valid_block.GetLabelId();
+
+    // will be an empty block, used for the Phi node, even if no result, create for simplicity
+    BasicBlockIt invalid_block_it = function.InsertNewBlock(valid_block_it);
+    BasicBlock& invalid_block = **invalid_block_it;
+    const uint32_t invalid_block_label = invalid_block.GetLabelId();
+
+    // All the remaining block instructions after targeted instruction
+    BasicBlockIt merge_block_it = function.InsertNewBlock(invalid_block_it);
+    BasicBlock& merge_block = **merge_block_it;
+    const uint32_t merge_block_label = merge_block.GetLabelId();
+
+    // need to preserve the control-flow of how things, like a OpPhi, are accessed from a predecessor block
+    function.ReplaceAllUsesWith(original_label, merge_block_label);
+
+    // Move the targeted instruction to a valid block
+    const Instruction& target_inst = *valid_block.instructions_.emplace_back(std::move(*inst_it));
+    inst_it = original_block.instructions_.erase(inst_it);
+    valid_block.CreateInstruction(spv::OpBranch, {merge_block_label});
+
+    // If thre is a result, we need to create an additional BasicBlock to hold the |else| case, then after we create a Phi node to
+    // hold the result
+    const uint32_t target_inst_id = target_inst.ResultId();
+    if (target_inst_id != 0) {
+        const uint32_t phi_id = module_.TakeNextId();
+        const Type& phi_type = *module_.type_manager_.FindTypeById(target_inst.TypeId());
+        uint32_t null_id = 0;
+        // Can't create ConstantNull of pointer type, so convert uint64 zero to pointer
+        if (phi_type.spv_type_ == SpvType::kPointer) {
+            const Type& uint64_type = module_.type_manager_.GetTypeInt(64, false);
+            const Constant& null_constant = module_.type_manager_.GetConstantNull(uint64_type);
+            null_id = module_.TakeNextId();
+            // We need to put any intermittent instructions here so Phi is first in the merge block
+            invalid_block.CreateInstruction(spv::OpConvertUToPtr, {phi_type.Id(), null_id, null_constant.Id()});
+            module_.AddCapability(spv::CapabilityInt64);
+        } else {
+            if ((phi_type.spv_type_ == SpvType::kInt || phi_type.spv_type_ == SpvType::kFloat) && phi_type.inst_.Word(2) < 32) {
+                // You can't make a constant of a 8-int, 16-int, 16-float without having the capability
+                // The only way this situation occurs if they use something like
+                //     OpCapability StorageBuffer8BitAccess
+                // but there is not explicit Int8
+                // It should be more than safe to inject it for them
+                spv::Capability capability = (phi_type.spv_type_ == SpvType::kFloat) ? spv::CapabilityFloat16
+                                             : (phi_type.inst_.Word(2) == 16)        ? spv::CapabilityInt16
+                                                                                     : spv::CapabilityInt8;
+                module_.AddCapability(capability);
+            }
+
+            null_id = module_.type_manager_.GetConstantNull(phi_type).Id();
+        }
+
+        // replace before creating instruction, otherwise will over-write itself
+        function.ReplaceAllUsesWith(target_inst_id, phi_id);
+        merge_block.CreateInstruction(spv::OpPhi,
+                                      {phi_type.Id(), phi_id, target_inst_id, valid_block_label, null_id, invalid_block_label});
+    }
+
+    // When skipping some instructions, we need something valid to replace it
+    if (target_inst.Opcode() == spv::OpRayQueryInitializeKHR) {
+        // Currently assume the RayQuery and AS object were valid already
+        const uint32_t uint32_0_id = module_.type_manager_.GetConstantZeroUint32().Id();
+        const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
+        const uint32_t vec3_0_id = module_.type_manager_.GetConstantZeroVec3().Id();
+        invalid_block.CreateInstruction(spv::OpRayQueryInitializeKHR,
+                                        {target_inst.Operand(0), target_inst.Operand(1), uint32_0_id, uint32_0_id, vec3_0_id,
+                                         float32_0_id, vec3_0_id, float32_0_id});
+    }
+
+    invalid_block.CreateInstruction(spv::OpBranch, {merge_block_label});
+
+    // move all remaining instructions to the newly created merge block
+    merge_block.instructions_.insert(merge_block.instructions_.end(), std::make_move_iterator(inst_it),
+                                     std::make_move_iterator(original_block.instructions_.end()));
+    original_block.instructions_.erase(inst_it, original_block.instructions_.end());
+
+    return InjectConditionalData{merge_block_label, valid_block_label, invalid_block_label, 0, merge_block_it};
+}
+
+void Pass::InjectFunctionPost(BasicBlock& original_block, const InjectConditionalData& ic_data) {
+    original_block.CreateInstruction(spv::OpSelectionMerge, {ic_data.merge_block_label, spv::SelectionControlMaskNone});
+    original_block.CreateInstruction(spv::OpBranchConditional,
+                                     {ic_data.function_result_id, ic_data.valid_block_label, ic_data.invalid_block_label});
+}
+
+void Pass::ControlFlow::Update(const BasicBlock& block) {
+    if (in_loop) {
+        if (block.GetLabelId() == merge_target_id) {
+            in_loop = false;
+            merge_target_id = 0;
+        }
+    } else if (block.IsLoopHeader()) {
+        in_loop = true;
+        merge_target_id = block.loop_header_merge_target_;
+    }
 }
 
 }  // namespace spirv

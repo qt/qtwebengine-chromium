@@ -54,6 +54,16 @@ const char* unimplementable_validation[] = {
     "VUID-vkGetPrivateData-device-parameter",
     "VUID-vkSetPrivateData-device-parameter",
 
+    // These were added for "completeness" (by us!) and serve no real purpose.
+    // 1. VK_EXT_validation_features/VK_EXT_validation_flags are implemented by us and we don't even care
+    //    if the extension name is enabled or not
+    // 2. It would crazy for a layer to suddenly not have VK_EXT_layer_settings work if the extension name is not provided
+    //
+    // Until there is a real world usecase where these are needed, we are just going to defer validating them.
+    "VUID-VkInstanceCreateInfo-pNext-10242",
+    "VUID-VkInstanceCreateInfo-pNext-10243",
+    "VUID-VkInstanceCreateInfo-pNext-10244",
+
     // These ask if pData is a certain size, but no way to validate a pointer to memory is a certain size.
     // There is already another implicit VU checking if pData is not null.
     "VUID-vkGetBufferOpaqueCaptureDescriptorDataEXT-pData-08073",
@@ -538,7 +548,7 @@ const char* unimplementable_validation[] = {
     "VUID-VkVideoEncodeAV1SessionParametersCreateInfoKHR-pStdDecoderModelInfo-parameter",
     "VUID-VkVideoEncodeAV1SessionParametersCreateInfoKHR-pStdOperatingPoints-parameter",
 
-    // Acceleration structure replay related, 
+    // Acceleration structure replay related,
     // but VVL has no way of tracking needed info (typically stored offline)
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09488"
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09489"
@@ -560,6 +570,28 @@ const char* deprecated_validation[] = {
     "VUID-VkAccelerationStructureTrianglesDisplacementMicromapNV-micromap-parameter",
     "VUID-VkBindIndexBufferIndirectCommandNV-indexType-parameter",
     "VUID-VkAccelerationStructureMotionInstanceNV-srtMotionInstance-parameter",
+    "VUID-RuntimeSpirv-OpTraceRayKHR-06360",
+    "VUID-RuntimeSpirv-OpRayQueryGenerateIntersectionKHR-06354",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06361",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06362",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06363",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06364",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06365",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06366",
+    "VUID-RuntimeSpirv-OpTraceRayMotionNV-06367",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayMotionNV-07704",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07705",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07706",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07707",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07708",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayMotionNV-07709",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07710",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayMotionNV-07711",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07712",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07713",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07714",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07715",
+    "VUID-RuntimeSpirv-OpHitObjectTraceRayNV-07716",
 };
 
 // clang-format on

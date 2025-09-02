@@ -28,4 +28,4 @@ class ProbeIncompatibleBrowser(ProbeValidationError):
                probe: Probe,
                browser: Browser,
                message: str = "Incompatible browser") -> None:
-    super().__init__(probe, f"{message}, got {browser.attributes}")
+    super().__init__(probe, f"{message}, got {browser.attributes()}")

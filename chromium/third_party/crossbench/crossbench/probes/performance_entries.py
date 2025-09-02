@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Type
 
+from typing_extensions import override
+
 from crossbench.probes import metric
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.probe import ProbeIncompatibleBrowser
@@ -30,15 +32,18 @@ class PerformanceEntriesProbe(JsonResultProbe):
   """
   NAME = "performance.entries"
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     super().validate_browser(env, browser)
     if not hasattr(browser, "js"):
       raise ProbeIncompatibleBrowser(self, browser,
                                      "Needs browser with JS-execution support")
 
+  @override
   def get_context_cls(self) -> Type[PerformanceEntriesProbeContext]:
     return PerformanceEntriesProbeContext
 
+  @override
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     stories = list(group.stories)
     if len(stories) > 1:
@@ -52,6 +57,7 @@ class PerformanceEntriesProbe(JsonResultProbe):
         merge_duplicate_paths=True)
     return self.write_group_result(group, merged)
 
+  @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     # TODO: recreate the CSV from the merged JSON files since we might not
     # get the same values in all browsers.
@@ -62,6 +68,7 @@ class PerformanceEntriesProbe(JsonResultProbe):
 
 class PerformanceEntriesProbeContext(JsonResultProbeContext):
 
+  @override
   def to_json(self, actions: Actions) -> Json:
     return actions.js("""
       let data = { __proto__: null, paint: {}, mark: {} };

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from typing_extensions import override
+
 from crossbench.action_runner.action.action_type import ActionType
 from crossbench.action_runner.action.js import JsAction
 
@@ -17,5 +19,6 @@ if TYPE_CHECKING:
 class InjectNewDocumentScriptAction(JsAction):
   TYPE: ActionType = ActionType.INJECT_NEW_DOCUMENT_SCRIPT
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:
     action_runner.inject_new_document_script(run, self)

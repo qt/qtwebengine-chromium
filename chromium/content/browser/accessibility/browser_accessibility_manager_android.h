@@ -73,6 +73,10 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
     allow_image_descriptions_for_testing_ = is_allowed;
   }
 
+  const std::unordered_set<int32_t>& nodes_already_cleared_for_test() const {
+    return nodes_already_cleared_;
+  }
+
   // By default, the tree is pruned for a better screen reading experience,
   // including:
   //   * If the node has only static text children
@@ -115,9 +119,9 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
   void FireAriaNotificationEvent(
       ui::BrowserAccessibility* node,
       const std::string& announcement,
-      const std::string& notification_id,
+      ax::mojom::AriaNotificationPriority priority_property,
       ax::mojom::AriaNotificationInterrupt interrupt_property,
-      ax::mojom::AriaNotificationPriority priority_property) override;
+      const std::string& type) override;
 
   void FireLocationChanged(ui::BrowserAccessibility* node);
 
@@ -151,12 +155,14 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
 
  private:
   // AXTreeObserver overrides.
+  void OnAtomicUpdateStarting(
+      ui::AXTree* tree,
+      const std::set<ui::AXNodeID>& deleting_nodes,
+      const std::set<ui::AXNodeID>& reparenting_nodes) override;
   void OnAtomicUpdateFinished(
       ui::AXTree* tree,
       bool root_changed,
       const std::vector<ui::AXTreeObserver::Change>& changes) override;
-
-  void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
 
   WebContentsAccessibilityAndroid* GetWebContentsAXFromRootManager();
 

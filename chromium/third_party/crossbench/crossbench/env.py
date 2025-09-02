@@ -7,19 +7,18 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
-import urllib.request
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import urlparse
 
 import colorama
 
 from crossbench import plt
 from crossbench.cli.config.env import EnvironmentConfig, ValidationMode
-from crossbench.helper import collection_helper
+from crossbench.helper import collection_helper, url_helper
+from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.path import LocalPath
+  from crossbench.path import AnyPathLike, LocalPath
   from crossbench.plt.base import CmdArg, Platform
   from crossbench.probes.probe import Probe
 
@@ -59,7 +58,7 @@ class HostEnvironment:
                probes: Iterable[Probe],
                repetitions: int,
                config: Optional[EnvironmentConfig] = None,
-               validation_mode: ValidationMode = ValidationMode.THROW):
+               validation_mode: ValidationMode = ValidationMode.THROW) -> None:
     self._wait_until = dt.datetime.now()
     self._config = config or EnvironmentConfig()
     self._out_dir = out_dir
@@ -136,25 +135,23 @@ class HostEnvironment:
     if self._validation_mode == ValidationMode.SKIP:
       return True
     platform = platform or plt.PLATFORM
-    result = urlparse(url)
+    result = ObjectParser.url(url)
     if result.scheme == "file":
       return platform.exists(result.path)
     if platform.is_remote and result.hostname in ("localhost", "127.0.0.1"):
       # TODO: support remote URL verification, for now we just assume that
       # checking a live site is ok.
       return True
+    if not all([result.scheme in ["http", "https"], result.netloc]):
+      return False
+    if self._validation_mode != ValidationMode.PROMPT:
+      return True
     try:
-      if not all([result.scheme in ["http", "https"], result.netloc]):
-        return False
-      if self._validation_mode != ValidationMode.PROMPT:
-        return True
-      with urllib.request.urlopen(url, timeout=5) as request:
-        if request.getcode() == 200:
-          return True
-        logging.debug("Could not load URL '%s', got %s", url, request)
-    except urllib.error.URLError as e:
-      logging.debug("Could not parse URL '%s' got error: %s", url, e)
-    return False
+      url_helper.get(url, timeout=5)
+      return True
+    except url_helper.HTTPError as e:
+      logging.debug("Could not load URL '%s', got %s", url, e)
+      return False
 
   def _check_system_monitoring(self) -> None:
     # TODO(cbruni): refactor to use list_... and disable_system_monitoring api
@@ -393,6 +390,53 @@ class HostEnvironment:
           "Terminal.app does not launch apps in the foreground.\n"
           "Please use iTerm.app for a better experience.")
 
+  def _check_file_access(self) -> None:
+    if self._platform.is_macos:
+      has_safari = any(
+          browser.attributes().is_safari for browser in self.browsers)
+      if has_safari:
+        self._check_safari_cache_dir_access()
+    self._check_results_dir_access()
+
+  def _check_safari_cache_dir_access(self) -> None:
+    safari_cache_dir = (
+        self.platform.home() /
+        "Library/Containers/com.apple.Safari/Data/Library/Caches")
+    if not self._has_read_write_access(safari_cache_dir):
+      self._file_access_access_warning("Safari's cache directory")
+
+  def _check_results_dir_access(self) -> None:
+    out_dir = self._out_dir.parent
+    if self._has_read_write_access(out_dir):
+      return
+    self._file_access_access_warning(f"the parent result dir: {out_dir})")
+
+  def _has_read_write_access(self, test_dir: AnyPathLike) -> bool:
+    try:
+      self.platform.mkdir(test_dir, exist_ok=True, parents=True)
+      with self.platform.NamedTemporaryFile(
+          prefix="crossbench_file_access_test", dir=test_dir) as test_file:
+        self.platform.set_file_contents(test_file, test_file.name)
+        assert self.platform.get_file_contents(test_file) == test_file.name
+        self.platform.rm(test_file)
+        return True
+    except Exception as e:  # pylint: disable=broad-except
+      logging.debug("Failed file access test: %s", e)
+      return False
+
+  def _file_access_access_warning(self, dir_name: str) -> None:
+    if not self.platform.is_macos:
+      self.handle_validation_warning(f"Could not modify {dir_name}")
+      return
+
+    term_program = self._platform.environ.get("TERM_PROGRAM",
+                                              "the current terminal App")
+    self.handle_validation_warning(
+        f"Could not modify {dir_name}.\n"
+        "Likely missing 'Full Disk Access' macOS Privacy & Security "
+        f"permission for {term_program}.")
+
+
   def check_browser_focused(self, browser: Browser) -> None:
     if (self._config.browser_allow_background or not browser.pid or
         browser.viewport.is_headless):
@@ -412,10 +456,10 @@ class HostEnvironment:
 
   def validate(self) -> None:
     logging.info("-" * 80)
+    message = "🌤️  VALIDATE ENVIRONMENT"
     if self._validation_mode == ValidationMode.SKIP:
-      logging.info("VALIDATE ENVIRONMENT: SKIP")
+      logging.info("%s: SKIP", message)
       return
-    message = "VALIDATE ENVIRONMENT"
     if self._validation_mode != ValidationMode.WARN:
       message += " (--env-validation=warn for soft warnings)"
     message += ": %s"
@@ -435,6 +479,7 @@ class HostEnvironment:
     self._check_forbidden_system_process()
     self._check_screen_autobrightness()
     self._check_macos_terminal()
+    self._check_file_access()
 
   def check_installed(self,
                       binaries: Iterable[str],

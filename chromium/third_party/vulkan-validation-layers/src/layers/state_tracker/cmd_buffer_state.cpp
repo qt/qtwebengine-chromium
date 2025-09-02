@@ -18,11 +18,13 @@
  * limitations under the License.
  */
 #include "state_tracker/cmd_buffer_state.h"
+#include <vulkan/vulkan_core.h>
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/image_state.h"
+#include "state_tracker/queue_state.h"
 #include "utils/vk_layer_utils.h"
 
 static ShaderObjectStage inline ConvertToShaderObjectStage(VkShaderStageFlagBits stage) {
@@ -63,6 +65,10 @@ std::string AttachmentInfo::Describe(AttachmentSource source, uint32_t index) co
                 return "Stencil";
             case Type::StencilResolve:
                 return "Stencil Resolve";
+            case Type::FragmentDensityMap:
+                return "Fragment Density Map";
+            case Type::FragmentShadingRate:
+                return "Fragment Shading Rate";
             default:
                 break;
         }
@@ -84,6 +90,10 @@ std::string AttachmentInfo::Describe(AttachmentSource source, uint32_t index) co
             ss << "pDepthAttachment.imageView";
         } else if (type == Type::StencilResolve) {
             ss << "pStencilAttachment.resolveImageView";
+        } else if (type == Type::FragmentDensityMap) {
+            ss << "pNext<VkRenderingFragmentDensityMapAttachmentInfoEXT>.imageView";
+        } else if (type == Type::FragmentShadingRate) {
+            ss << "pNext<VkRenderingFragmentShadingRateAttachmentInfoKHR>.imageView";
         }
     } else {
         ss << "VkRenderPassCreateInfo::pAttachments[" << index << "] (" << type_string(type) << ")";
@@ -260,7 +270,7 @@ void CommandBuffer::ResetCBState() {
     active_color_attachments_index.clear();
     has_render_pass_striped = false;
     striped_count = 0;
-    activeSubpassContents = VK_SUBPASS_CONTENTS_INLINE;
+    active_subpass_contents = VK_SUBPASS_CONTENTS_INLINE;
     SetActiveSubpass(0);
     rendering_attachments.Reset();
     waitedEvents.clear();
@@ -322,6 +332,9 @@ void CommandBuffer::Reset(const Location &loc) {
     ResetCBState();
     // Remove reverse command buffer links.
     Invalidate(true);
+    for (auto &item : sub_states_) {
+        item.second->Reset(loc);
+    }
 }
 
 // Track which resources are in-flight by atomically incrementing their "in_use" count
@@ -353,6 +366,10 @@ void CommandBuffer::Destroy() {
         auto guard = WriteLock();
         ResetCBState();
     }
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
+    sub_states_.clear();
     StateObject::Destroy();
 }
 
@@ -398,6 +415,9 @@ void CommandBuffer::NotifyInvalidate(const StateObject::NodeList &invalid_nodes,
             }
             broken_bindings.emplace(invalid_nodes[0]->Handle(), log_list);
         }
+    }
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
     }
     StateObject::NotifyInvalidate(invalid_nodes, unlink);
 }
@@ -580,6 +600,31 @@ void CommandBuffer::UpdateSubpassAttachments() {
             active_subpasses[attachment_index].aspectMask = subpass.pDepthStencilAttachment->aspectMask;
         }
     }
+
+    if (auto rdm_ci =
+            vku::FindStructInPNextChain<VkRenderPassFragmentDensityMapCreateInfoEXT>(active_render_pass->create_info.pNext)) {
+        const uint32_t attachment_index = rdm_ci->fragmentDensityMapAttachment.attachment;
+        if (attachment_index != VK_ATTACHMENT_UNUSED) {
+            active_attachments[attachment_index].type = AttachmentInfo::Type::FragmentDensityMap;
+            active_subpasses[attachment_index].used = true;
+            active_subpasses[attachment_index].usage = VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT;
+            active_subpasses[attachment_index].layout = rdm_ci->fragmentDensityMapAttachment.layout;
+            active_subpasses[attachment_index].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+    }
+
+    if (auto rdr_attachment_ci = vku::FindStructInPNextChain<VkFragmentShadingRateAttachmentInfoKHR>(subpass.pNext)) {
+        if (rdr_attachment_ci->pFragmentShadingRateAttachment) {
+            const uint32_t attachment_index = rdr_attachment_ci->pFragmentShadingRateAttachment->attachment;
+            if (attachment_index != VK_ATTACHMENT_UNUSED) {
+                active_attachments[attachment_index].type = AttachmentInfo::Type::FragmentShadingRate;
+                active_subpasses[attachment_index].used = true;
+                active_subpasses[attachment_index].usage = VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+                active_subpasses[attachment_index].layout = rdr_attachment_ci->pFragmentShadingRateAttachment->layout;
+                active_subpasses[attachment_index].aspectMask = rdr_attachment_ci->pFragmentShadingRateAttachment->aspectMask;
+            }
+        }
+    }
 }
 
 // For non Dynamic Renderpass we update the attachments
@@ -608,7 +653,7 @@ void CommandBuffer::BeginRenderPass(Func command, const VkRenderPassBeginInfo *p
     active_render_pass = dev_data.Get<vvl::RenderPass>(pRenderPassBegin->renderPass);
     render_area = pRenderPassBegin->renderArea;
     SetActiveSubpass(0);
-    activeSubpassContents = contents;
+    active_subpass_contents = contents;
     renderPassQueries.clear();
 
     // Connect this RP to cmdBuffer
@@ -649,7 +694,7 @@ void CommandBuffer::BeginRenderPass(Func command, const VkRenderPassBeginInfo *p
 void CommandBuffer::NextSubpass(Func command, VkSubpassContents contents) {
     RecordCmd(command);
     SetActiveSubpass(GetActiveSubpass() + 1);
-    activeSubpassContents = contents;
+    active_subpass_contents = contents;
     ASSERT_AND_RETURN(active_render_pass);
 
     if (activeFramebuffer) {
@@ -698,9 +743,9 @@ void CommandBuffer::BeginRendering(Func command, const VkRenderingInfo *pRenderi
         striped_count += rp_striped_begin->stripeInfoCount;
     }
 
-    activeSubpassContents = ((pRenderingInfo->flags & VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT)
-                                 ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
-                                 : VK_SUBPASS_CONTENTS_INLINE);
+    active_subpass_contents = ((pRenderingInfo->flags & VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT)
+                                   ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS
+                                   : VK_SUBPASS_CONTENTS_INLINE);
 
     // Handle flags for dynamic rendering
     if (!hasRenderPassInstance && pRenderingInfo->flags & VK_RENDERING_RESUMING_BIT) {
@@ -820,8 +865,7 @@ void CommandBuffer::BeginVideoCoding(const VkVideoBeginCodingInfoKHR *pBeginInfo
 
             // Enqueue submission time DPB slot deactivation
             video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                [deactivated_slots](const Device &dev_data, const vvl::VideoSession *vs_state,
-                                    vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
+                [deactivated_slots](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
                     for (const auto &slot_index : deactivated_slots) {
                         dev_state.Deactivate(slot_index);
                     }
@@ -851,8 +895,7 @@ void CommandBuffer::ControlVideoCoding(const VkVideoCodingControlInfoKHR *pContr
 
             // Enqueue submission time video session state reset/initialization
             video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                [](const Device &dev_data, const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state,
-                   bool do_validate) {
+                [](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
                     dev_state.Reset();
                     return false;
                 });
@@ -865,8 +908,7 @@ void CommandBuffer::ControlVideoCoding(const VkVideoCodingControlInfoKHR *pContr
 
                 // Enqueue rate control specific device state changes
                 video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                    [state](const Device &dev_data, const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state,
-                            bool do_validate) {
+                    [state](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
                         dev_state.SetRateControlState(state);
                         return false;
                     });
@@ -881,8 +923,7 @@ void CommandBuffer::ControlVideoCoding(const VkVideoCodingControlInfoKHR *pContr
 
                 // Enqueue encode quality level device state change
                 video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                    [quality_level](const Device &dev_data, const vvl::VideoSession *vs_state,
-                                    vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
+                    [quality_level](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
                         dev_state.SetEncodeQualityLevel(quality_level);
                         return false;
                     });
@@ -917,8 +958,8 @@ void CommandBuffer::DecodeVideo(const VkVideoDecodeInfoKHR *pDecodeInfo) {
             // Enqueue submission time reference slot setup or invalidation
             bool reference_setup_requested = bound_video_session->ReferenceSetupRequested(*pDecodeInfo);
             video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                [setup_slot, reference_setup_requested](const Device &dev_data, const vvl::VideoSession *vs_state,
-                                                        vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
+                [setup_slot, reference_setup_requested](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state,
+                                                        bool do_validate) {
                     if (reference_setup_requested) {
                         dev_state.Activate(setup_slot.index, setup_slot.picture_id, setup_slot.resource);
                     } else {
@@ -957,8 +998,8 @@ void vvl::CommandBuffer::EncodeVideo(const VkVideoEncodeInfoKHR *pEncodeInfo) {
             // Enqueue submission time reference slot setup or invalidation
             bool reference_setup_requested = bound_video_session->ReferenceSetupRequested(*pEncodeInfo);
             video_session_updates[bound_video_session->VkHandle()].emplace_back(
-                [setup_slot, reference_setup_requested](const Device &dev_data, const vvl::VideoSession *vs_state,
-                                                        vvl::VideoSessionDeviceState &dev_state, bool do_validate) {
+                [setup_slot, reference_setup_requested](const vvl::VideoSession *vs_state, vvl::VideoSessionDeviceState &dev_state,
+                                                        bool do_validate) {
                     if (reference_setup_requested) {
                         dev_state.Activate(setup_slot.index, setup_slot.picture_id, setup_slot.resource);
                     } else {
@@ -1236,7 +1277,7 @@ void CommandBuffer::UpdatePipelineState(Func command, const VkPipelineBindPoint 
                 }
 
                 // Bind this set and its active descriptor resources to the command buffer
-                descriptor_set->UpdateDrawStates(&dev_data, *this, binding_req_map);
+                descriptor_set->UpdateImageLayoutDrawStates(&dev_data, *this, binding_req_map);
 
                 ds_slot.validated_set = descriptor_set.get();
                 ds_slot.validated_set_change_count = descriptor_set->GetChangeCount();
@@ -1473,7 +1514,12 @@ void CommandBuffer::SetImageViewLayout(const vvl::ImageView &view_state, VkImage
     }
 }
 
-void CommandBuffer::RecordCmd(Func command) { command_count++; }
+void CommandBuffer::RecordCmd(Func command) {
+    command_count++;
+    for (auto &item : sub_states_) {
+        item.second->RecordCmd(command);
+    }
+}
 
 void CommandBuffer::RecordStateCmd(Func command, CBDynamicState state) {
     RecordCmd(command);
@@ -1543,6 +1589,9 @@ void CommandBuffer::RecordResetEvent(Func command, VkEvent event, VkPipelineStag
 void CommandBuffer::RecordWaitEvents(Func command, uint32_t eventCount, const VkEvent *pEvents,
                                      VkPipelineStageFlags2KHR src_stage_mask) {
     RecordCmd(command);
+    for (auto &item : sub_states_) {
+        item.second->RecordWaitEvents(command, eventCount, pEvents, src_stage_mask);
+    }
     for (uint32_t i = 0; i < eventCount; ++i) {
         if (!dev_data.disabled[command_buffer_state]) {
             auto event_state = dev_data.Get<vvl::Event>(pEvents[i]);
@@ -1604,7 +1653,11 @@ void CommandBuffer::RecordWriteTimestamp(Func command, VkPipelineStageFlags2KHR 
     EndQuery(query_obj);
 }
 
-void CommandBuffer::Submit(VkQueue queue, uint32_t perf_submit_pass, const Location &loc) {
+void CommandBuffer::Submit(Queue &queue_state, uint32_t perf_submit_pass, const Location &loc) {
+    for (auto& func : queue_submit_functions) {
+        func(queue_state, *this);
+    }
+
     // Update vvl::QueryPool with a query state at the end of the command buffer.
     // Ultimately, it tracks the final query state for the entire submission.
     {
@@ -1632,7 +1685,7 @@ void CommandBuffer::Submit(VkQueue queue, uint32_t perf_submit_pass, const Locat
             auto event_state = dev_data.Get<vvl::Event>(event);
             event_state->signaled = info.signal;
             event_state->signal_src_stage_mask = info.src_stage_mask;
-            event_state->signaling_queue = queue;
+            event_state->signaling_queue = queue_state.VkHandle();
         }
     }
 
@@ -1640,7 +1693,7 @@ void CommandBuffer::Submit(VkQueue queue, uint32_t perf_submit_pass, const Locat
         auto video_session_state = dev_data.Get<vvl::VideoSession>(it.first);
         auto device_state = video_session_state->DeviceStateWrite();
         for (const auto &function : it.second) {
-            function(dev_data, video_session_state.get(), *device_state, /*do_validate*/ false);
+            function(video_session_state.get(), *device_state, /*do_validate*/ false);
         }
     }
 }

@@ -568,6 +568,14 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->performanceCounterMultipleQueryPools |= enabled->performanceCounterMultipleQueryPools == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR: {
+                const VkPhysicalDeviceShaderBfloat16FeaturesKHR *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceShaderBfloat16FeaturesKHR *>(pNext);
+                features->shaderBFloat16Type |= enabled->shaderBFloat16Type == VK_TRUE;
+                features->shaderBFloat16DotProduct |= enabled->shaderBFloat16DotProduct == VK_TRUE;
+                features->shaderBFloat16CooperativeMatrix |= enabled->shaderBFloat16CooperativeMatrix == VK_TRUE;
+                break;
+            }
 #ifdef VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR: {
                 const VkPhysicalDevicePortabilitySubsetFeaturesKHR *enabled =
@@ -1026,12 +1034,14 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->diagnosticsConfig |= enabled->diagnosticsConfig == VK_TRUE;
                 break;
             }
+#ifdef VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_FEATURES_NV: {
                 const VkPhysicalDeviceCudaKernelLaunchFeaturesNV *enabled =
                     reinterpret_cast<const VkPhysicalDeviceCudaKernelLaunchFeaturesNV *>(pNext);
                 features->cudaKernelLaunchFeatures |= enabled->cudaKernelLaunchFeatures == VK_TRUE;
                 break;
             }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT: {
                 const VkPhysicalDeviceDescriptorBufferFeaturesEXT *enabled =
                     reinterpret_cast<const VkPhysicalDeviceDescriptorBufferFeaturesEXT *>(pNext);
@@ -1317,9 +1327,9 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->renderPassStriped |= enabled->renderPassStriped == VK_TRUE;
                 break;
             }
-            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_QCOM: {
-                const VkPhysicalDeviceFragmentDensityMapOffsetFeaturesQCOM *enabled =
-                    reinterpret_cast<const VkPhysicalDeviceFragmentDensityMapOffsetFeaturesQCOM *>(pNext);
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_EXT: {
+                const VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT *>(pNext);
                 features->fragmentDensityMapOffset |= enabled->fragmentDensityMapOffset == VK_TRUE;
                 break;
             }
@@ -1684,6 +1694,14 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->vertexAttributeRobustness |= enabled->vertexAttributeRobustness == VK_TRUE;
                 break;
             }
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_METERING_FEATURES_NV: {
+                const VkPhysicalDevicePresentMeteringFeaturesNV *enabled =
+                    reinterpret_cast<const VkPhysicalDevicePresentMeteringFeaturesNV *>(pNext);
+                features->presentMetering |= enabled->presentMetering == VK_TRUE;
+                break;
+            }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR: {
                 const VkPhysicalDeviceAccelerationStructureFeaturesKHR *enabled =
                     reinterpret_cast<const VkPhysicalDeviceAccelerationStructureFeaturesKHR *>(pNext);

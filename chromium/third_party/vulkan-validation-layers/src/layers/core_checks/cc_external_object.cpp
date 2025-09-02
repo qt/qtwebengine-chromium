@@ -23,14 +23,15 @@
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/fence_state.h"
 #include "state_tracker/semaphore_state.h"
+#include "generated/dispatch_functions.h"
 
 bool CoreChecks::CanSemaphoreExportFromImported(VkExternalSemaphoreHandleTypeFlagBits export_type,
                                                 VkExternalSemaphoreHandleTypeFlagBits imported_type) const {
     VkPhysicalDeviceExternalSemaphoreInfo semaphore_info = vku::InitStructHelper();
     semaphore_info.handleType = export_type;
     VkExternalSemaphoreProperties semaphore_properties = vku::InitStructHelper();
-    instance_state->DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(physical_device, &semaphore_info,
-                                                                               &semaphore_properties);
+    DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(api_version, physical_device, &semaphore_info,
+                                                               &semaphore_properties);
     return (imported_type & semaphore_properties.exportFromImportedHandleTypes) != 0;
 }
 
@@ -39,7 +40,7 @@ bool CoreChecks::CanFenceExportFromImported(VkExternalFenceHandleTypeFlagBits ex
     VkPhysicalDeviceExternalFenceInfo fence_info = vku::InitStructHelper();
     fence_info.handleType = export_type;
     VkExternalFenceProperties fence_properties = vku::InitStructHelper();
-    instance_state->DispatchGetPhysicalDeviceExternalFencePropertiesHelper(physical_device, &fence_info, &fence_properties);
+    DispatchGetPhysicalDeviceExternalFencePropertiesHelper(api_version, physical_device, &fence_info, &fence_properties);
     return (imported_type & fence_properties.exportFromImportedHandleTypes) != 0;
 }
 
@@ -320,7 +321,8 @@ void CoreChecks::PostCallRecordGetSemaphoreZirconHandleFUCHSIA(VkDevice device,
                                                                const VkSemaphoreGetZirconHandleInfoFUCHSIA *pGetZirconHandleInfo,
                                                                zx_handle_t *pZirconHandle, const RecordObject &record_obj) {
     if (VK_SUCCESS != record_obj.result) return;
-    RecordGetExternalSemaphoreState(pGetZirconHandleInfo->semaphore, pGetZirconHandleInfo->handleType);
+    auto semaphore_state = Get<vvl::Semaphore>(pGetZirconHandleInfo->semaphore);
+    RecordGetExternalSemaphoreState(*semaphore_state, pGetZirconHandleInfo->handleType);
 }
 #endif
 
@@ -642,7 +644,7 @@ bool CoreChecks::ValidateAllocateMemoryMetal(const VkMemoryAllocateInfo &allocat
         format_info.usage = image_state_ptr->safe_create_info.usage;
         VkExternalImageFormatProperties external_image_format_properties = vku::InitStructHelper();
         VkImageFormatProperties2 format_properties = vku::InitStructHelper(&external_image_format_properties);
-        instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(physical_device, &format_info, &format_properties);
+        DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &format_info, &format_properties);
 
         if ((external_image_format_properties.externalMemoryProperties.externalMemoryFeatures &
              VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0u) {

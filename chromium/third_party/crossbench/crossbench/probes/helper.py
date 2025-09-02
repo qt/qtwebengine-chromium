@@ -154,7 +154,7 @@ def merge_csv(csv_list: Sequence[LocalPath],
 def _merge_csv_prepare_row_headers(table: List[List[Any]],
                                    known_row_headers: Set[Tuple[str, ...]],
                                    csv_file: LocalPath, row_header_len: int,
-                                   delimiter: str):
+                                   delimiter: str) -> int:
   with csv_file.open(encoding="utf-8") as first_file:
     for csv_row in csv.reader(first_file, delimiter=delimiter):
       if row_header_len == -1:
@@ -179,7 +179,7 @@ def _detect_row_header_len(row: List[str]) -> int:
 
 def _merge_csv_append(csv_data: List[List[Any]], table: List[List[Any]],
                       table_headers, row_header_len: int, headers,
-                      known_row_headers, table_row_len):
+                      known_row_headers, table_row_len) -> int:
   # Find the max row width in added csv_data.
   max_csv_row_len = max(len(row) for row in csv_data) - row_header_len
   if table:

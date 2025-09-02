@@ -8,6 +8,8 @@ import abc
 import datetime as dt
 from typing import TYPE_CHECKING, List, Optional, Tuple, cast
 
+from typing_extensions import override
+
 from crossbench.action_runner.android_input_action_runner import \
     AndroidInputActionRunner
 from crossbench.action_runner.base import ActionRunner
@@ -33,6 +35,7 @@ PAGE_LIST: List[Page] = []
 class Page(Story, metaclass=abc.ABCMeta):
 
   @classmethod
+  @override
   def all_story_names(cls) -> Tuple[str, ...]:
     assert PAGE_LIST, "Missing predefined page list"
     # TODO: move all story names magic to the dedicated StoryFilter.
@@ -45,7 +48,7 @@ class Page(Story, metaclass=abc.ABCMeta):
                playback: PlaybackController = PlaybackController.default(),
                tabs: TabController = TabController.default(),
                about_blank_duration: dt.timedelta = dt.timedelta(),
-               secrets: Optional[Secrets] = None):
+               secrets: Optional[Secrets] = None) -> None:
     self._playback: PlaybackController = playback
     self._tabs: TabController = tabs
     self._about_blank_duration = about_blank_duration

@@ -1427,6 +1427,7 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetPrivateDataEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetPrivateDataEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetPrivateDataEXT);
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateCudaModuleNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateCudaModuleNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateCudaModuleNV);
@@ -1445,6 +1446,7 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdCudaLaunchKernelNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdCudaLaunchKernelNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdCudaLaunchKernelNV);
+#endif  // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_USE_PLATFORM_METAL_EXT
     BUILD_DISPATCH_VECTOR(PreCallValidateExportMetalObjectsEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordExportMetalObjectsEXT);
@@ -1846,6 +1848,9 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallRecordGetMemoryMetalHandlePropertiesEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetMemoryMetalHandlePropertiesEXT);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndRendering2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndRendering2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndRendering2EXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateCreateAccelerationStructureKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCreateAccelerationStructureKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCreateAccelerationStructureKHR);

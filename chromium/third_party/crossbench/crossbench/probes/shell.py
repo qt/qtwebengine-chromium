@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Optional, Type
+from typing import TYPE_CHECKING, Iterable, List, Optional, Self, Type
+
+from typing_extensions import override
 
 from crossbench.parse import ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
@@ -29,7 +31,8 @@ class ShellProbe(Probe):
   RESULT_LOCATION = ResultLocation.LOCAL
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "setup_cmd",
@@ -87,6 +90,7 @@ class ShellProbe(Probe):
         tuple(teardown_cmd) if teardown_cmd else ())
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("setup_cmd", tuple(map(str, self.stop_cmd))),
@@ -121,12 +125,14 @@ class ShellProbe(Probe):
   def teardown_cmd(self) -> TupleCmdArgs:
     return self._teardown_cmd
 
+  @override
   def validate_env(self, env: HostEnvironment) -> None:
     super().validate_env(env)
     if env.repetitions != 1:
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
+  @override
   def get_context_cls(self) -> Type[ShellProbeContext]:
     return ShellProbeContext
 
@@ -149,6 +155,7 @@ class ShellProbeContext(ProbeContext[ShellProbe]):
     with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
       self.browser_platform.sh(*cmd, shell=True, stdout=stdout, stderr=stderr)
 
+  @override
   def setup(self) -> None:
     self.host_platform.mkdir(self.local_result_path)
     self._maybe_run_cmd("setup", self.probe.setup_cmd)
@@ -156,9 +163,11 @@ class ShellProbeContext(ProbeContext[ShellProbe]):
   def start(self) -> None:
     self._maybe_run_cmd("start", self.probe.start_cmd)
 
+  @override
   def start_story_run(self) -> None:
     self._maybe_run_cmd("start_story_run", self.probe.start_story_run_cmd)
 
+  @override
   def stop_story_run(self) -> None:
     self._maybe_run_cmd("stop_story_run", self.probe.stop_story_run_cmd)
 

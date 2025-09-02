@@ -3,19 +3,20 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
+
 import dataclasses
 import enum
-import logging
-from typing import Any, Dict, Mapping, Optional, Sequence, Set
-
-from google.oauth2 import service_account
+from typing import Any, Mapping, Self, Sequence, Set
 
 import google.auth.transport.requests
-from google.auth.credentials import TokenState
 import requests
+from google.auth.credentials import TokenState
+from google.oauth2 import service_account
+from typing_extensions import override
 
 from crossbench.cli.config.secrets import ServiceAccount
 from crossbench.config import ConfigEnum, ConfigObject, ConfigParser
+from crossbench.helper import url_helper
 from crossbench.parse import NumberParser, ObjectParser
 
 
@@ -39,19 +40,17 @@ class AddBotsConfig(ConfigObject):
   video_fps: int
   mute_video: bool
   requested_layout: MeetLayout
-  video_file_path: Optional[str]
+  video_file_path: str | None
 
   @classmethod
-  def parse_str(cls, value: str) -> AddBotsConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     del value
     raise NotImplementedError("Cannot create AddBotsConfig from string")
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> AddBotsConfig:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def config_parser(cls) -> ConfigParser[AddBotsConfig]:
+  @override
+  def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument(
         "num_of_bots", type=NumberParser.positive_int, required=True)
@@ -129,7 +128,7 @@ class BondClient:
   _credentials: service_account.Credentials
   _meetings_with_bots: Set[str]
 
-  def __init__(self, secret: ServiceAccount):
+  def __init__(self, secret: ServiceAccount) -> None:
     self._credentials = service_account.Credentials.from_service_account_info(
         secret.to_json(), scopes=[SCOPE])
     self._meetings_with_bots = set()
@@ -144,19 +143,9 @@ class BondClient:
                        url: str,
                        body_json: Any,
                        retry: int = 3) -> requests.Response:
-    attempt = 0
-    while True:
-      try:
-        headers = self._get_request_headers()
-        response = requests.post(url, headers=headers, json=body_json)
-        response.raise_for_status()
-        return response
-      except Exception as e:
-        if attempt < retry:
-          logging.warning("BondClient POST request failed, retrying: %s", e)
-          attempt += 1
-          continue
-        raise e
+    headers = self._get_request_headers()
+    return url_helper.post(url, body_json, headers, retry)
+
 
   def create_meeting(self) -> str:
     request_body_json = {
@@ -192,7 +181,17 @@ class BondClient:
     self._meetings_with_bots.add(conference_code)
     return bot_ids
 
-  def remove_all_bots(self, conference_code: str):
+  def run_script(self, conference_code: str, script: str) -> None:
+    request_body_json = {
+        "script": script,
+        "conference": {
+            "conference_code": conference_code,
+        },
+    }
+    self._post_with_retry(f"{ENDPOINT}/v1/conference/{conference_code}/script",
+                          request_body_json)
+
+  def remove_all_bots(self, conference_code: str) -> None:
     request_body_json = {
         "conference": {
             "conference_code": conference_code,
@@ -204,7 +203,7 @@ class BondClient:
         f"{ENDPOINT}/v1/conference/{conference_code}/bots:remove",
         request_body_json)
 
-  def teardown(self):
+  def teardown(self) -> None:
     for conference_code in self._meetings_with_bots:
       self.remove_all_bots(conference_code)
     self._meetings_with_bots = set()

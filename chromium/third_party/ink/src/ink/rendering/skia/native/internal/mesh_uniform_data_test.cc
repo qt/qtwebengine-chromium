@@ -22,6 +22,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/log/absl_check.h"
+#include "absl/status/statusor.h"
 #include "ink/color/color.h"
 #include "ink/color/color_space.h"
 #include "ink/color/type_matchers.h"
@@ -225,7 +226,7 @@ struct MeshFormatAndSpecification {
 
 MeshFormatAndSpecification MakePackedPositionMeshFormatAndSpecification() {
   absl::StatusOr<MeshFormat> format =
-      MeshFormat::Create({{MeshFormat::AttributeType::kFloat2PackedIn1Float,
+      MeshFormat::Create({{MeshFormat::AttributeType::kFloat2PackedInOneFloat,
                            MeshFormat::AttributeId::kPosition}},
                          MeshFormat::IndexFormat::k16BitUnpacked16BitPacked);
   ABSL_CHECK_OK(format);

@@ -54,8 +54,8 @@
 
 [[maybe_unused]] static std::string string_VkRect2D(VkRect2D rect) {
     std::stringstream ss;
-    ss << "offset.x = " << rect.offset.x << ", offset.y = " << rect.offset.y << ", extent.width = " << rect.extent.width
-       << ", extent.height = " << rect.extent.height;
+    ss << "offset = {" << rect.offset.x << ", " << rect.offset.y << "}, extent = {" << rect.extent.width << ", "
+       << rect.extent.height << "}";
     return ss.str();
 }
 
@@ -83,6 +83,18 @@
     return ss.str();
 }
 
+[[maybe_unused]] static std::string string_LayerCount(const VkImageCreateInfo &ci, VkImageSubresourceLayers const &resource) {
+    std::stringstream ss;
+    if (resource.layerCount == VK_REMAINING_ARRAY_LAYERS) {
+        const uint32_t layer_count = ci.arrayLayers - resource.baseArrayLayer;
+        ss << "VK_REMAINING_ARRAY_LAYERS [arrayLayers (" << ci.arrayLayers << ") - baseArrayLayer (" << resource.baseArrayLayer
+           << ") = " << layer_count << "]";
+    } else {
+        ss << resource.layerCount;
+    }
+    return ss.str();
+}
+
 [[maybe_unused]] static std::string string_VkPushConstantRange(VkPushConstantRange range) {
     std::stringstream ss;
     ss << "range [" << range.offset << ", " << (range.offset + range.size) << ") for "
@@ -97,6 +109,22 @@
     return ss.str();
 }
 
+[[maybe_unused]] static std::string string_VkImageSubresourceLayers(VkImageSubresourceLayers subresource_layers) {
+    std::stringstream ss;
+    ss << "aspectMask = " << string_VkImageAspectFlags(subresource_layers.aspectMask)
+       << ", mipLevel = " << subresource_layers.mipLevel << ", baseArrayLayer = " << subresource_layers.baseArrayLayer
+       << ", layerCount = " << subresource_layers.layerCount;
+    return ss.str();
+}
+
+[[maybe_unused]] static std::string string_VkImageSubresourceRange(VkImageSubresourceRange subresource_range) {
+    std::stringstream ss;
+    ss << "aspectMask = " << string_VkImageAspectFlags(subresource_range.aspectMask)
+       << ", baseMipLevel = " << subresource_range.baseMipLevel << ", levelCount = " << subresource_range.levelCount
+       << ", baseArrayLayer = " << subresource_range.baseArrayLayer << ", layerCount = " << subresource_range.layerCount;
+    return ss.str();
+}
+
 [[maybe_unused]] static std::string string_VkComponentMapping(VkComponentMapping components) {
     std::stringstream ss;
     ss << "r swizzle = " << string_VkComponentSwizzle(components.r) << "\n";
@@ -107,3 +135,25 @@
 }
 
 [[maybe_unused]] static std::string string_VkBool32(VkBool32 value) { return value ? "VK_TRUE" : "VK_FALSE"; }
+
+// Some VUs use the subset in VkPhysicalDeviceImageFormatInfo2 to refer to an VkImageCreateInfo
+[[maybe_unused]] static std::string string_VkPhysicalDeviceImageFormatInfo2(VkPhysicalDeviceImageFormatInfo2 info) {
+    std::stringstream ss;
+    ss << "format (" << string_VkFormat(info.format) << ")\n";
+    ss << "type (" << string_VkImageType(info.type) << ")\n";
+    ss << "tiling (" << string_VkImageTiling(info.tiling) << ")\n";
+    ss << "usage (" << string_VkImageUsageFlags(info.usage) << ")\n";
+    ss << "flags (" << string_VkImageCreateFlags(info.flags) << ")\n";
+    return ss.str();
+}
+
+// Same thing as VkPhysicalDeviceImageFormatInfo2 but given the actual VkImageCreateInfo
+[[maybe_unused]] static std::string string_VkPhysicalDeviceImageFormatInfo2(VkImageCreateInfo info) {
+    std::stringstream ss;
+    ss << "format (" << string_VkFormat(info.format) << ")\n";
+    ss << "type (" << string_VkImageType(info.imageType) << ")\n";
+    ss << "tiling (" << string_VkImageTiling(info.tiling) << ")\n";
+    ss << "usage (" << string_VkImageUsageFlags(info.usage) << ")\n";
+    ss << "flags (" << string_VkImageCreateFlags(info.flags) << ")\n";
+    return ss.str();
+}

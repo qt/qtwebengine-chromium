@@ -333,7 +333,8 @@ void FindBestEndpointConnections(
         return true;
       });
 
-  if (best_first_point_connection_length <= polyline.max_connection_distance) {
+  if (best_first_point_connection_length <= polyline.max_connection_distance &&
+      !std::isinf(best_first_point_connection_length)) {
     polyline.connect_first = true;
     polyline.new_first_point =
         polyline.segments[best_first_point_connection.index_int].segment.Lerp(
@@ -372,7 +373,8 @@ void FindBestEndpointConnections(
         return true;
       });
 
-  if (best_last_point_connection_length <= polyline.max_connection_distance) {
+  if (best_last_point_connection_length <= polyline.max_connection_distance &&
+      !std::isinf(best_last_point_connection_length)) {
     polyline.connect_last = true;
     polyline.new_last_point =
         polyline.segments[best_last_point_connection.index_int].segment.Lerp(
@@ -457,8 +459,17 @@ std::vector<Point> ProcessPolylineForMeshCreation(
 }
 
 std::vector<Point> CreateClosedShape(absl::Span<const Point> points) {
+  if (points.size() < 3) {
+    return std::vector<Point>(points.begin(), points.end());
+  }
   PolylineData polyline = CreateNewPolylineData(points);
-
+  if (polyline.segments.size() < 2) {
+    if (polyline.segments.size() == 1) {
+      return {polyline.segments.front().segment.start,
+              polyline.segments.front().segment.end};
+    }
+    return {points.front()};
+  }
   // Calculate the total walk distance of the polyline.
   for (size_t i = 0; i < polyline.segments.size(); ++i) {
     polyline.total_walk_distance += polyline.segments[i].length;

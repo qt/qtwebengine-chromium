@@ -23,28 +23,24 @@
 namespace gpuav {
 namespace spirv {
 
+const static OfflineLinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, "inst_ray_query"};
+
+RayQueryPass::RayQueryPass(Module& module) : Pass(module) { module.use_bda_ = true; }
+
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
-uint32_t RayQueryPass::GetLinkFunctionId() {
-    static LinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, 0, "inst_ray_query"};
+uint32_t RayQueryPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
 
-    if (link_function_id == 0) {
-        link_function_id = module_.TakeNextId();
-        link_info.function_id = link_function_id;
-        module_.link_info_.push_back(link_info);
-    }
-    return link_function_id;
-}
-
-uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data) {
+uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
+                                          const InstructionMeta& meta) {
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
 
-    const uint32_t ray_flags_id = target_instruction_->Operand(2);
-    const uint32_t ray_origin_id = target_instruction_->Operand(4);
-    const uint32_t ray_tmin_id = target_instruction_->Operand(5);
-    const uint32_t ray_direction_id = target_instruction_->Operand(6);
-    const uint32_t ray_tmax_id = target_instruction_->Operand(7);
+    const uint32_t ray_flags_id = meta.target_instruction->Operand(2);
+    const uint32_t ray_origin_id = meta.target_instruction->Operand(4);
+    const uint32_t ray_tmin_id = meta.target_instruction->Operand(5);
+    const uint32_t ray_direction_id = meta.target_instruction->Operand(6);
+    const uint32_t ray_tmax_id = meta.target_instruction->Operand(7);
 
     block.CreateInstruction(spv::OpFunctionCall,
                             {bool_type, function_result, function_def, injection_data.inst_position_id,
@@ -54,16 +50,57 @@ uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst
     return function_result;
 }
 
-void RayQueryPass::Reset() { target_instruction_ = nullptr; }
-
-bool RayQueryPass::RequiresInstrumentation(const Function& function, const Instruction& inst) {
+bool RayQueryPass::RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta) {
     (void)function;
     const uint32_t opcode = inst.Opcode();
     if (opcode != spv::OpRayQueryInitializeKHR) {
         return false;
     }
-    target_instruction_ = &inst;
+    meta.target_instruction = &inst;
     return true;
+}
+
+bool RayQueryPass::Instrument() {
+    // Can safely loop function list as there is no injecting of new Functions until linking time
+    for (const auto& function : module_.functions_) {
+        if (function->instrumentation_added_) continue;
+        for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
+            BasicBlock& current_block = **block_it;
+
+            cf_.Update(current_block);
+            if (debug_disable_loops_ && cf_.in_loop) continue;
+
+            if (current_block.IsLoopHeader()) {
+                continue;  // Currently can't properly handle injecting CFG logic into a loop header block
+            }
+            auto& block_instructions = current_block.instructions_;
+
+            for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
+                InstructionMeta meta;
+                // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+
+                if (IsMaxInstrumentationsCount()) continue;
+                instrumentations_count_++;
+
+                InjectionData injection_data = GetInjectionData(*function, current_block, inst_it, *meta.target_instruction);
+
+                if (module_.settings_.unsafe_mode) {
+                    CreateFunctionCall(current_block, &inst_it, injection_data, meta);
+                } else {
+                    InjectConditionalData ic_data = InjectFunctionPre(*function.get(), block_it, inst_it);
+                    ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, injection_data, meta);
+                    InjectFunctionPost(current_block, ic_data);
+                    // Skip the newly added valid and invalid block. Start searching again from newly split merge block
+                    block_it++;
+                    block_it++;
+                    break;
+                }
+            }
+        }
+    }
+
+    return instrumentations_count_ != 0;
 }
 
 void RayQueryPass::PrintDebugInfo() const {

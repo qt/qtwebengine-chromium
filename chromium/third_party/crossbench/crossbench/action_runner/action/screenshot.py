@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from typing_extensions import override
+
 from crossbench.action_runner.action.action import Action
 from crossbench.action_runner.action.action_type import ActionType
 
@@ -17,5 +19,6 @@ if TYPE_CHECKING:
 class ScreenshotAction(Action):
   TYPE: ActionType = ActionType.SCREENSHOT
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner) -> None:
     action_runner.screenshot(run, self)

@@ -2,6 +2,7 @@
  * Copyright (c) 2015-2019 The Khronos Group Inc.
  * Copyright (c) 2015-2019 Valve Corporation
  * Copyright (c) 2015-2019 LunarG, Inc.
+ * Copyright (c) 2025 The Fuchsia Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
  * Author: Charles Giessen <charles@lunarg.com>
  */
 
+#include <algorithm>
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
@@ -40,6 +42,15 @@
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR)
 #include <linux/input.h>
 #include "wayland_loader.h"
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+#include <fidl/fuchsia.ui.app/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
+#include <lib/zx/result.h>
+
+#include "fuchsia/flatland_view.h"
 #endif
 
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
@@ -212,6 +223,8 @@ enum class WsiPlatform {
     wayland,
     directfb,
     display,
+    fuchsia_display,
+    fuchsia_scenic,
     invalid,  // Sentinel just to indicate invalid user input
 };
 
@@ -243,6 +256,10 @@ WsiPlatform wsi_from_string(std::string const &str) {
 #endif
 #if defined(VK_USE_PLATFORM_DISPLAY_KHR)
     if (str == "display") return WsiPlatform::display;
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+    if (str == "fuchsia_display") return WsiPlatform::fuchsia_display;
+    if (str == "fuchsia_scenic") return WsiPlatform::fuchsia_scenic;
 #endif
     return WsiPlatform::invalid;
 };
@@ -286,6 +303,12 @@ const char *wsi_to_string(WsiPlatform wsi_platform) {
 #if defined(VK_USE_PLATFORM_DISPLAY_KHR)
         case (WsiPlatform::display):
             return "display";
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        case (WsiPlatform::fuchsia_display):
+            return "fuchsia_display";
+        case (WsiPlatform::fuchsia_scenic):
+            return "fuchsia_scenic";
 #endif
         default:
             return "unknown";
@@ -389,6 +412,12 @@ struct Demo {
     void run();
     void create_window();
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+    // Returns a layer name of static storage duration.
+    const char *get_fuchsia_image_pipe_layer() const;
+    void create_flatland_view();
+    void run();
+#endif
 
     std::string name = "vkcubepp";  // Name to put on the window/icon
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -438,6 +467,14 @@ struct Demo {
     screen_window_t screen_window = nullptr;
     screen_event_t screen_event = nullptr;
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+    fuchsia_ui_views::ViewCreationToken view_creation_token;
+    async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
+    fidl::ClientEnd<fuchsia_io::Directory> incoming;
+    std::unique_ptr<component::OutgoingDirectory> outgoing;
+    std::unique_ptr<FlatlandViewProviderService> view_provider_service;
+    std::unique_ptr<FlatlandView> flatland_view;
+#endif
     WsiPlatform wsi_platform = WsiPlatform::auto_;
     vk::SurfaceKHR surface;
     bool prepared = false;
@@ -445,6 +482,10 @@ struct Demo {
     bool separate_present_queue = false;
     bool invalid_gpu_selection = false;
     int32_t gpu_number = 0;
+
+    // If true, the Demo renders on the protected memory. This requires the
+    // physical device to support protected memory.
+    bool protected_output = false;
 
     vk::Instance inst;
     vk::DebugUtilsMessengerEXT debug_messenger;
@@ -762,14 +803,16 @@ void Demo::create_device() {
     float priorities = 0.0;
 
     std::vector<vk::DeviceQueueCreateInfo> queues;
-    queues.push_back(vk::DeviceQueueCreateInfo().setQueueFamilyIndex(graphics_queue_family_index).setQueuePriorities(priorities));
+    const vk::DeviceQueueCreateFlags queue_create_flags = protected_output ? vk::DeviceQueueCreateFlagBits::eProtected : vk::DeviceQueueCreateFlags{};
+    queues.push_back(vk::DeviceQueueCreateInfo().setQueueFamilyIndex(graphics_queue_family_index).setQueuePriorities(priorities).setFlags(queue_create_flags));
 
     if (separate_present_queue) {
         queues.push_back(
             vk::DeviceQueueCreateInfo().setQueueFamilyIndex(present_queue_family_index).setQueuePriorities(priorities));
     }
 
-    auto deviceInfo = vk::DeviceCreateInfo().setQueueCreateInfos(queues).setPEnabledExtensionNames(enabled_device_extensions);
+    auto const protected_memory_features = vk::PhysicalDeviceProtectedMemoryFeatures().setProtectedMemory(protected_output);
+    auto deviceInfo = vk::DeviceCreateInfo().setPNext(protected_output ? &protected_memory_features : nullptr).setQueueCreateInfos(queues).setPEnabledExtensionNames(enabled_device_extensions);
     auto device_return = gpu.createDevice(deviceInfo);
     VERIFY(device_return.result == vk::Result::eSuccess);
     device = device_return.value;
@@ -817,8 +860,10 @@ void Demo::draw() {
     // engine has fully released ownership to the application, and it is
     // okay to render to the image.
     vk::PipelineStageFlags const pipe_stage_flags = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    auto protected_submit_info = vk::ProtectedSubmitInfo().setProtectedSubmit(protected_output);
 
     auto submit_result = graphics_queue.submit(vk::SubmitInfo()
+                                                   .setPNext(protected_output ? &protected_submit_info : nullptr)
                                                    .setWaitDstStageMask(pipe_stage_flags)
                                                    .setWaitSemaphores(image_acquired_semaphores[frame_index])
                                                    .setCommandBuffers(swapchain_image_resources[current_buffer].cmd)
@@ -944,7 +989,10 @@ void Demo::draw_build_cmd(const SwapchainImageResources &swapchain_image_resourc
 }
 
 void Demo::prepare_init_cmd() {
-    auto cmd_pool_return = device.createCommandPool(vk::CommandPoolCreateInfo().setQueueFamilyIndex(graphics_queue_family_index));
+    vk::CommandPoolCreateFlags cmd_pool_create_flags =
+        protected_output ? vk::CommandPoolCreateFlagBits::eProtected : vk::CommandPoolCreateFlags{};
+    auto cmd_pool_return = device.createCommandPool(
+        vk::CommandPoolCreateInfo().setQueueFamilyIndex(graphics_queue_family_index).setFlags(cmd_pool_create_flags));
     VERIFY(cmd_pool_return.result == vk::Result::eSuccess);
     cmd_pool = cmd_pool_return.value;
 
@@ -972,7 +1020,8 @@ void Demo::flush_init_cmd() {
     VERIFY(fence_return.result == vk::Result::eSuccess);
     auto fence = fence_return.value;
 
-    result = graphics_queue.submit(vk::SubmitInfo().setCommandBuffers(cmd), fence);
+    auto const protected_submit_info = vk::ProtectedSubmitInfo().setProtectedSubmit(protected_output);
+    result = graphics_queue.submit(vk::SubmitInfo().setPNext(protected_output ? &protected_submit_info : nullptr).setCommandBuffers(cmd), fence);
     VERIFY(result == vk::Result::eSuccess);
 
     result = device.waitForFences(fence, VK_TRUE, UINT64_MAX);
@@ -1061,10 +1110,14 @@ void Demo::init(int argc, char **argv) {
             force_errors = true;
             continue;
         }
+        if (strcmp(argv[i], "--protected_output") == 0) {
+            protected_output = true;
+            continue;
+        }
         if ((strcmp(argv[i], "--wsi") == 0) && (i < argc - 1)) {
             std::string selection_input = argv[i + 1];
             for (char &c : selection_input) {
-                c = std::tolower(c);
+                c = static_cast<char>(std::tolower(c));
             }
             WsiPlatform selection = wsi_from_string(selection_input);
             if (selection == WsiPlatform::invalid) {
@@ -1116,6 +1169,12 @@ void Demo::init(int argc, char **argv) {
         if (!wsi_platforms.empty()) wsi_platforms.append("|");
         wsi_platforms.append("qnx");
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        if (!wsi_platforms.empty()) wsi_platforms.append("|");
+        wsi_platforms.append("fuchsia_display");
+        if (!wsi_platforms.empty()) wsi_platforms.append("|");
+        wsi_platforms.append("fuchsia_scenic");
+#endif
         std::stringstream usage;
         usage << "Usage:\n  " << APP_SHORT_NAME << "\t[--use_staging] [--validate]\n"
               << "\t[--break] [--c <framecount>] [--suppress_popups]\n"
@@ -1123,6 +1182,7 @@ void Demo::init(int argc, char **argv) {
               << "\t[--present_mode <present mode enum>]\n"
               << "\t[--width <width>] [--height <height>]\n"
               << "\t[--force_errors]\n"
+              << "\t[--protected_output]\n"
               << "\t[--wsi <" << wsi_platforms << ">]\n"
               << "\t<present_mode_enum>\n"
               << "\t\tVK_PRESENT_MODE_IMMEDIATE_KHR = " << VK_PRESENT_MODE_IMMEDIATE_KHR << "\n"
@@ -1327,6 +1387,11 @@ void Demo::check_and_set_wsi_platform() {
         }
     }
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+    if (wsi_platform == WsiPlatform::auto_) {
+        ERR_EXIT("auto WSI platform is not supported on Fuchsia", "check_and_set_wsi_platform error");
+    }
+#endif
 }
 #if defined(VK_USE_PLATFORM_DISPLAY_KHR)
 int find_display_gpu(int gpu_number, const std::vector<vk::PhysicalDevice> &physical_devices) {
@@ -1453,6 +1518,17 @@ void Demo::init_vk() {
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 
+    uint32_t apiVersion = 0;
+    vk::Result enumerate_instance_version_result = vk::enumerateInstanceVersion(&apiVersion);
+    if (protected_output) {
+        if (enumerate_instance_version_result != vk::Result::eSuccess) {
+            ERR_EXIT("Failed to query instance version.", "vkCreateInstance Failure");
+        }
+        if (apiVersion < VK_MAKE_VERSION(1, 1, 0)) {
+            ERR_EXIT("Need Vulkan 1.1 instance for protected output.", "vkCreateInstance Failure");
+        }
+    }
+
     std::vector<char const *> instance_validation_layers = {"VK_LAYER_KHRONOS_validation"};
 
     // Look for validation layers
@@ -1479,7 +1555,19 @@ void Demo::init_vk() {
     vk::Bool32 platformSurfaceExtFound = VK_FALSE;
     bool portabilityEnumerationActive = false;
 
-    auto instance_extensions_return = vk::enumerateInstanceExtensionProperties();
+    // Some platforms (for example, Fuchsia) may have their WSI instance
+    // extension in layers and require the client to manually specify the
+    // instance extension layer.
+    vk::Optional<const std::string> instance_extension_layer = nullptr;
+#if VK_USE_PLATFORM_FUCHSIA
+    const char *image_pipe_layer_name = get_fuchsia_image_pipe_layer();
+    enabled_layers.push_back(image_pipe_layer_name);
+
+    const std::string image_pipe_layer_name_str = image_pipe_layer_name;
+    instance_extension_layer = image_pipe_layer_name_str;
+#endif  // VK_USE_PLATFORM_FUCHSIA
+
+    auto instance_extensions_return = vk::enumerateInstanceExtensionProperties(instance_extension_layer);
     VERIFY(instance_extensions_return.result == vk::Result::eSuccess);
 
     for (const auto &extension : instance_extensions_return.value) {
@@ -1551,6 +1639,12 @@ void Demo::init_vk() {
                  (wsi_platform == WsiPlatform::auto_ || wsi_platform == WsiPlatform::qnx)) {
             platformSurfaceExtFound = 1;
             enabled_instance_extensions.push_back(VK_QNX_SCREEN_SURFACE_EXTENSION_NAME);
+        }
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        else if (!strcmp(VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME, extension.extensionName)) {
+            platformSurfaceExtFound = 1;
+            enabled_instance_extensions.push_back(VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME);
         }
 #endif
     }
@@ -1631,6 +1725,16 @@ void Demo::init_vk() {
 #if defined(VK_USE_PLATFORM_SCREEN_QNX)
         if (wsi_platform == WsiPlatform::qnx) {
             ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_QNX_SCREEN_SURFACE_EXTENSION_NAME
+                     " extension.\n\nDo you have a compatible "
+                     "Vulkan installable client driver (ICD) installed?\nPlease "
+                     "look at the Getting Started guide for additional "
+                     "information.\n",
+                     "vkCreateInstance Failure");
+        }
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        if (wsi_platform == WsiPlatform::fuchsia_display || wsi_platform == WsiPlatform::fuchsia_scenic) {
+            ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME
                      " extension.\n\nDo you have a compatible "
                      "Vulkan installable client driver (ICD) installed?\nPlease "
                      "look at the Getting Started guide for additional "
@@ -1780,7 +1884,22 @@ void Demo::select_physical_device() {
     /* Look for device extensions */
     vk::Bool32 swapchainExtFound = VK_FALSE;
 
-    auto device_extension_return = gpu.enumerateDeviceExtensionProperties();
+    // Some platforms (for example, Fuchsia) may have their device swapchain
+    // extension in layers and require the client to manually specify the
+    // device swapchain extension layer.
+    vk::Optional<const std::string> device_extension_layer = nullptr;
+#if VK_USE_PLATFORM_FUCHSIA
+    const std::string image_pipe_layer_name = get_fuchsia_image_pipe_layer();
+    device_extension_layer = image_pipe_layer_name;
+#endif  // VK_USE_PLATFORM_FUCHSIA
+
+    // Currently we assume that the device swapchain extension layer is always
+    // enabled when the instance is initialized.
+    assert((!device_extension_layer) || (std::any_of(enabled_layers.begin(), enabled_layers.end(), [&](const char *layer_name) {
+               return *device_extension_layer == layer_name;
+           })));
+
+    auto device_extension_return = gpu.enumerateDeviceExtensionProperties(device_extension_layer);
     VERIFY(device_extension_return.result == vk::Result::eSuccess);
 
     for (const auto &extension : device_extension_return.value) {
@@ -1801,6 +1920,10 @@ void Demo::select_physical_device() {
     }
 
     gpu.getProperties(&gpu_props);
+
+    if (protected_output && gpu_props.apiVersion < VK_MAKE_VERSION(1, 1, 0)) {
+        ERR_EXIT("Need Vulkan 1.1 physical device for protected output.", "VkPhysicalDevice failure");
+    }
 
     /* Call with nullptr data to get count */
     queue_props = gpu.getQueueFamilyProperties();
@@ -1879,6 +2002,21 @@ void Demo::create_surface() {
         VERIFY(result == vk::Result::eSuccess);
     }
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+    if (wsi_platform == WsiPlatform::fuchsia_display) {
+        auto createInfo = vk::ImagePipeSurfaceCreateInfoFUCHSIA();
+        auto result = inst.createImagePipeSurfaceFUCHSIA(&createInfo, nullptr, &surface);
+        VERIFY(result == vk::Result::eSuccess);
+    }
+    if (wsi_platform == WsiPlatform::fuchsia_scenic) {
+        auto createInfo = vk::ImagePipeSurfaceCreateInfoFUCHSIA();
+        // We are using ImagePipeSurface here, but it is being migrated to Flatland and the handle parameter is Flatland's
+        // ViewCreationToken during this process.
+        createInfo.setImagePipeHandle(std::move(view_creation_token).value().release());
+        auto result = inst.createImagePipeSurfaceFUCHSIA(&createInfo, nullptr, &surface);
+        VERIFY(result == vk::Result::eSuccess);
+    }
+#endif
 }
 
 void Demo::init_vk_swapchain() {
@@ -1929,7 +2067,16 @@ void Demo::init_vk_swapchain() {
 
     create_device();
 
-    graphics_queue = device.getQueue(graphics_queue_family_index, 0);
+    if (protected_output) {
+        auto const queue_info2 = vk::DeviceQueueInfo2()
+                                     .setFlags(vk::DeviceQueueCreateFlagBits::eProtected)
+                                     .setQueueFamilyIndex(graphics_queue_family_index)
+                                     .setQueueIndex(0);
+        device.getQueue2(&queue_info2, &graphics_queue);
+    } else {
+        graphics_queue = device.getQueue(graphics_queue_family_index, 0);
+    }
+
     if (!separate_present_queue) {
         present_queue = graphics_queue;
     } else {
@@ -2157,6 +2304,8 @@ void Demo::prepare_buffers() {
         }
     }
 
+    const vk::SwapchainCreateFlagsKHR swapchain_create_flags =
+        protected_output ? vk::SwapchainCreateFlagBitsKHR::eProtected : vk::SwapchainCreateFlagsKHR{};
     auto swapchain_return = device.createSwapchainKHR(vk::SwapchainCreateInfoKHR()
                                                           .setSurface(surface)
                                                           .setMinImageCount(desiredNumOfSwapchainImages)
@@ -2170,7 +2319,8 @@ void Demo::prepare_buffers() {
                                                           .setCompositeAlpha(compositeAlpha)
                                                           .setPresentMode(swapchainPresentMode)
                                                           .setClipped(true)
-                                                          .setOldSwapchain(oldSwapchain));
+                                                          .setOldSwapchain(oldSwapchain)
+                                                          .setFlags(swapchain_create_flags));
     VERIFY(swapchain_return.result == vk::Result::eSuccess);
     swapchain = swapchain_return.value;
 
@@ -2394,7 +2544,11 @@ void Demo::prepare_framebuffers() {
 
 vk::ShaderModule Demo::prepare_fs() {
     const uint32_t fragShaderCode[] = {
+#ifdef CUBE_FRAG_INC
+#include CUBE_FRAG_INC
+#else
 #include "cube.frag.inc"
+#endif
     };
 
     frag_shader_module = prepare_shader_module(fragShaderCode, sizeof(fragShaderCode));
@@ -2689,7 +2843,7 @@ void Demo::prepare_textures() {
                              textures[i].imageLayout, vk::AccessFlagBits::eTransferWrite, vk::PipelineStageFlagBits::eTransfer,
                              vk::PipelineStageFlagBits::eFragmentShader);
         } else {
-            assert(!"No support for R8G8B8A8_SRGB as texture image format");
+            assert(false && "No support for R8G8B8A8_SRGB as texture image format");
         }
 
         auto const samplerInfo = vk::SamplerCreateInfo()
@@ -2725,7 +2879,11 @@ void Demo::prepare_textures() {
 
 vk::ShaderModule Demo::prepare_vs() {
     const uint32_t vertShaderCode[] = {
+#ifdef CUBE_VERT_INC
+#include CUBE_VERT_INC
+#else
 #include "cube.vert.inc"
+#endif
     };
 
     vert_shader_module = prepare_shader_module(vertShaderCode, sizeof(vertShaderCode));
@@ -2857,7 +3015,11 @@ void Demo::update_data_buffer() {
 }
 
 /* Convert ppm image data from header file into RGBA texture image */
+#ifdef TEXTURE_PPM_H
+#include TEXTURE_PPM_H
+#else
 #include "lunarg.ppm.h"
+#endif
 bool Demo::loadTexture(const char *filename, uint8_t *rgba_data, vk::SubresourceLayout &layout, uint32_t &width, uint32_t &height) {
     (void)filename;
     char *cPtr;
@@ -3637,6 +3799,115 @@ void Demo::create_window() {
     }
 }
 #endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+
+const char *Demo::get_fuchsia_image_pipe_layer() const {
+    switch (wsi_platform) {
+        case (WsiPlatform::fuchsia_display):
+            return "VK_LAYER_FUCHSIA_imagepipe_swapchain_fb";
+        case (WsiPlatform::fuchsia_scenic):
+            return "VK_LAYER_FUCHSIA_imagepipe_swapchain";
+        case (WsiPlatform::auto_):
+            ERR_EXIT("auto WSI platform is not supported on Fuchsia", "get_fuchsia_image_pipe_layer failure");
+        default:
+            ERR_EXIT("Invalid WSI platform", "get_fuchsia_image_pipe_layer failure");
+    }
+}
+
+void Demo::create_flatland_view() {
+    if (flatland_view) return;
+
+    zx::result<fidl::ClientEnd<fuchsia_io::Directory> > incoming_result = component::OpenServiceRoot();
+    if (incoming_result.is_error()) {
+        printf("Failed to open incoming directory: %s\n", incoming_result.status_string());
+        ERR_EXIT("Failed to open incoming directory", "create_flatland_view failure");
+    }
+    incoming = std::move(incoming_result).value();
+
+    outgoing = std::make_unique<component::OutgoingDirectory>(loop.dispatcher());
+
+    FlatlandViewProviderService::CreateView2Callback create_view_callback = [this](fuchsia_ui_app::CreateView2Args args) {
+        auto resize_callback = [this](uint32_t width, uint32_t height) {
+            this->width = width;
+            this->height = height;
+            if (prepared) {
+                resize();
+            }
+        };
+
+        flatland_view =
+            FlatlandView::Create(incoming.borrow(), std::move(*args.view_creation_token()), resize_callback, loop.dispatcher());
+        if (!flatland_view) ERR_EXIT("Failed to created FlatlandView", "create_flatland_view failure");
+
+        view_creation_token = flatland_view->TakeChildViewCreationToken();
+    };
+
+    view_provider_service = std::make_unique<FlatlandViewProviderService>(std::move(create_view_callback), loop.dispatcher());
+
+    zx::result<> add_protocol_result = outgoing->AddUnmanagedProtocol<fuchsia_ui_app::ViewProvider>(
+        [view_provider_service = view_provider_service.get()](fidl::ServerEnd<fuchsia_ui_app::ViewProvider> server_end) {
+            view_provider_service->HandleViewProviderRequest(std::move(server_end));
+        });
+    if (add_protocol_result.is_error()) {
+        printf("Failed to add protocol to outgoing directory: %s\n", add_protocol_result.status_string());
+        ERR_EXIT("Failed to add protocol to outgoing directory", "create_flatland_view failure");
+    }
+
+    zx::result<> serve_result = outgoing->ServeFromStartupInfo();
+    if (serve_result.is_error()) {
+        printf("Failed to serve outgoing directory: %s\n", serve_result.status_string());
+        ERR_EXIT("Failed to serve outgoing directory", "create_flatland_view failure");
+    }
+
+    zx_status_t loop_status = ZX_OK;
+
+    // Run message loop until view has been created.
+    while (!quit && !flatland_view && loop_status == ZX_OK) {
+        loop_status = loop.RunUntilIdle();
+    }
+}
+
+void Demo::run() {
+    uint32_t num_frames = 60;
+    uint32_t elapsed_frames = 0;
+    static const float kMsPerSec = 1000;
+
+    double total_ms = 0;
+    auto t0 = std::chrono::high_resolution_clock::now();
+
+    while (!quit) {
+        if (wsi_platform == WsiPlatform::fuchsia_scenic) {
+            if (loop.RunUntilIdle() != ZX_OK) {
+                break;
+            }
+        }
+        auto t1 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = t1 - t0;
+        total_ms += elapsed.count();
+        t0 = t1;
+
+        if (elapsed_frames && (elapsed_frames % num_frames) == 0) {
+            float fps = static_cast<float>(num_frames / (total_ms / kMsPerSec));
+            printf("Framerate average for last %u frames: %f frames per second\n", num_frames, fps);
+            fflush(stdout);
+            total_ms = 0;
+            // attempt to log once per second
+            num_frames = static_cast<uint32_t>(fps);
+            elapsed_frames = 0;
+        }
+
+        draw();
+
+        curFrame++;
+        elapsed_frames++;
+
+        if (frameCount != UINT32_MAX && curFrame == frameCount) {
+            quit = true;
+        }
+    }
+}
+
+#endif
 
 #if _WIN32
 // Include header required for parsing the command line options.
@@ -3784,7 +4055,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
     return static_cast<int>(msg.wParam);
 }
 
-#elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__QNX__) || defined(__GNU__)
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__QNX__) || defined(__GNU__) || \
+    defined(__Fuchsia__)
 
 int main(int argc, char **argv) {
     Demo demo;
@@ -3827,6 +4099,14 @@ int main(int argc, char **argv) {
 #if defined(VK_USE_PLATFORM_DISPLAY_KHR)
         case (WsiPlatform::display):
             // nothing to do here
+            break;
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        case (WsiPlatform::fuchsia_display):
+            // nothing to do here
+            break;
+        case (WsiPlatform::fuchsia_scenic):
+            demo.create_flatland_view();
             break;
 #endif
     }
@@ -3874,6 +4154,12 @@ int main(int argc, char **argv) {
 #endif
 #if defined(VK_USE_PLATFORM_SCREEN_QNX)
         case (WsiPlatform::qnx):
+            demo.run();
+            break;
+#endif
+#if defined(VK_USE_PLATFORM_FUCHSIA)
+        case (WsiPlatform::fuchsia_display):
+        case (WsiPlatform::fuchsia_scenic):
             demo.run();
             break;
 #endif

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Dict
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
-pattern = re.compile(
+pattern: re.Pattern[str] = re.compile(
     r"(?P<name>[^\(\)]) \((?P<version>[0-9\.]+)\) \((?P<uuid>[0-9A-Z-]+)\)")
 
 

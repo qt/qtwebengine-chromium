@@ -19,14 +19,12 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <optional>
 #include <utility>
 #include <vector>
 
 #include "fuzztest/fuzztest.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_behavior.h"
@@ -42,20 +40,17 @@
 #include "ink/geometry/point.h"
 #include "ink/geometry/vec.h"
 #include "ink/types/fuzz_domains.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace {
 
 using fuzztest::Arbitrary;
-using fuzztest::ArrayOf;
 using fuzztest::Domain;
 using fuzztest::ElementOf;
 using fuzztest::Filter;
 using fuzztest::Finite;
 using fuzztest::FlatMap;
 using fuzztest::InRange;
-using fuzztest::InRegexp;
 using fuzztest::Just;
 using fuzztest::Map;
 using fuzztest::NonNegative;
@@ -232,6 +227,7 @@ Domain<BrushBehavior::Target> ArbitraryBrushBehaviorTarget() {
       BrushBehavior::Target::kPositionOffsetYInMultiplesOfBrushSize,
       BrushBehavior::Target::kPositionOffsetForwardInMultiplesOfBrushSize,
       BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize,
+      BrushBehavior::Target::kTextureAnimationProgressOffset,
       BrushBehavior::Target::kHueOffsetInRadians,
       BrushBehavior::Target::kSaturationMultiplier,
       BrushBehavior::Target::kLuminosity,
@@ -239,6 +235,17 @@ Domain<BrushBehavior::Target> ArbitraryBrushBehaviorTarget() {
   });
 }
 // LINT.ThenChange(brush_behavior.h:target)
+
+// LINT.IfChange(polar_target)
+Domain<BrushBehavior::PolarTarget> ArbitraryBrushBehaviorPolarTarget() {
+  return ElementOf({
+      BrushBehavior::PolarTarget::
+          kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize,
+      BrushBehavior::PolarTarget::
+          kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize,
+  });
+}
+// LINT.ThenChange(brush_behavior.h:polar_target)
 
 // LINT.IfChange(predefined)
 Domain<EasingFunction::Predefined> ArbitraryEasingFunctionPredefined() {
@@ -345,6 +352,12 @@ Domain<BrushBehavior::TargetNode> ValidBrushBehaviorTargetNode() {
                                              ArrayOfTwoFiniteDistinctFloats());
 }
 
+Domain<BrushBehavior::PolarTargetNode> ValidBrushBehaviorPolarTargetNode() {
+  return StructOf<BrushBehavior::PolarTargetNode>(
+      ArbitraryBrushBehaviorPolarTarget(), ArrayOfTwoFiniteDistinctFloats(),
+      ArrayOfTwoFiniteDistinctFloats());
+}
+
 // Casts a domain over a specific node type (e.g. `SourceNode`) into a domain
 // over `Node`.
 template <typename T>
@@ -406,23 +419,38 @@ ValidBrushBehaviorNodeSubtreeWithMaxDepth(int max_depth) {
           smaller_subtree, smaller_subtree, ValidBrushBehaviorBinaryOpNode()));
 }
 
-// A domain over all valid behavior node trees (i.e. with a target node at the
+// A domain over all valid behavior node trees (i.e. with a terminal node at the
 // root).
 Domain<std::vector<BrushBehavior::Node>> ValidBrushBehaviorNodeTree() {
-  return Map(
-      [](const std::vector<BrushBehavior::Node>& input,
-         const BrushBehavior::TargetNode& node) {
-        std::vector<BrushBehavior::Node> result = input;
-        result.push_back(node);
-        return result;
-      },
-      // Arbitrarily limit the tree depth to prevent resource exhaustion.
-      ValidBrushBehaviorNodeSubtreeWithMaxDepth(5),
-      ValidBrushBehaviorTargetNode());
+  return OneOf(
+      Map(
+          [](const std::vector<BrushBehavior::Node>& input,
+             const BrushBehavior::TargetNode& node) {
+            std::vector<BrushBehavior::Node> result = input;
+            result.push_back(node);
+            return result;
+          },
+          // Arbitrarily limit the tree depth to prevent resource exhaustion.
+          ValidBrushBehaviorNodeSubtreeWithMaxDepth(5),
+          ValidBrushBehaviorTargetNode()),
+      Map(
+          [](const std::vector<BrushBehavior::Node>& angle_input,
+             const std::vector<BrushBehavior::Node>& magnitude_input,
+             const BrushBehavior::PolarTargetNode& node) {
+            std::vector<BrushBehavior::Node> result = angle_input;
+            result.insert(result.end(), magnitude_input.begin(),
+                          magnitude_input.end());
+            result.push_back(node);
+            return result;
+          },
+          // Arbitrarily limit the tree depth to prevent resource exhaustion.
+          ValidBrushBehaviorNodeSubtreeWithMaxDepth(5),
+          ValidBrushBehaviorNodeSubtreeWithMaxDepth(5),
+          ValidBrushBehaviorPolarTargetNode()));
 }
 
 // A domain over all valid behavior node forests (i.e. containing zero or more
-// complete trees, each with a target node at the root).
+// complete trees, each with a terminal node at the root).
 Domain<std::vector<BrushBehavior::Node>> ValidBrushBehaviorNodeForest() {
   return Map(
       [](const std::vector<std::vector<BrushBehavior::Node>>& trees) {
@@ -449,18 +477,6 @@ Domain<Brush> ArbitraryBrush() {
       PairOfFinitePositiveAscendingFloats());
 }
 
-Domain<Brush> BrushWithoutUri() {
-  return Map(
-      [](const BrushFamily& family, const Color& color,
-         std::pair<float, float> size_and_epsilon) {
-        return Brush::Create(family, color, size_and_epsilon.first,
-                             size_and_epsilon.second)
-            .value();
-      },
-      BrushFamilyWithoutUri(), ArbitraryColor(),
-      PairOfFinitePositiveAscendingFloats());
-}
-
 Domain<BrushBehavior> ValidBrushBehavior() {
   return StructOf<BrushBehavior>(ValidBrushBehaviorNodeForest());
 }
@@ -471,61 +487,29 @@ Domain<BrushBehavior::Node> ValidBrushBehaviorNode() {
       ValidBrushBehaviorNoiseNode(), ValidBrushBehaviorFallbackFilterNode(),
       ValidBrushBehaviorToolTypeFilterNode(), ValidBrushBehaviorDampingNode(),
       ValidBrushBehaviorResponseNode(), ValidBrushBehaviorBinaryOpNode(),
-      ValidBrushBehaviorInterpolationNode(), ValidBrushBehaviorTargetNode());
+      ValidBrushBehaviorInterpolationNode(), ValidBrushBehaviorTargetNode(),
+      ValidBrushBehaviorPolarTargetNode());
 }
 
 Domain<BrushCoat> ValidBrushCoat() {
-  return StructOf<BrushCoat>(
-      // TODO: b/285594469 - Once `BrushCoat` permits more than one tip per
-      // coat, generate coats with other numbers of tips.
-      VectorOf(ValidBrushTip()).WithSize(1), ValidBrushPaint());
+  return StructOf<BrushCoat>(ValidBrushTip(), ValidBrushPaint());
 }
 
 Domain<BrushFamily> ArbitraryBrushFamily() {
   return Map(
-      [](absl::Span<const BrushCoat> coats, const std::optional<Uri>& uri,
+      [](absl::Span<const BrushCoat> coats, const std::string id,
          const BrushFamily::InputModel& input_model) {
-        return BrushFamily::Create(coats, uri, input_model).value();
+        return BrushFamily::Create(coats, id, input_model).value();
       },
       VectorOf(ValidBrushCoat()).WithMaxSize(BrushFamily::MaxBrushCoats()),
-      OptionalOf(ValidBrushFamilyUri()), ValidBrushFamilyInputModel());
-}
-
-Domain<BrushFamily> BrushFamilyWithoutUri() {
-  return Map(
-      [](absl::Span<const BrushCoat> coats,
-         const BrushFamily::InputModel& input_model) {
-        return BrushFamily::Create(coats, std::nullopt, input_model).value();
-      },
-      VectorOf(ValidBrushCoat()).WithMaxSize(BrushFamily::MaxBrushCoats()),
-      ValidBrushFamilyInputModel());
+      Arbitrary<std::string>(), ValidBrushFamilyInputModel());
 }
 
 Domain<BrushFamily::InputModel> ValidBrushFamilyInputModel() {
-  return VariantOf(StructOf<BrushFamily::SpringModelV1>(),
-                   StructOf<BrushFamily::SpringModelV2>());
+  return VariantOf(StructOf<BrushFamily::SpringModel>());
 }
 
-Domain<Uri> ValidBrushFamilyUri() {
-  return Map(
-      [](absl::string_view uri_string) {
-        absl::StatusOr<Uri> uri = Uri::Parse(uri_string);
-        ABSL_CHECK_OK(uri);
-        return *std::move(uri);
-      },
-      InRegexp(
-          "^(ink:|INK:)?(//[a-z-]+)?/(brush-family):[a-z-]+(:[1-9]{1,9})?"));
-}
-
-Domain<Uri> ValidColorTextureUri() {
-  return Map(
-      [](absl::string_view uri_string) {
-        absl::StatusOr<Uri> uri = Uri::Parse(uri_string);
-        ABSL_CHECK_OK(uri);
-        return *std::move(uri);
-      },
-      InRegexp("^(ink:|INK:)?(//[a-z-]+)?/(texture):[a-z-]+(:[1-9]{1,9})?"));
-}
+namespace {
 
 // LINT.IfChange(texture_size_unit)
 Domain<BrushPaint::TextureSizeUnit> ArbitraryBrushPaintTextureSizeUnit() {
@@ -595,10 +579,11 @@ Domain<BrushPaint::TextureKeyframe> ValidBrushPaintTextureKeyframe() {
 }
 
 fuzztest::Domain<BrushPaint::TextureLayer>
-ValidBrushPaintTextureLayerWithMapping(BrushPaint::TextureMapping mapping) {
-  auto texture_layer = [mapping](Vec size) {
+ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
+    BrushPaint::TextureMapping mapping, int animation_frames) {
+  auto texture_layer = [mapping, animation_frames](Vec size) {
     return StructOf<BrushPaint::TextureLayer>(
-        ValidColorTextureUri(), Just(mapping),
+        Arbitrary<std::string>(), Just(mapping),
         ArbitraryBrushPaintTextureOrigin(),
         ArbitraryBrushPaintTextureSizeUnit(), ArbitraryBrushPaintTextureWrap(),
         ArbitraryBrushPaintTextureWrap(), Just(size),
@@ -606,7 +591,7 @@ ValidBrushPaintTextureLayerWithMapping(BrushPaint::TextureMapping mapping) {
         FiniteAngle(),
         StructOf<Vec>(InRange<float>(0.f, size.x), InRange<float>(0.f, size.y)),
         StructOf<Vec>(InRange<float>(0.f, 1.f), InRange<float>(0.f, 1.f)),
-        FiniteAngle(), InRange(0.f, 1.f),
+        FiniteAngle(), InRange(0.f, 1.f), Just(animation_frames),
         VectorOf(ValidBrushPaintTextureKeyframe()),
         ArbitraryBrushPaintBlendMode());
   };
@@ -614,13 +599,16 @@ ValidBrushPaintTextureLayerWithMapping(BrushPaint::TextureMapping mapping) {
                  StructOf<Vec>(FinitePositiveFloat(), FinitePositiveFloat()));
 }
 
+}  // namespace
+
 fuzztest::Domain<BrushPaint> ValidBrushPaint() {
   return FlatMap(
-      [](BrushPaint::TextureMapping mapping) {
+      [](BrushPaint::TextureMapping mapping, int animation_frames) {
         return fuzztest::StructOf<BrushPaint>(
-            VectorOf(ValidBrushPaintTextureLayerWithMapping(mapping)));
+            VectorOf(ValidBrushPaintTextureLayerWithMappingAndAnimationFrames(
+                mapping, animation_frames)));
       },
-      ArbitraryBrushPaintTextureMapping());
+      ArbitraryBrushPaintTextureMapping(), Positive<int>());
 }
 
 Domain<BrushTip> ValidBrushTip() {

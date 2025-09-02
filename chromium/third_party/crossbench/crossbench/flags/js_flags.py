@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Optional, Self
+
+from typing_extensions import override
 
 from crossbench.flags.base import Flags
 
@@ -31,21 +33,20 @@ class JSFlags(Flags):
                          fr"{_END_OR_SEPARATOR_PATTERN}")
 
   @classmethod
-  def parse_str(cls, raw_flags: str) -> JSFlags:
+  @override
+  def parse_str(cls, raw_flags: str) -> Self:
     return cls._parse_str(raw_flags, "--js-flags")
 
-  def copy(self) -> JSFlags:
-    return self.__class__(self)
-
+  @override
   def _set(self,
            flag_name: str,
            flag_value: Optional[str] = None,
-           override: bool = False) -> None:
+           should_override: bool = False) -> None:
     self._validate_js_flag_name(flag_name)
     if flag_value is not None:
       self._validate_js_flag_value(flag_name, flag_value)
-    self._check_negated_flag(flag_name, override)
-    super()._set(flag_name, flag_value, override)
+    self._check_negated_flag(flag_name, should_override)
+    super()._set(flag_name, flag_value, should_override)
 
   def _validate_js_flag_value(self, flag_name: str, flag_value: str) -> None:
     if not isinstance(flag_value, str):
@@ -67,14 +68,14 @@ class JSFlags(Flags):
       raise ValueError(f"--js-flags: Invalid flag name {repr(flag_name)}. \n"
                        "Check invalid characters in the V8 flag name?")
 
-  def _check_negated_flag(self, flag_name: str, override: bool) -> None:
+  def _check_negated_flag(self, flag_name: str, should_override: bool) -> None:
     if flag_name.startswith(self._NO_PREFIX):
       enabled = flag_name[len(self._NO_PREFIX):]
       # Check for --no-foo form
       if enabled.startswith("-"):
         enabled = enabled[1:]
       enabled = "--" + enabled
-      if override:
+      if should_override:
         del self[enabled]
       elif enabled in self:
         raise ValueError(
@@ -88,7 +89,7 @@ class JSFlags(Flags):
         disabled = f"--no{flag_name[2:]}"
         if disabled not in self:
           return
-      if override:
+      if should_override:
         del self[disabled]
       else:
         raise ValueError(f"Conflicting flag {flag_name}, "

@@ -11,6 +11,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.parse import ObjectParser
@@ -39,7 +40,7 @@ class ProbeResult(abc.ABC):
                url: Optional[Iterable[str]] = None,
                file: Optional[Iterable[pth.LocalPath]] = None,
                trace: Optional[Iterable[pth.LocalPath]] = None,
-               **kwargs: Iterable[pth.LocalPath]):
+               **kwargs: Iterable[pth.LocalPath]) -> None:
     self._url_list: Tuple[str, ...] = ()
     if url:
       self._url_list = ObjectParser.unique_sequence(
@@ -90,7 +91,7 @@ class ProbeResult(abc.ABC):
               tmp_files: Dict[str, OrderedSet[pth.LocalPath]],
               files: Iterable[pth.LocalPath],
               suffix: Optional[str] = None,
-              allow_duplicates=False) -> None:
+              allow_duplicates: bool = False) -> None:
     for file in files:
       self._append(
           tmp_files, file, suffix=suffix, allow_duplicates=allow_duplicates)
@@ -235,9 +236,9 @@ class BrowserProbeResult(ProbeResult):
                result_origin: ProbeResultOrigin,
                url: Optional[Iterable[str]] = None,
                file: Optional[Iterable[pth.AnyPath]] = None,
-               **kwargs: Iterable[pth.AnyPath]):
+               **kwargs: Iterable[pth.AnyPath]) -> None:
     self._browser_file = file
-    local_file: Optional[Iterable[pth.LocalPath]] = None
+    local_file: Iterable[pth.LocalPath] | None = None
     local_kwargs: Dict[str, Iterable[pth.LocalPath]] = {}
     self._is_remote = result_origin.is_remote
     if self._is_remote:
@@ -253,6 +254,7 @@ class BrowserProbeResult(ProbeResult):
     super().__init__(url, local_file, **local_kwargs)
 
   @property
+  @override
   def is_remote(self) -> bool:
     return self._is_remote
 
@@ -320,13 +322,12 @@ class ProbeResultDict:
     for probe_name, results in self._dict.items():
       if isinstance(results, (pth.AnyPath, str)):
         data[probe_name] = str(results)
+      elif results.is_empty:
+        if not probe_name.startswith(INTERNAL_NAME_PREFIX):
+          logging.debug("probe=%s did not produce any data.", probe_name)
+        data[probe_name] = None
       else:
-        if results.is_empty:
-          if not probe_name.startswith(INTERNAL_NAME_PREFIX):
-            logging.debug("probe=%s did not produce any data.", probe_name)
-          data[probe_name] = None
-        else:
-          data[probe_name] = results.to_json()
+        data[probe_name] = results.to_json()
     return data
 
   def all_traces(self) -> Iterable[pth.LocalPath]:

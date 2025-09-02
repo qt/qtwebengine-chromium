@@ -9,15 +9,18 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Tuple
 
+from typing_extensions import override
+
 from crossbench.action_runner.action import all as i_action
-from crossbench.action_runner.default_bond_action_runner import (
-    DefaultBondActionRunner)
 from crossbench.action_runner.action.enums import ReadyState
 from crossbench.action_runner.base import (ActionRunner,
                                            InputSourceNotImplementedError)
+from crossbench.action_runner.default_bond_action_runner import \
+    DefaultBondActionRunner
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
 from crossbench.action_runner.screenshot_annotation import ScreenshotAnnotation
+from crossbench.probes.downloads import DownloadsProbe, DownloadsProbeContext
 from crossbench.probes.dump_html import DumpHtmlProbe, DumpHtmlProbeContext
 from crossbench.probes.screenshot import (ScreenshotProbe,
                                           ScreenshotProbeContext)
@@ -30,15 +33,23 @@ if TYPE_CHECKING:
 
 class DefaultActionRunner(ActionRunner):
   XPATH_SELECT_ELEMENT = """
-      let element = document.evaluate(arguments[0], document).iterateNext();
+      let elements = [];
+      let xpathResult = document.evaluate(arguments[0], document);
+      let currentElement = xpathResult.iterateNext();
+      let element = currentElement;
+      while (currentElement) {
+        elements.push(currentElement);
+        currentElement = xpathResult.iterateNext();
+      }
   """
 
   CSS_SELECT_ELEMENT = """
-      let element = document.querySelector(arguments[0]);
+      let elements = document.querySelectorAll(arguments[0]);
+      let element = elements[0];
   """
 
   CHECK_ELEMENT_EXISTS = """
-      if (!element) return false;
+      if (!element) return 0;
   """
 
   ELEMENT_SCROLL_INTO_VIEW = """
@@ -47,7 +58,7 @@ class DefaultActionRunner(ActionRunner):
 
   CHECK_ELEMENT_RECT = """
       const rect = element.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return false;
+      if (rect.width === 0 || rect.height === 0) return 0;
   """
 
   ELEMENT_CLICK = """
@@ -55,10 +66,11 @@ class DefaultActionRunner(ActionRunner):
   """
 
   RETURN_SUCCESS = """
-      return true;
+      return elements.length;
   """
 
   SELECT_WINDOW = """
+      let elements = [window];
       let element = window;
   """
 
@@ -67,19 +79,19 @@ class DefaultActionRunner(ActionRunner):
   """
 
   GET_CURRENT_SCROLL_POSITION = """
-      if (!element) return [false, 0];
-      return [true, element[arguments[1]]];
+      if (!element) return [0, 0];
+      return [elements.length, element[arguments[1]]];
   """
 
-  _bond: Optional[DefaultBondActionRunner] = None
+  _bond: DefaultBondActionRunner | None = None
 
   def get_selector_script(self,
                           selector: str,
-                          check_element_exists=False,
-                          scroll_into_view=False,
-                          check_element_rect=False,
-                          click=False,
-                          return_on_success=False) -> Tuple[str, str]:
+                          check_element_exists: bool = False,
+                          scroll_into_view: bool = False,
+                          check_element_rect: bool = False,
+                          click: bool = False,
+                          return_on_success: bool = False) -> Tuple[str, str]:
     # TODO: support more selector types
 
     script: str = ""
@@ -109,36 +121,29 @@ class DefaultActionRunner(ActionRunner):
     return selector, script
 
   @property
+  @override
   def bond(self) -> BondActionRunner:
     if not self._bond:
       self._bond = DefaultBondActionRunner(self)
     return self._bond
 
-  def _wait_for_ready_state(self, actions: Actions, ready_state: ReadyState,
-                            timeout: dt.timedelta) -> None:
-    # Make sure we also finish if readyState jumps directly
-    # from "loading" to "complete"
-    actions.wait_js_condition(
-        f"""
-          let state = document.readyState;
-          return state === '{ready_state}' || state === "complete";
-        """, 0.2, timeout.total_seconds())
-
-  def teardown(self, run: Run):
+  @override
+  def teardown(self, run: Run) -> None:
     del run
     if self._bond:
       self._bond.teardown()
 
+  @override
   def get(self, run: Run, action: i_action.GetAction) -> None:
     # TODO: potentially refactor the timing and logging out to the base class.
     start_time = time.time()
     expected_end_time = start_time + action.duration.total_seconds()
 
     with run.actions(f"Get {action.url}", measure=False) as actions:
-      actions.show_url(action.url, str(action.target))
+      actions.show_url(action.url, str(action.target), action.ready_state,
+                       action.timeout)
 
       if action.ready_state != ReadyState.ANY:
-        self._wait_for_ready_state(actions, action.ready_state, action.timeout)
         return
       # Wait for the given duration from the start of the action.
       wait_time_seconds = expected_end_time - time.time()
@@ -149,6 +154,7 @@ class DefaultActionRunner(ActionRunner):
         logging.info("%s took longer (%s) than expected action duration (%s).",
                      action, run_duration, action.duration)
 
+  @override
   def click_js(self, run: Run, action: i_action.ClickAction) -> None:
 
     if action.duration > dt.timedelta():
@@ -168,7 +174,10 @@ class DefaultActionRunner(ActionRunner):
     with run.actions("ClickAction", measure=False) as actions:
       if selector_config.wait:
         self.wait_for_element_impl(
-            actions, selector=selector_config.selector, timeout=action.timeout)
+            actions,
+            selector=selector_config.selector,
+            timeout=action.timeout,
+            required=selector_config.required)
       if not actions.js(
           script, arguments=[selector]) and selector_config.required:
         raise ElementNotFoundError(selector)
@@ -177,6 +186,7 @@ class DefaultActionRunner(ActionRunner):
         self.wait_for_element_impl(
             actions, selector=action.verify, timeout=action.timeout)
 
+  @override
   def scroll_js(self, run: Run, action: i_action.ScrollAction) -> None:
     with run.actions("ScrollAction", measure=False) as actions:
       selector = ""
@@ -220,8 +230,11 @@ class DefaultActionRunner(ActionRunner):
                             actions: Actions,
                             selector: str,
                             timeout: dt.timedelta,
+                            expected_count: int = 1,
+                            or_more: bool = False,
                             scroll_into_view: bool = False,
-                            check_element_rect: bool = False) -> None:
+                            check_element_rect: bool = False,
+                            required: bool = True) -> None:
     selector, selector_script = self.get_selector_script(
         selector=selector,
         check_element_exists=True,
@@ -230,29 +243,64 @@ class DefaultActionRunner(ActionRunner):
         return_on_success=True)
     # TODO: if check_element_rect, we should wait for the position to be the
     # same
-    actions.wait_js_condition(
-        selector_script, min_wait=0.2, timeout=timeout, arguments=(selector,))
 
+    def _exact_match(js_result: int) -> bool:
+      return js_result == expected_count
+
+    def _or_more_match(js_result: int) -> bool:
+      return js_result >= expected_count
+
+    success_condition = _exact_match
+
+    if or_more:
+      success_condition = _or_more_match
+
+    try:
+      actions.wait_js_condition(
+          selector_script,
+          min_wait=0.2,
+          timeout=timeout,
+          arguments=(selector,),
+          success_condition=success_condition)
+    except TimeoutError as e:
+      if required:
+        raise
+      logging.debug("Element %s not found: %s", selector, e)
+
+  @override
   def wait_for_element(self, run: Run,
                        action: i_action.WaitForElementAction) -> None:
     with run.actions("WaitForElementAction", measure=False) as actions:
       self.wait_for_element_impl(
-          actions=actions, selector=action.selector, timeout=action.timeout)
+          actions=actions,
+          selector=action.selector,
+          expected_count=action.expected_count,
+          or_more=action.or_more,
+          timeout=action.timeout)
 
+  @override
   def wait_for_ready_state(self, run: Run,
                            action: i_action.WaitForReadyStateAction) -> None:
     with run.actions(
         f"Wait for ready state {action.ready_state}", measure=False) as actions:
-      self._wait_for_ready_state(actions, action.ready_state, action.timeout)
+      actions.wait_for_ready_state(action.ready_state, action.timeout)
 
+  @override
   def inject_new_document_script(
       self, run: Run, action: i_action.InjectNewDocumentScriptAction) -> None:
     run.browser.run_script_on_new_document(action.script)
 
+  @override
   def switch_tab(self, run: Run, action: i_action.SwitchTabAction) -> None:
     with run.actions("SwitchTabAction", measure=False):
       run.browser.switch_tab(action.title, action.url, action.tab_index,
                              action.timeout)
+
+  @override
+  def close_tab(self, run: Run, action: i_action.CloseTabAction) -> None:
+    with run.actions("CloseTabAction", measure=False):
+      run.browser.close_tab(action.title, action.url, action.tab_index,
+                            action.timeout)
 
   def _get_scroll_field(self, has_selector: bool) -> str:
     if has_selector:
@@ -295,6 +343,7 @@ class DefaultActionRunner(ActionRunner):
             "text_input action is behind schedule! Consider extending this "
             "action's duration otherwise the action may timeout.")
 
+  @override
   def screenshot_impl(
       self,
       run: Run,
@@ -308,6 +357,7 @@ class DefaultActionRunner(ActionRunner):
     assert isinstance(ctx, ScreenshotProbeContext)
     ctx.screenshot("_".join(self.info_stack) + f"_{suffix}", annotations)
 
+  @override
   def dump_html_impl(self, run: Run, suffix: str) -> None:
     ctx = run.find_probe_context(DumpHtmlProbe)
     if not ctx:
@@ -316,3 +366,17 @@ class DefaultActionRunner(ActionRunner):
       return
     assert isinstance(ctx, DumpHtmlProbeContext)
     ctx.dump_html("_".join(self.info_stack) + f"_{suffix}")
+
+  def wait_for_download(self, run: Run,
+                        action: i_action.WaitForDownloadAction) -> None:
+    with run.actions("WaitForDownload", measure=False):
+      ctx = run.find_probe_context(DownloadsProbe)
+      if not ctx:
+        raise RuntimeError("No downloads probe for wait_for_download on "
+                           f"{repr(self.info_stack)}")
+      assert isinstance(ctx, DownloadsProbeContext)
+
+      wait_range = run.wait_range(min_wait=0.2, timeout=action.timeout, delay=0)
+      for _ in wait_range.wait_with_backoff():
+        if ctx.download_complete(action.pattern):
+          return

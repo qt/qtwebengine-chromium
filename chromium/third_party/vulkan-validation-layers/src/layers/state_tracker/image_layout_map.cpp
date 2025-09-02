@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2024 The Khronos Group Inc.
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
- * Copyright (C) 2019-2024 Google Inc.
+/* Copyright (c) 2019-2025 The Khronos Group Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
+ * Copyright (C) 2019-2025 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,11 +81,7 @@ InitialLayoutState::InitialLayoutState(const vvl::CommandBuffer& cb_state_, cons
         aspect_mask = view_state_->normalized_subresource_range.aspectMask;
     }
 }
-bool ImageLayoutRegistry::SubresourceLayout::operator==(const ImageLayoutRegistry::SubresourceLayout& rhs) const {
-    bool is_equal =
-        (current_layout == rhs.current_layout) && (initial_layout == rhs.initial_layout) && (subresource == rhs.subresource);
-    return is_equal;
-}
+
 ImageLayoutRegistry::ImageLayoutRegistry(const vvl::Image& image_state)
     : image_state_(image_state),
       encoder_(image_state.subresource_encoder),
@@ -113,11 +109,10 @@ bool ImageLayoutRegistry::SetSubresourceRangeLayout(const vvl::CommandBuffer& cb
     if (!InRange(range)) return false;  // Don't even try to track bogus subreources
 
     RangeGenerator range_gen(encoder_, range);
-    if (layout_map_.SmallMode()) {
+    if (layout_map_.UsesSmallMap()) {
         return SetSubresourceRangeLayoutImpl(layout_map_.GetSmallMap(), initial_layout_states_, range_gen, cb_state, layout,
                                              expected_layout);
     } else {
-        assert(!layout_map_.Tristate());
         return SetSubresourceRangeLayoutImpl(layout_map_.GetBigMap(), initial_layout_states_, range_gen, cb_state, layout,
                                              expected_layout);
     }
@@ -140,11 +135,10 @@ void ImageLayoutRegistry::SetSubresourceRangeInitialLayout(const vvl::CommandBuf
     if (!InRange(range)) return;  // Don't even try to track bogus subreources
 
     RangeGenerator range_gen(encoder_, range);
-    if (layout_map_.SmallMode()) {
+    if (layout_map_.UsesSmallMap()) {
         SetSubresourceRangeInitialLayoutImpl(layout_map_.GetSmallMap(), initial_layout_states_, range_gen, cb_state, layout,
                                              nullptr);
     } else {
-        assert(!layout_map_.Tristate());
         SetSubresourceRangeInitialLayoutImpl(layout_map_.GetBigMap(), initial_layout_states_, range_gen, cb_state, layout, nullptr);
     }
 }
@@ -153,11 +147,10 @@ void ImageLayoutRegistry::SetSubresourceRangeInitialLayout(const vvl::CommandBuf
 void ImageLayoutRegistry::SetSubresourceRangeInitialLayout(const vvl::CommandBuffer& cb_state, VkImageLayout layout,
                                                            const vvl::ImageView& view_state) {
     RangeGenerator range_gen(view_state.range_generator);
-    if (layout_map_.SmallMode()) {
+    if (layout_map_.UsesSmallMap()) {
         SetSubresourceRangeInitialLayoutImpl(layout_map_.GetSmallMap(), initial_layout_states_, range_gen, cb_state, layout,
                                              &view_state);
     } else {
-        assert(!layout_map_.Tristate());
         SetSubresourceRangeInitialLayoutImpl(layout_map_.GetBigMap(), initial_layout_states_, range_gen, cb_state, layout,
                                              &view_state);
     }

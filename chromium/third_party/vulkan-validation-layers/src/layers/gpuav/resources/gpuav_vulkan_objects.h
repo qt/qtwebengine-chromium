@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2024 The Khronos Group Inc.
- * Copyright (c) 2018-2024 Valve Corporation
- * Copyright (c) 2018-2024 LunarG, Inc.
+/* Copyright (c) 2018-2025 The Khronos Group Inc.
+ * Copyright (c) 2018-2025 Valve Corporation
+ * Copyright (c) 2018-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 
 #pragma once
 
-#include "containers/custom_containers.h"
 #include "vma/vma.h"
 
 #include <typeinfo>
 #include <unordered_map>
 #include <vector>
+#include "containers/custom_containers.h"
 
 struct Location;
 namespace gpuav {
@@ -60,8 +60,7 @@ class Buffer {
     // Warps VMA calls to simplify error reporting.
     // No error propagation, but if hitting a VMA error, GPU-AV is likely not going to recover anyway.
 
-    [[nodiscard]] void *MapMemory(const Location &loc) const;
-    void UnmapMemory() const;
+    [[nodiscard]] void *GetMappedPtr() const;
     void FlushAllocation(const Location &loc, VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
     void InvalidateAllocation(const Location &loc, VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
 
@@ -73,6 +72,7 @@ class Buffer {
     const VkBuffer &VkHandle() const { return buffer; }
     const VmaAllocation &Allocation() const { return allocation; }
     VkDeviceAddress Address() const { return device_address; };
+    void Clear() const;
 
   private:
     const Validator &gpuav;
@@ -80,6 +80,8 @@ class Buffer {
     VmaAllocation allocation = VK_NULL_HANDLE;
     // If buffer was not created with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT then this will not be zero
     VkDeviceAddress device_address = 0;
+    VkDeviceSize size = 0;
+    void *mapped_ptr = nullptr;
 };
 
 // Register/Create and register GPU resources, all to be destroyed upon a call to DestroyResources
@@ -91,12 +93,34 @@ class GpuResourcesManager {
     vko::Buffer GetManagedBuffer(Validator &gpuav, const Location &loc, const VkBufferCreateInfo &ci,
                                  const VmaAllocationCreateInfo &vma_ci);
 
+    void ReturnResources();
     void DestroyResources();
 
   private:
     DescriptorSetManager &descriptor_set_manager_;
-    std::vector<std::pair<VkDescriptorPool, VkDescriptorSet>> descriptors_;
-    std::vector<vko::Buffer> buffers_;
+    enum class CachedStatus { Undefined, InUse, Available };
+    struct CachedDescriptor {
+        // VkDescriptorSetLayout desc_set_layout = VK_NULL_HANDLE;
+        VkDescriptorPool desc_pool = VK_NULL_HANDLE;
+        VkDescriptorSet desc_set = VK_NULL_HANDLE;
+        // CachedStatus status = CachedStatus::Undefined;
+    };
+    struct LayoutToSets {
+        VkDescriptorSetLayout desc_set_layout = VK_NULL_HANDLE;
+        std::vector<CachedDescriptor> cached_descriptors;
+        size_t first_available_desc_set = 0;
+    };
+    std::vector<LayoutToSets> cache_layouts_to_sets_;
+    // std::vector<CachedDescriptor> cached_descriptors_;
+
+    struct CachedBuffer {
+        VkBufferCreateInfo buffer_ci{};
+        VmaAllocationCreateInfo allocation_ci{};
+        vko::Buffer buffer;
+
+        CachedStatus status = CachedStatus::Undefined;
+    };
+    std::vector<CachedBuffer> cached_buffers_;
 };
 
 // Cache a single object of type T. Key is *only* based on typeid(T)
@@ -140,8 +164,7 @@ class SharedResourcesCache {
         bool operator()(TypeInfoRef lhs, TypeInfoRef rhs) const { return lhs.get() == rhs.get(); }
     };
 
-    // Tried to use vvl::unordered_map, but fails to compile on Windows currently
-    std::unordered_map<TypeInfoRef, std::pair<void * /*object*/, void (*)(void *) /*object destructor*/>, Hasher, EqualTo>
+    vvl::unordered_map<TypeInfoRef, std::pair<void * /*object*/, void (*)(void *) /*object destructor*/>, Hasher, EqualTo>
         shared_validation_resources_map_;
 };
 

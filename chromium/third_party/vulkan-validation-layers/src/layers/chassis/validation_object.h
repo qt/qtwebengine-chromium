@@ -20,35 +20,28 @@
  ****************************************************************************/
 #pragma once
 
-#include <atomic>
-#include <shared_mutex>
+// This is just a "simple" way to make sure everyone has access to things like PRIu32
 #include <cinttypes>
+
+#include <shared_mutex>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <algorithm>
 #include <memory>
-#include <string_view>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/utility/vk_struct_helper.hpp>
 #include <vulkan/utility/vk_safe_struct.hpp>
-#include "utils/cast_utils.h"
 #include "layer_options.h"
-#include "containers/custom_containers.h"
 #include "error_message/logging.h"
 #include "error_message/error_location.h"
 #include "error_message/record_object.h"
-#include "error_message/log_message_type.h"
-#include "utils/vk_layer_extension_utils.h"
 #include "utils/vk_layer_utils.h"
 #include "generated/vk_dispatch_table_helper.h"
 #include "chassis/dispatch_object.h"
 #include "generated/vk_extension_helper.h"
-#include "gpuav/core/gpuav_settings.h"
-#include "sync/sync_settings.h"
 
 namespace chassis {
 struct CreateGraphicsPipelines;
@@ -65,6 +58,10 @@ namespace vvl {
 struct AllocateDescriptorSetsData;
 class Pipeline;
 }  // namespace vvl
+
+struct GlobalSettings;
+struct GpuAVSettings;
+struct SyncValSettings;
 
 // Because of GPL, we currently create our Pipeline state objects before the PreCallValidate
 // Each chassis layer will need to track its own state
@@ -129,6 +126,14 @@ class Device : public Logger {
     vvl::dispatch::Device* dispatch_device_{};
 
     DeviceExtensions extensions;
+    const DeviceFeatures& enabled_features;
+    const VkPhysicalDeviceMemoryProperties& phys_dev_mem_props;
+    const VkPhysicalDeviceProperties& phys_dev_props;
+    const VkPhysicalDeviceVulkan11Properties& phys_dev_props_core11;
+    const VkPhysicalDeviceVulkan12Properties& phys_dev_props_core12;
+    const VkPhysicalDeviceVulkan13Properties& phys_dev_props_core13;
+    const VkPhysicalDeviceVulkan14Properties& phys_dev_props_core14;
+    const DeviceExtensionProperties& phys_dev_ext_props;
     const GlobalSettings& global_settings;
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
@@ -155,6 +160,14 @@ class Device : public Logger {
           dispatch_instance_(dispatch_dev->dispatch_instance),
           dispatch_device_(dispatch_dev),
           extensions(dispatch_dev->extensions),
+          enabled_features(dispatch_dev->enabled_features),
+          phys_dev_mem_props(dispatch_dev->phys_dev_mem_props),
+          phys_dev_props(dispatch_dev->phys_dev_props),
+          phys_dev_props_core11(dispatch_dev->phys_dev_props_core11),
+          phys_dev_props_core12(dispatch_dev->phys_dev_props_core12),
+          phys_dev_props_core13(dispatch_dev->phys_dev_props_core13),
+          phys_dev_props_core14(dispatch_dev->phys_dev_props_core14),
+          phys_dev_ext_props(dispatch_dev->phys_dev_ext_props),
           global_settings(dispatch_dev->settings.global_settings),
           gpuav_settings(dispatch_dev->settings.gpuav_settings),
           syncval_settings(dispatch_dev->settings.syncval_settings),
@@ -222,6 +235,10 @@ class Device : public Logger {
         return VK_SUCCESS;
     }
     // Manually generated pre/post hooks
+
+    // called after vkCreateDevice() completes successfully
+    virtual void FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) {}
+
     // Allow additional state parameter for CreateGraphicsPipelines
     virtual bool PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                         const VkGraphicsPipelineCreateInfo* pCreateInfos,
@@ -279,24 +296,21 @@ class Device : public Logger {
                                                             uint32_t createInfoCount,
                                                             const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                             const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                            const ErrorObject& error_obj, PipelineStates& pipeline_states,
-                                                            chassis::CreateRayTracingPipelinesNV& chassis_state) const {
+                                                            const ErrorObject& error_obj, PipelineStates& pipeline_states) const {
         return PreCallValidateCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
                                                           pPipelines, error_obj);
     }
     virtual void PreCallRecordCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                           const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                           const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                          const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                          chassis::CreateRayTracingPipelinesNV& chassis_state) {
+                                                          const RecordObject& record_obj, PipelineStates& pipeline_states) {
         PreCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
                                                  record_obj);
     }
     virtual void PostCallRecordCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                            const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                           const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                           chassis::CreateRayTracingPipelinesNV& chassis_state) {
+                                                           const RecordObject& record_obj, PipelineStates& pipeline_states) {
         PostCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
                                                   record_obj);
     }

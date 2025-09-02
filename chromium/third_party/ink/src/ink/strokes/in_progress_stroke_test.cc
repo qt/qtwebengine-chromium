@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "ink/brush/brush.h"
 #include "ink/brush/brush_family.h"
@@ -42,7 +44,6 @@
 #include "ink/strokes/input/type_matchers.h"
 #include "ink/strokes/stroke.h"
 #include "ink/types/duration.h"
-#include "ink/types/uri.h"
 
 namespace ink {
 namespace {
@@ -60,11 +61,7 @@ using ::testing::Optional;
 using ::testing::Pointee;
 using ::testing::Property;
 
-Uri CreateTestTextureUri() {
-  auto uri = Uri::Parse("ink://ink/texture:test-texture");
-  ABSL_CHECK_OK(uri);
-  return *uri;
-}
+constexpr absl::string_view kTestTextureId = "test-texture";
 
 Brush CreateRectangularTestBrush() {
   auto family = BrushFamily::Create(
@@ -73,7 +70,7 @@ Brush CreateRectangularTestBrush() {
           .corner_rounding = 0,
           .rotation = kFullTurn / 8,
       },
-      {.texture_layers = {{.color_texture_uri = CreateTestTextureUri(),
+      {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
                            .mapping = BrushPaint::TextureMapping::kWinding,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
@@ -97,7 +94,7 @@ Brush CreateCircularTestBrush() {
           .scale = {0.75, 0.75},
           .corner_rounding = 1,
       },
-      {.texture_layers = {{.color_texture_uri = CreateTestTextureUri(),
+      {.texture_layers = {{.client_texture_id = std::string(kTestTextureId),
                            .mapping = BrushPaint::TextureMapping::kWinding,
                            .size_unit = BrushPaint::TextureSizeUnit::kBrushSize,
                            .size = {3, 5},
@@ -263,7 +260,7 @@ TEST(InProgressStrokeTest, StartAfterConstruction) {
   EXPECT_EQ(stroke.GetMesh(0).VertexCount(), 0u);
   EXPECT_EQ(stroke.GetMesh(0).TriangleCount(), 0u);
   EXPECT_TRUE(stroke.GetMeshBounds(0).IsEmpty());
-  EXPECT_THAT(stroke.GetCoatOutlines(0), ElementsAre(IsEmpty()));
+  EXPECT_THAT(stroke.GetCoatOutlines(0), IsEmpty());
   EXPECT_TRUE(stroke.GetUpdatedRegion().IsEmpty());
   EXPECT_FALSE(stroke.InputsAreFinished());
   EXPECT_FALSE(stroke.NeedsUpdate());
@@ -338,7 +335,7 @@ TEST(InProgressStrokeTest, EmptyEnqueueInputsAndUpdateAfterStart) {
   EXPECT_EQ(stroke.GetMesh(0).VertexCount(), 0u);
   EXPECT_EQ(stroke.GetMesh(0).TriangleCount(), 0u);
   EXPECT_TRUE(stroke.GetMeshBounds(0).IsEmpty());
-  EXPECT_THAT(stroke.GetCoatOutlines(0), ElementsAre(IsEmpty()));
+  EXPECT_THAT(stroke.GetCoatOutlines(0), IsEmpty());
   EXPECT_TRUE(stroke.GetUpdatedRegion().IsEmpty());
   EXPECT_FALSE(stroke.NeedsUpdate());
 }
@@ -737,7 +734,7 @@ TEST(InProgressStrokeTest, StartAfterExtendingStroke) {
   EXPECT_EQ(stroke.GetMesh(0).VertexCount(), 0u);
   EXPECT_EQ(stroke.GetMesh(0).TriangleCount(), 0u);
   EXPECT_TRUE(stroke.GetMeshBounds(0).IsEmpty());
-  EXPECT_THAT(stroke.GetCoatOutlines(0), ElementsAre(IsEmpty()));
+  EXPECT_THAT(stroke.GetCoatOutlines(0), IsEmpty());
   EXPECT_TRUE(stroke.GetUpdatedRegion().IsEmpty());
 }
 

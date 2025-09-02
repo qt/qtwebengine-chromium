@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 #include <variant>
 
 #include "absl/algorithm/container.h"
@@ -39,6 +40,24 @@
 namespace ink::strokes_internal {
 namespace {
 
+std::pair<BrushBehavior::Target, BrushBehavior::Target> PolarTargetXyPair(
+    BrushBehavior::PolarTarget polar_target) {
+  switch (polar_target) {
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetAbsoluteInRadiansAndMultiplesOfBrushSize:
+      return {BrushBehavior::Target::kPositionOffsetXInMultiplesOfBrushSize,
+              BrushBehavior::Target::kPositionOffsetYInMultiplesOfBrushSize};
+    case BrushBehavior::PolarTarget::
+        kPositionOffsetRelativeInRadiansAndMultiplesOfBrushSize:
+      return {
+          BrushBehavior::Target::kPositionOffsetForwardInMultiplesOfBrushSize,
+          BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize};
+  }
+  ABSL_LOG(FATAL)
+      << "`polar_target` should not be able to have non-enumerator value: "
+      << static_cast<int>(polar_target);
+}
+
 float InitialTargetModifierValue(BrushBehavior::Target target) {
   switch (target) {
     case BrushBehavior::Target::kWidthMultiplier:
@@ -55,6 +74,7 @@ float InitialTargetModifierValue(BrushBehavior::Target target) {
     case BrushBehavior::Target::kPositionOffsetYInMultiplesOfBrushSize:
     case BrushBehavior::Target::kPositionOffsetForwardInMultiplesOfBrushSize:
     case BrushBehavior::Target::kPositionOffsetLateralInMultiplesOfBrushSize:
+    case BrushBehavior::Target::kTextureAnimationProgressOffset:
     case BrushBehavior::Target::kHueOffsetInRadians:
     case BrushBehavior::Target::kLuminosity:
       return 0.f;
@@ -274,13 +294,14 @@ Duration32 TimeSinceLastInput(
 }  // namespace
 
 void BrushTipModeler::StartStroke(absl::Nonnull<const BrushTip*> brush_tip,
-                                  float brush_size) {
+                                  float brush_size, uint32_t noise_seed) {
   ABSL_CHECK_NE(brush_tip, nullptr);
   ABSL_CHECK(std::isfinite(brush_size));
   ABSL_CHECK_GT(brush_size, 0);
 
   brush_tip_ = brush_tip;
   brush_size_ = brush_size;
+  noise_seed_ = noise_seed;
 
   // These fields will be updated as the stroke progresses.
   input_index_for_next_fixed_state_ = 0;
@@ -344,10 +365,9 @@ void BrushTipModeler::AppendBehaviorNode(const BrushBehavior::NoiseNode& node) {
       .vary_over = node.vary_over,
       .base_period = node.base_period,
   });
-  // TODO: b/373649344 - Concatenate the 32-bit per-stroke seed (once that
-  // exists) with the 32-bit node seed to form the 64-bit noise generator seed.
-  uint64_t noise_seed = node.seed;
-  current_noise_generators_.emplace_back(noise_seed);
+  uint64_t combined_seed = (static_cast<uint64_t>(noise_seed_) << 32) |
+                           static_cast<uint64_t>(node.seed);
+  current_noise_generators_.emplace_back(combined_seed);
   fixed_noise_generators_.push_back(current_noise_generators_.back());
 }
 
@@ -397,6 +417,25 @@ void BrushTipModeler::AppendBehaviorNode(
   float initial_modifier = InitialTargetModifierValue(node.target);
   current_target_modifiers_.push_back(initial_modifier);
   fixed_target_modifiers_.push_back(initial_modifier);
+}
+
+void BrushTipModeler::AppendBehaviorNode(
+    const BrushBehavior::PolarTargetNode& node) {
+  auto [target_x, target_y] = PolarTargetXyPair(node.target);
+  behavior_nodes_.push_back(PolarTargetNodeImplementation{
+      .target_x_index = behavior_targets_.size(),
+      .target_y_index = behavior_targets_.size() + 1,
+      .angle_range = node.angle_range,
+      .magnitude_range = node.magnitude_range,
+  });
+  behavior_targets_.push_back(target_x);
+  behavior_targets_.push_back(target_y);
+  float initial_modifier_x = InitialTargetModifierValue(target_x);
+  float initial_modifier_y = InitialTargetModifierValue(target_y);
+  current_target_modifiers_.push_back(initial_modifier_x);
+  current_target_modifiers_.push_back(initial_modifier_y);
+  fixed_target_modifiers_.push_back(initial_modifier_x);
+  fixed_target_modifiers_.push_back(initial_modifier_y);
 }
 
 namespace {

@@ -6,15 +6,14 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import (Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple,
-                    Type, TypeVar, Union)
+from typing import (Any, Dict, Iterable, Iterator, List, Optional, Self, Set,
+                    Tuple, TypeAlias, TypeVar, Union)
+
+from typing_extensions import override
 
 
 class FrozenFlagsError(RuntimeError):
   pass
-
-
-FreezableT = TypeVar("FreezableT", bound="Freezable")
 
 
 class Freezable:
@@ -23,7 +22,7 @@ class Freezable:
     self._frozen = False
     super().__init__(*args, **kwargs)
 
-  def __hash__(self):
+  def __hash__(self) -> int:
     self.freeze()
     return hash(str(self))
 
@@ -31,7 +30,7 @@ class Freezable:
   def is_frozen(self) -> bool:
     return self._frozen
 
-  def freeze(self: FreezableT) -> FreezableT:
+  def freeze(self: Self) -> Self:
     self._frozen = True
     return self
 
@@ -43,11 +42,9 @@ class Freezable:
     raise FrozenFlagsError(msg)
 
 
-BasicFlagsT = TypeVar("BasicFlagsT", bound="BasicFlags")
 
-
-FlagsData = Optional[Union[Dict[str, str], "Flags",
-                           Iterable[Union[Tuple[str, Optional[str]], str]]]]
+FlagsData: TypeAlias = Union[None, Dict[str, str], "Flags",
+                             Iterable[str | Tuple[str, str | None]]]
 
 
 class BasicFlags(Freezable, collections.UserDict):
@@ -76,7 +73,7 @@ class BasicFlags(Freezable, collections.UserDict):
     return (flag_str, None)
 
   @classmethod
-  def parse(cls: Type[BasicFlagsT], data: Any) -> BasicFlagsT:
+  def parse(cls, data: Any) -> Self:
     if isinstance(data, cls):
       return data
     if isinstance(data, str):
@@ -84,35 +81,32 @@ class BasicFlags(Freezable, collections.UserDict):
     return cls(data)
 
   @classmethod
-  def parse_str(cls: Type[BasicFlagsT], raw_flags: str) -> BasicFlagsT:
+  def parse_str(cls, raw_flags: str) -> Self:
     return cls._parse_str(raw_flags)
 
   @classmethod
-  def _parse_str(cls: Type[BasicFlagsT],
-                 raw_flags: str,
-                 msg: str = "flag") -> BasicFlagsT:
+  def _parse_str(cls, raw_flags: str, msg: str = "flag") -> Self:
     raw_flags = raw_flags.strip()
     if not raw_flags:
       return cls()
-    flag_parts: List[Tuple[str, Optional[str]]] = []
-    current_end: Optional[int] = None
+    flag_parts: List[Tuple[str, str | None]] = []
+    current_end: int | None = None
     for match in cls._PARSE_RE.finditer(raw_flags):
       if current_end is None:
         if match.start() != 0:
           part = raw_flags[:match.start()]
           raise ValueError(f"Invalid {msg} part at pos=0: {repr(part)}")
-      else:
-        if current_end != match.start():
-          raise ValueError(f"Invalid {msg}: could not consume all data")
+      elif current_end != match.start():
+        raise ValueError(f"Invalid {msg}: could not consume all data")
       current_end = match.end()
 
       groups = match.groupdict()
-      maybe_flag_name: Optional[str] = groups.get("name")
+      maybe_flag_name: str | None = groups.get("name")
       if not maybe_flag_name:
         raise ValueError(f"Invalid {msg}: {repr(raw_flags)}")
       # Re-assign since pytype doesn't remove the Optional.
       flag_name: str = maybe_flag_name
-      flag_value: Optional[str] = (
+      flag_value: str | None = (
           groups.get("value_single_quotes") or
           groups.get("value_double_quotes") or groups.get("value_no_quotes"))
       if groups.get("equal") and not flag_value:
@@ -135,18 +129,18 @@ class BasicFlags(Freezable, collections.UserDict):
   def set(self,
           flag_name: str,
           flag_value: Optional[str] = None,
-          override: bool = False) -> None:
-    self._set(flag_name, flag_value, override)
+          should_override: bool = False) -> None:
+    self._set(flag_name, flag_value, should_override)
 
   def _set(self,
            flag_name: str,
            flag_value: Optional[str] = None,
-           override: bool = False) -> None:
+           should_override: bool = False) -> None:
     self.assert_not_frozen()
     self._validate_flag_name(flag_name)
     if flag_value:
       self._validate_flag_value(flag_name, flag_value)
-    self._validate_override(flag_name, flag_value, override)
+    self._validate_override(flag_name, flag_value, should_override)
     self.data[flag_name] = flag_value
 
   def _validate_flag_name(self, flag_name: str) -> None:
@@ -173,8 +167,8 @@ class BasicFlags(Freezable, collections.UserDict):
           f"but got: {repr(flag_value)}")
 
   def _validate_override(self, flag_name: str, flag_value: Optional[str],
-                         override: bool) -> None:
-    if override or flag_name not in self:
+                         should_override: bool) -> None:
+    if should_override or flag_name not in self:
       return
     old_value = self[flag_name]
     if flag_value != old_value:
@@ -185,25 +179,25 @@ class BasicFlags(Freezable, collections.UserDict):
   def update(  # type: ignore
       self,
       initial_data: FlagsData = None,
-      override: bool = False) -> None:
+      should_override: bool = False) -> None:
     # pylint: disable=arguments-differ
     if initial_data is None:
       return
     if isinstance(initial_data, (Flags, dict)):
       for flag_name, flag_value in initial_data.items():
-        self.set(flag_name, flag_value, override)
+        self.set(flag_name, flag_value, should_override)
     else:
       for flag_name_or_items in initial_data:
         if isinstance(flag_name_or_items, str):
-          self.set(flag_name_or_items, None, override)
+          self.set(flag_name_or_items, None, should_override)
         else:
           flag_name, flag_value = flag_name_or_items
-          self.set(flag_name, flag_value, override)
+          self.set(flag_name, flag_value, should_override)
 
   def merge(self, other: FlagsData) -> None:
     self.update(other)
 
-  def copy(self: BasicFlagsT) -> BasicFlagsT:
+  def copy(self: Self) -> Self:
     return self.__class__(self)
 
   def merge_copy(self, other: FlagsData):
@@ -211,12 +205,12 @@ class BasicFlags(Freezable, collections.UserDict):
     ret.merge(other)
     return ret
 
-  def filtered(self: BasicFlagsT, flag_names: Iterable[str]) -> BasicFlagsT:
+  def filtered(self: Self, flag_names: Iterable[str]) -> Self:
     flag_names_set: Set[str] = set(flag_names)
     filtered_flags = {k: v for k, v in self.items() if k in flag_names_set}
     return self.__class__(filtered_flags)
 
-  def contains_without_value(self, key: str):
+  def contains_without_value(self, key: str) -> bool:
     return key in self.data and self.data[key] is None
 
   def _describe(self, flag_name: str) -> str:
@@ -225,6 +219,7 @@ class BasicFlags(Freezable, collections.UserDict):
       return flag_name
     return f"{flag_name}={value}"
 
+  @override
   def items(self) -> Iterable[Tuple[str, Optional[str]]]:  # type: ignore
     return self.data.items()
 
@@ -259,6 +254,7 @@ class Flags(BasicFlags):
                          fr"((?P<equal>=)({BasicFlags._VALUE_PATTERN})?)?"
                          fr"{BasicFlags._END_OR_SEPARATOR_PATTERN}")
 
+  @override
   def _validate_flag_name(self, flag_name: str) -> None:
     super()._validate_flag_name(flag_name)
     if not self._FLAG_NAME_RE.fullmatch(flag_name):

@@ -634,7 +634,7 @@ void DumpVkVideoProfileInfoKHRCustom(Printer &p, std::string name, const VkVideo
 
 void GpuDumpVideoProfiles(Printer &p, AppGpu &gpu, bool show_video_props) {
     p.SetHeader();
-    ArrayWrapper video_profiles_obj(p, "Video Profiles", gpu.video_profiles.size());
+    ObjectWrapper video_profiles_obj(p, "Video Profiles", gpu.video_profiles.size());
     IndentWrapper indent_outer(p);
 
     if (p.Type() != OutputType::text || show_video_props) {
@@ -663,7 +663,7 @@ void GpuDumpVideoProfiles(Printer &p, AppGpu &gpu, bool show_video_props) {
                 for (const auto &video_formats_it : video_profile->formats_by_category) {
                     const auto &video_format_category_name = video_formats_it.first;
                     const auto &video_format_props = video_formats_it.second;
-                    ArrayWrapper video_format_category(p, video_format_category_name, video_format_props.size());
+                    ObjectWrapper video_format_category(p, video_format_category_name, video_format_props.size());
                     for (size_t i = 0; i < video_format_props.size(); ++i) {
                         ObjectWrapper video_format_obj(p, video_format_category_name + " Format #" + std::to_string(i + 1));
                         p.SetSubHeader();

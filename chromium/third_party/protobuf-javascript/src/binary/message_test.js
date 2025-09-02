@@ -1,6 +1,6 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
+// https://protobuf.dev/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -32,10 +32,10 @@
 
 goog.setTestOnly();
 
-// CommonJS-LoadFromFile: test_pb proto.jspb.test
+// CommonJS-LoadFromFile: ../protos/test_pb proto.jspb.test
 goog.require('proto.jspb.test.Deeply.Nested.Message');
 
-// CommonJS-LoadFromFile: test2_pb proto.jspb.test
+// CommonJS-LoadFromFile: ../protos/test2_pb proto.jspb.test
 goog.require('proto.jspb.test.ForeignNestedFieldMessage');
 
 describe('Message test suite', () => {

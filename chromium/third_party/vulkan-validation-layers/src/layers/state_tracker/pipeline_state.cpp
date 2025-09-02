@@ -453,6 +453,10 @@ static bool IgnoreColorAttachments(const Device &state_data, Pipeline &pipe_stat
 }
 
 static bool UsesShaderModuleId(const Pipeline &pipe_state) {
+    if (pipe_state.shader_stages_ci.data() == nullptr) {
+        return false;
+    }
+
     for (const auto &stage_ci : pipe_state.shader_stages_ci) {
         // if using GPL, can have null pStages
         if (stage_ci.ptr()) {
@@ -686,13 +690,13 @@ std::shared_ptr<const vvl::ShaderModule> Pipeline::GetSubStateShader(VkShaderSta
 }
 
 Pipeline::Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
-                   std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
+                   std::shared_ptr<const vvl::PipelineCache> pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
                    std::shared_ptr<const vvl::PipelineLayout> &&layout,
                    spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages])
     : StateObject(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       rp_state(rpstate),
       create_info(MakeGraphicsCreateInfo(*pCreateInfo, rpstate, state_data)),
-      pipeline_cache(std::move(pipe_cache)),
+      pipeline_cache(pipe_cache),
       rendering_create_info(vku::FindStructInPNextChain<VkPipelineRenderingCreateInfo>(GraphicsCreateInfo().pNext)),
       library_create_info(vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(GraphicsCreateInfo().pNext)),
       graphics_lib_type(GetGraphicsLibType(GraphicsCreateInfo())),
@@ -1196,6 +1200,32 @@ bool LastBound::IsPrimitiveRestartEnable() const {
     } else {
         if (auto ia_state = pipeline_state->InputAssemblyState()) {
             return ia_state->primitiveRestartEnable == VK_TRUE;
+        }
+    }
+    return false;
+}
+
+bool LastBound::IsAlphaToCoverageEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT)) {
+            return cb_state.dynamic_state_value.alpha_to_coverage_enable;
+        }
+    } else {
+        if (auto ms_state = pipeline_state->MultisampleState()) {
+            return ms_state->alphaToCoverageEnable == VK_TRUE;
+        }
+    }
+    return false;
+}
+
+bool LastBound::IsAlphaToOneEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT)) {
+            return cb_state.dynamic_state_value.alpha_to_one_enable;
+        }
+    } else {
+        if (auto ms_state = pipeline_state->MultisampleState()) {
+            return ms_state->alphaToOneEnable == VK_TRUE;
         }
     }
     return false;

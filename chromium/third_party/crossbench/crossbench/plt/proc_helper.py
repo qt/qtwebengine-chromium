@@ -19,36 +19,20 @@ PROCESS_NOT_FOUND_EXCEPTIONS: Final = (psutil.NoSuchProcess,
                                        psutil.ZombieProcess, ProcessLookupError)
 
 
-def wait_and_kill(platform: Platform,
-                  process: ProcessLike,
-                  timeout=1,
-                  signal: Optional[Signals] = None) -> None:
-  """Graceful process termination:
-  1. Send signal if provided,
-  2. wait for the given time,
-  3. terminate(),
-  4. Last stage: kill process.
+def terminate_gracefully(platform: Platform,
+                         process: ProcessLike,
+                         timeout: int = 1,
+                         signal: Optional[Signals] = None) -> None:
+  """Graceful process termination
+    1. Send the provided signal or SIGTERM by default
+    2. Wait for the process to terminate
+    3. Kill the process
   """
-  logging.debug("wait_and_kill: %s", process)
-  try:
-    wait_and_terminate(platform, process, timeout, signal)
-  finally:
-    try:
-      platform.kill(process)
-    except PROCESS_NOT_FOUND_EXCEPTIONS:
-      pass
+  if not signal:
+    signal = platform.signals.SIGTERM
 
-
-def wait_and_terminate(platform: Platform,
-                       process: ProcessLike,
-                       timeout=1,
-                       signal: Optional[Signals] = None) -> None:
-  if isinstance(process, Popen) and process.poll() is not None:
-    return
-  logging.debug("Terminating process: %s", process)
   try:
-    if signal:
-      platform.send_signal(process, signal)
+    platform.send_signal(process, signal)
     # TODO(392938079): support timeout on more process types
     if isinstance(process, Popen):
       process.wait(timeout)
@@ -59,4 +43,7 @@ def wait_and_terminate(platform: Platform,
   except PROCESS_NOT_FOUND_EXCEPTIONS as e:  # pylint: disable=broad-except
     logging.debug("Ignoring exception during process termination: %s", e)
   finally:
-    platform.terminate(process)
+    try:
+      platform.kill(process)
+    except PROCESS_NOT_FOUND_EXCEPTIONS:
+      pass

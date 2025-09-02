@@ -31,17 +31,23 @@ class PostProcessDescriptorIndexingPass : public Pass {
     void PrintDebugInfo() const final;
 
   private:
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst);
-    void CreateFunctionCall(BasicBlockIt block_it, InstructionIt* inst_it);
-    void Reset() final;
+    // This is metadata tied to a single instruction gathered during RequiresInstrumentation() to be used later
+    struct InstructionMeta {
+        const Instruction* target_instruction = nullptr;
+        uint32_t descriptor_set = 0;
+        uint32_t descriptor_binding = 0;
+        uint32_t descriptor_index_id = 0;
+        uint32_t variable_id = 0;
+    };
 
-    uint32_t link_function_id = 0;
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta,
+                                 vvl::unordered_set<uint32_t>& found_in_block_set);
+    void CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta);
+
     uint32_t GetLinkFunctionId();
 
-    uint32_t descriptor_set_ = 0;
-    uint32_t descriptor_binding_ = 0;
-    uint32_t descriptor_index_id_ = 0;
-    uint32_t variable_id_ = 0;
+    // Function IDs to link in
+    uint32_t link_function_id_ = 0;
 };
 
 }  // namespace spirv

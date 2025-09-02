@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import json
 import logging
-import math
+import statistics
 from math import floor, log10
 from typing import (TYPE_CHECKING, Any, Callable, Dict, Iterable, List,
-                    Optional, Sequence, Set, Tuple, Union)
+                    Optional, Sequence, Set, Tuple)
 
 from crossbench.probes import helper
 
@@ -30,9 +30,7 @@ class Metric:
   """
 
   @classmethod
-  def format(cls,
-             value: Union[float, int],
-             stddev: Optional[float] = None) -> str:
+  def format(cls, value: float | int, stddev: Optional[float] = None) -> str:
     """Format value and stdev to only expose significant + 1 digits.
     Example outputs:
       100 ± 10%
@@ -89,24 +87,26 @@ class Metric:
   @property
   def average(self) -> float:
     assert self._is_numeric
-    return sum(self.values) / len(self.values)
+    if not self.values:
+      return 0
+    return statistics.fmean(self.values)
 
   @property
   def geomean(self) -> float:
     assert self._is_numeric
-    return geomean(self.values)
+    if self.min <= 0:
+      logging.debug("Ignoring negative values for geomean")
+      return 0
+    return statistics.geometric_mean(self.values)
 
   @property
   def stddev(self) -> float:
     assert self._is_numeric
+    if len(self.values) < 2:
+      return 0
     # We're ignoring here any actual distribution of the data and use this as a
     # rough estimate of the quality of the data
-    average = self.average
-    variance = 0.0
-    for value in self.values:
-      variance += (average - value)**2
-    variance /= len(self.values)
-    return math.sqrt(variance)
+    return statistics.stdev(self.values)
 
   def append(self, value: Any) -> None:
     self.values.append(value)
@@ -130,18 +130,10 @@ class Metric:
       return json_data
     # Try to simplify repeated non-numeric values
     first_value = self.values[0]
-    if len(set(self.values)) == 1:
-      return first_value
-    return json_data
-
-
-def geomean(values: Iterable[Union[int, float]]) -> float:
-  product: float = 1
-  length: int = 0
-  for value in values:
-    product *= value
-    length += 1
-  return product**(1 / length)
+    for value in self.values[1:]:
+      if value != first_value:
+        return json_data
+    return first_value
 
 
 def metric_geomean(metric: Metric) -> float:
@@ -191,7 +183,7 @@ class MetricsMerger:
     return merger
 
   def __init__(self,
-               *args: Union[Dict, List[Dict]],
+               *args: Dict | List[Dict],
                key_fn: Optional[helper.KeyFnType] = None):
     """Create a new MetricsMerger
 
@@ -234,7 +226,7 @@ class MetricsMerger:
       else:
         self._data[key] = Metric.from_json(item)
 
-  def add(self, data: Union[Dict, List[Dict]]) -> None:
+  def add(self, data: Dict | List[Dict]) -> None:
     """ Merge "arbitrary" hierarchical data that ends up having primitive leafs.
     Anything that is not a dict is considered a leaf node.
     """
@@ -246,12 +238,11 @@ class MetricsMerger:
       self._merge(data)
 
   def _merge(
-      self, data: Union[Dict,
-                        List[Dict]], parent_path: Tuple[str, ...] = ()) -> None:
+      self, data: Dict | List[Dict], parent_path: Tuple[str, ...] = ()) -> None:
     assert isinstance(data, dict)
     for property_name, value in data.items():
       path = parent_path + (property_name,)
-      key: Optional[str] = self._key_fn(path)
+      key: str | None = self._key_fn(path)
       if key is None:
         continue
       if isinstance(value, dict):

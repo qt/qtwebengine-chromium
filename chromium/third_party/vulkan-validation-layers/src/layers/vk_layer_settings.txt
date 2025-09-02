@@ -65,6 +65,11 @@ khronos_validation.enables =
 
 # Shader instrumentation
 # =====================
+# Normally GPU-AV will try to prevent crashes, but with unsafe mode, it will be much faster to validate, but might not stop a crash
+#khronos_validation.gpuav_unsafe_mode = true
+
+# Shader instrumentation
+# =====================
 # Instrument shaders to validate descriptors, descriptor indexing, buffer device addresses and ray queries.
 # Warning: will considerably slow down shader executions
 #khronos_validation.gpuav_shader_instrumentation = true
@@ -74,10 +79,10 @@ khronos_validation.enables =
 # Enable descriptor indexing and buffer out of bounds checking
 #khronos_validation.gpuav_descriptor_checks = true
 
-# Generate warning on out of bounds accesses even if buffer robustness is enabled
+# Force robustness on behalf of the user
 # =====================
-# Warn on out of bounds accesses even if robustness is enabled
-#khronos_validation.gpuav_warn_on_robust_oob = true
+# When robustness is enabled, GPU-AV will skip checks already covered by robustness
+#khronos_validation.gpuav_force_on_robustness = true
 
 # Out of bounds buffer device addresses
 # =====================
@@ -144,7 +149,7 @@ khronos_validation.enables =
 # Use GPU-AV to do Image Layout checks
 # =====================
 # (Warning - still known to have false positives)
-# Use GPU-AV to detect which descriptors where accessed.
+# Use GPU-AV to detect which descriptors were accessed.
 # Then using post processing, check that the layout of each image subresource is correct whenever it is used by a command buffer
 #khronos_validation.gpuav_image_layout = true
 
@@ -153,6 +158,11 @@ khronos_validation.enables =
 # Enable fine grained locking for Core Validation, which should improve
 # performance in multithreaded applications.
 khronos_validation.fine_grained_locking = true
+
+# Display as JSON
+# =====================
+# Display Validation as JSON
+#khronos_validation.message_format_json = false
 
 # Display Application Name
 # =====================

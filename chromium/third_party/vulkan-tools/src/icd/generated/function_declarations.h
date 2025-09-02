@@ -164,6 +164,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_AMD_shader_fragment_mask", 1},
     {"VK_EXT_inline_uniform_block", 1},
     {"VK_EXT_shader_stencil_export", 1},
+    {"VK_KHR_shader_bfloat16", 1},
     {"VK_EXT_sample_locations", 1},
     {"VK_KHR_relaxed_block_layout", 1},
     {"VK_KHR_get_memory_requirements2", 1},
@@ -350,7 +351,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_depth_clamp_zero_one", 1},
     {"VK_EXT_non_seamless_cube_map", 1},
     {"VK_ARM_render_pass_striped", 1},
-    {"VK_QCOM_fragment_density_map_offset", 2},
+    {"VK_QCOM_fragment_density_map_offset", 3},
     {"VK_NV_copy_memory_indirect", 1},
     {"VK_NV_memory_decompression", 1},
     {"VK_NV_device_generated_commands_compute", 2},
@@ -430,6 +431,8 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_external_memory_metal", 1},
     {"VK_KHR_depth_clamp_zero_one", 1},
     {"VK_EXT_vertex_attribute_robustness", 1},
+    {"VK_NV_present_metering", 1},
+    {"VK_EXT_fragment_density_map_offset", 1},
 };
 
 
@@ -2284,6 +2287,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilities2KHR(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL GetImageMemoryRequirements2KHR(
     VkDevice                                    device,
     const VkImageMemoryRequirementsInfo2*       pInfo,
@@ -3756,6 +3760,7 @@ static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(
 
 
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateCudaModuleNV(
     VkDevice                                    device,
@@ -3788,6 +3793,7 @@ static VKAPI_ATTR void VKAPI_CALL DestroyCudaFunctionNV(
 static VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(
     VkCommandBuffer                             commandBuffer,
     const VkCudaLaunchInfoNV*                   pLaunchInfo);
+#endif /* VK_ENABLE_BETA_EXTENSIONS */
 
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -4646,6 +4652,14 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetMemoryMetalHandlePropertiesEXT(
 #endif /* VK_USE_PLATFORM_METAL_EXT */
 
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif /* VK_ENABLE_BETA_EXTENSIONS */
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkRenderingEndInfoEXT*                pRenderingEndInfo);
+
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(
     VkDevice                                    device,
@@ -5439,12 +5453,24 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkDestroyPrivateDataSlotEXT", (void*)DestroyPrivateDataSlotEXT},
     {"vkSetPrivateDataEXT", (void*)SetPrivateDataEXT},
     {"vkGetPrivateDataEXT", (void*)GetPrivateDataEXT},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCreateCudaModuleNV", (void*)CreateCudaModuleNV},
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkGetCudaModuleCacheNV", (void*)GetCudaModuleCacheNV},
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCreateCudaFunctionNV", (void*)CreateCudaFunctionNV},
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkDestroyCudaModuleNV", (void*)DestroyCudaModuleNV},
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkDestroyCudaFunctionNV", (void*)DestroyCudaFunctionNV},
+#endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"vkCmdCudaLaunchKernelNV", (void*)CmdCudaLaunchKernelNV},
+#endif
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"vkExportMetalObjectsEXT", (void*)ExportMetalObjectsEXT},
 #endif
@@ -5624,6 +5650,7 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
 #ifdef VK_USE_PLATFORM_METAL_EXT
     {"vkGetMemoryMetalHandlePropertiesEXT", (void*)GetMemoryMetalHandlePropertiesEXT},
 #endif
+    {"vkCmdEndRendering2EXT", (void*)CmdEndRendering2EXT},
     {"vkCreateAccelerationStructureKHR", (void*)CreateAccelerationStructureKHR},
     {"vkDestroyAccelerationStructureKHR", (void*)DestroyAccelerationStructureKHR},
     {"vkCmdBuildAccelerationStructuresKHR", (void*)CmdBuildAccelerationStructuresKHR},

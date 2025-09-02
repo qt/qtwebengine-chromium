@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Type
 
+from typing_extensions import override
+
 from crossbench.helper import fs_helper
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe import ProbeContext
@@ -27,11 +29,13 @@ class V8TurbolizerProbe(ChromiumProbe):
   NAME = "v8.turbolizer"
   RESULT_LOCATION = ResultLocation.BROWSER
 
+  @override
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
     browser.flags.set("--no-sandbox")
     browser.js_flags.set("--trace-turbo")
 
+  @override
   def get_context_cls(self) -> Type[V8TurbolizerProbeContext]:
     return V8TurbolizerProbeContext
 
@@ -46,6 +50,7 @@ class V8TurbolizerProbeContext(ProbeContext[V8TurbolizerProbe]):
     self.browser_platform.mkdir(turbolizer_log_dir, exist_ok=True)
     return turbolizer_log_dir
 
+  @override
   def setup(self) -> None:
     js_flags = self.session.extra_js_flags
     js_flags["--trace-turbo-path"] = str(self.results_dir)

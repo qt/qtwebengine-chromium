@@ -50,9 +50,9 @@ vars = {
   # and whatever else without interference from each other.
   'tsproxy_revision': '7915adec656341bfab173484e1e0ca661eea1627',
   # Three lines of non-changing comments so that
-  # the commit queue can handle CLs rolling tsproxy
+  # the commit queue can handle CLs rolling webpagereplay
   # and whatever else without interference from each other.
-  'webpagereplay_revision': '80f08d7a3457ca7f9678e5ae4bda4aefe72bb40e',
+  'webpagereplay_revision': '2c5049abfc2cf36ece82f7f84ebdcb786659eaf7',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.

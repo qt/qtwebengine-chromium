@@ -17,6 +17,7 @@
  */
 
 #include "chassis/validation_object.h"
+#include "containers/small_vector.h"
 
 namespace object_lifetimes {
 
@@ -204,8 +205,6 @@ class Device : public vvl::base::Device {
     ReadLockGuard ReadSharedLock() const { return ReadLockGuard(object_lifetime_mutex); }
 
     object_list_map_type linked_graphics_pipeline_map;
-
-    bool null_descriptor_enabled{false};
 
     // Constructor for object lifetime tracking
     Device(vvl::dispatch::Device *dev, Instance *instance);

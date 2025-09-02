@@ -25,6 +25,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/log/absl_check.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/substitute.h"
 #include "absl/types/span.h"
 #include "ink/geometry/internal/mesh_packing.h"
@@ -88,10 +89,7 @@ absl::StatusOr<Mesh> Mesh::Create(
     absl::Span<const absl::Span<const float>> vertex_attributes,
     absl::Span<const uint32_t> triangle_indices,
     absl::Span<const std::optional<MeshAttributeCodingParams>> packing_params) {
-  size_t total_attr_components = 0;
-  for (const MeshFormat::Attribute attr : format.Attributes()) {
-    total_attr_components += MeshFormat::ComponentCount(attr.type);
-  }
+  size_t total_attr_components = format.TotalComponentCount();
   if (total_attr_components != vertex_attributes.size()) {
     return absl::InvalidArgumentError(
         absl::Substitute("Wrong number of vertex attributes; expected $0 total "

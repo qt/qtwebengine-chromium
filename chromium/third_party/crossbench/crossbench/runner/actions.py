@@ -7,11 +7,15 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import sys
-from typing import TYPE_CHECKING, Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Type
 
+from crossbench.action_runner.action.enums import ReadyState
 from crossbench.helper.durations import TimeScope
+from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
+  from types import TracebackType
+
   from crossbench import plt
   from crossbench.browsers.browser import Browser
   from crossbench.exception import ExceptionAnnotationScope
@@ -20,18 +24,25 @@ if TYPE_CHECKING:
   from crossbench.runner.timing import AnyTimeUnit, Timing
 
 
+def _default_success_condition(js_result: Any) -> bool:
+  if js_result is True:
+    return True
+  ObjectParser.bool(js_result, strict=True)
+  return False
+
 class Actions(TimeScope):
 
   _max_end_datetime: dt.datetime
 
-  def __init__(self,
-               message: str,
-               run: Run,
-               runner: Optional[Runner] = None,
-               browser: Optional[Browser] = None,
-               verbose: bool = False,
-               measure: bool = True,
-               timeout: dt.timedelta = dt.timedelta()):
+  def __init__(
+      self,
+      message: str,
+      run: Run,
+      runner: Optional[Runner] = None,
+      browser: Optional[Browser] = None,
+      verbose: bool = False,
+      measure: bool = True,
+      timeout: dt.timedelta = dt.timedelta()) -> None:
     assert message, "Actions need a name"
     super().__init__(message)
     self._exception_annotation: ExceptionAnnotationScope = run.exceptions.info(
@@ -68,7 +79,9 @@ class Actions(TimeScope):
       sys.stdout.write(f"   {self._message.ljust(30)}\r")
     return self
 
-  def __exit__(self, exc_type, exc_value, exc_traceback) -> None:
+  def __exit__(self, exc_type: Optional[Type[BaseException]],
+               exc_value: Optional[BaseException],
+               exc_traceback: Optional[TracebackType]) -> None:
     self._is_active = False
     self._exception_annotation.__exit__(exc_type, exc_value, exc_traceback)
     super().__exit__(exc_type, exc_value, exc_traceback)
@@ -105,24 +118,39 @@ class Actions(TimeScope):
       timeout: AnyTimeUnit,
       delay: AnyTimeUnit = 0,
       absolute_time: bool = False,
-      arguments: Sequence[object] = ()) -> None:
+      arguments: Sequence[object] = (),
+      success_condition: Callable[[Any], bool] = _default_success_condition
+  ) -> None:
     wait_range = self._run.wait_range(min_wait, timeout, delay)
     assert "return" in js_code, (
         f"Missing return statement in js-wait code: {js_code}")
-    for _, time_left in wait_range.wait_with_backoff():
+    for _, _, time_left in wait_range.wait_with_backoff():
       time_units = self.timing.units(time_left, absolute_time)
       result = self.js(
           js_code,
           timeout=time_units,
           absolute_time=absolute_time,
           arguments=arguments)
-      if result:
+      if success_condition(result):
         return
-      assert result is False, (
-          f"js_code did not return a bool, but got: {result}\n"
-          f"js-code: {js_code}")
 
-  def show_url(self, url: str, target: Optional[str] = None) -> None:
+  def wait_for_ready_state(self, ready_state: ReadyState,
+                           timeout: dt.timedelta) -> None:
+    # Make sure we also finish if readyState jumps directly
+    # from "loading" to "complete"
+    self.wait_js_condition(
+        f"""
+          let state = document.readyState;
+          return state === '{ready_state}' || state === "complete";
+        """, 0.2, timeout.total_seconds())
+
+  def show_url(
+      self,
+      url: str,
+      target: Optional[str] = None,
+      ready_state: ReadyState = ReadyState.ANY,
+      timeout: dt.timedelta = dt.timedelta()
+  ) -> None:
     self._assert_is_active()
     if target and target in ("_blank", "_parent", "_top"):
       # TODO: use target in the driver instead.
@@ -131,6 +159,9 @@ class Actions(TimeScope):
       if target not in (None, "_self", "_new_tab", "_new_window"):
         raise ValueError(f"Invalid target: {target}")
       self._browser.show_url(url, target=target)
+
+    if ready_state != ReadyState.ANY:
+      self.wait_for_ready_state(ready_state, timeout)
 
   def wait(self,
            time: AnyTimeUnit = dt.timedelta(seconds=1),

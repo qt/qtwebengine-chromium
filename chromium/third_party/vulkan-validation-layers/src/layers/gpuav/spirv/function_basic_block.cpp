@@ -14,7 +14,7 @@
  */
 
 #include "function_basic_block.h"
-#include "instruction.h"
+#include "state_tracker/shader_instruction.h"
 #include "module.h"
 
 namespace gpuav {
@@ -48,7 +48,7 @@ BasicBlock::BasicBlock(Module& module, Function& function) : function_(function)
     CreateInstruction(spv::OpLabel, {new_label_id});
 }
 
-uint32_t BasicBlock::GetLabelId() { return (*(instructions_[0])).ResultId(); }
+uint32_t BasicBlock::GetLabelId() const { return (*(instructions_[0])).ResultId(); }
 
 InstructionIt BasicBlock::GetFirstInjectableInstrution() {
     InstructionIt inst_it;
@@ -110,19 +110,14 @@ Function::Function(Module& module, std::unique_ptr<Instruction> function_inst) :
 }
 
 BasicBlockIt Function::InsertNewBlock(BasicBlockIt it) {
-    auto new_block = std::make_unique<BasicBlock>(module_, (*it)->function_);
     it++;  // make sure it inserted after
-    BasicBlockIt new_block_it = blocks_.insert(it, std::move(new_block));
-
+    BasicBlockIt new_block_it = blocks_.emplace(it, std::make_unique<BasicBlock>(module_, *this));
     return new_block_it;
 }
 
-void Function::InitBlocks(uint32_t count) {
-    blocks_.reserve(blocks_.size() + count);
-    for (uint32_t i = 0; i < count; i++) {
-        auto new_block = std::make_unique<BasicBlock>(module_, *this);
-        blocks_.emplace_back(std::move(new_block));
-    }
+BasicBlock& Function::InsertNewBlockEnd() {
+    std::unique_ptr<BasicBlock>& new_block = blocks_.emplace_back(std::make_unique<BasicBlock>(module_, *this));
+    return *new_block;
 }
 
 const Instruction* Function::FindInstruction(uint32_t id) const {

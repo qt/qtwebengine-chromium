@@ -804,16 +804,17 @@ bool CoreChecks::ValidateGraphicsDynamicStateValue(const LastBound& last_bound_s
     }
 
     if (pipeline.IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT)) {
-        const auto color_blend_state = pipeline.ColorBlendState();
-        if (color_blend_state) {
+        // Found in https://gitlab.khronos.org/vulkan/vulkan/-/issues/4116 that not setting all attachment can invalidate previous
+        // calls, so the last call needs to have set them all
+        if (const auto color_blend_state = pipeline.ColorBlendState()) {
             uint32_t blend_attachment_count = color_blend_state->attachmentCount;
             uint32_t dynamic_attachment_count = cb_state.dynamic_state_value.color_write_enable_attachment_count;
             if (dynamic_attachment_count < blend_attachment_count) {
                 skip |= LogError(
                     vuid.dynamic_color_write_enable_count_07750, objlist, vuid.loc(),
-                    "Currently bound pipeline was created with VkPipelineColorBlendStateCreateInfo::attachmentCount %" PRIu32
-                    " and VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT, but the number of attachments written by "
-                    "vkCmdSetColorWriteEnableEXT() is %" PRIu32 ".%s",
+                    "Currently bound pipeline was created with VkPipelineColorBlendStateCreateInfo::attachmentCount (%" PRIu32
+                    ") and VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT, but the last call to vkCmdSetColorWriteEnableEXT() only had an "
+                    "attachmentCount value of %" PRIu32 " and the remaining attachments color write enable state is undefined.%s",
                     blend_attachment_count, dynamic_attachment_count,
                     cb_state.DescribeInvalidatedState(CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT).c_str());
             }
@@ -1265,6 +1266,23 @@ bool CoreChecks::ValidateDrawDynamicState(const LastBound& last_bound_state, con
         (!IsExtEnabled(extensions.vk_ext_shader_object) || !last_bound_state.IsAnyGraphicsShaderBound())) {
         skip |= ValidateDrawRenderingAttachmentLocation(cb_state, *pipeline_state, vuid);
         skip |= ValidateDrawRenderingInputAttachmentIndex(cb_state, *pipeline_state, vuid);
+    }
+
+    if ((!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT)) &&
+        (cb_state.dynamic_state_value.line_rasterization_mode == VK_LINE_RASTERIZATION_MODE_BRESENHAM ||
+         cb_state.dynamic_state_value.line_rasterization_mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH)) {
+        bool alphaToCoverageEnable = last_bound_state.IsAlphaToCoverageEnable();
+        bool alphaToOneEnable = last_bound_state.IsAlphaToOneEnable();
+        bool sampleShadingEnable =
+            pipeline_state && pipeline_state->MultisampleState() && pipeline_state->MultisampleState()->sampleShadingEnable;
+        if (alphaToCoverageEnable || alphaToOneEnable || sampleShadingEnable) {
+            skip |= LogError(vuid.line_rasterization_10608, cb_state.Handle(), vuid.loc(),
+                             "lineRasterizationMode is %s, but alphaToCoverageEnable (%s), alphaToOneEnable (%s) and "
+                             "sampleShadingEnable (%s) are not all VK_FALSE.",
+                             string_VkLineRasterizationMode(cb_state.dynamic_state_value.line_rasterization_mode),
+                             alphaToCoverageEnable ? "VK_TRUE" : "VK_FALSE", alphaToOneEnable ? "VK_TRUE" : "VK_FALSE",
+                             sampleShadingEnable ? "VK_TRUE" : "VK_FALSE");
+        }
     }
 
     return skip;

@@ -135,6 +135,8 @@ class LinkerDriver(object):
         # may not need to reexport unless LC_REEXPORT_DYLIB is used.
         self._reexport_in_old_module = False
 
+        # temp directory for lto cache.
+        self._object_path_lto = None
 
     def run(self):
         """Runs the linker driver, separating out the main compiler driver's
@@ -245,7 +247,8 @@ class LinkerDriver(object):
         for driver_action in self._pre_actions:
             (pre_name, pre_action) = driver_action
             if sub_arg.startswith(pre_name):
-                assert pre_name not in self._linker_driver_pre_actions
+                assert pre_name not in self._linker_driver_pre_actions, \
+                    f"Name '{pre_name}' found in linker driver pre actions"
                 self._linker_driver_pre_actions[pre_name] = \
                     lambda: pre_action(sub_arg[len(pre_name):])
                 # same sub_arg may be used in actions.
@@ -255,7 +258,8 @@ class LinkerDriver(object):
         for driver_action in self._actions:
             (name, action) = driver_action
             if sub_arg.startswith(name):
-                assert name not in self._linker_driver_actions
+                assert name not in self._linker_driver_actions, \
+                    f"Name '{name}' found in linker driver actions"
                 self._linker_driver_actions[name] = \
                         lambda: action(sub_arg[len(name):])
                 return
@@ -272,9 +276,9 @@ class LinkerDriver(object):
         # through the clang driver. See https://crbug.com/1324104
         # The temporary directory for intermediate LTO object files. If it
         # exists, it will clean itself up on script exit.
-        object_path_lto = tempfile.TemporaryDirectory(dir=os.getcwd())
+        self._object_path_lto = tempfile.TemporaryDirectory(dir=os.getcwd())
         self._compiler_driver_args.append('-Wl,-object_path_lto,{}'.format(
-            os.path.relpath(object_path_lto.name)))
+            os.path.relpath(self._object_path_lto.name)))
 
     def check_reexport_in_old_module(self, tocname):
         """Linker driver pre-action for -Wcrl,tocname,<path>.

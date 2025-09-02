@@ -4,20 +4,26 @@
 
 from __future__ import annotations
 
+import abc
 import argparse
 import logging
-import re
-from typing import TYPE_CHECKING, Optional, TextIO, Tuple, cast
+from typing import TYPE_CHECKING, Optional, TextIO, Tuple, Type, cast
+
+from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.browsers.browser import Browser
 from crossbench.browsers.browser_helper import convert_flags_to_label
+from crossbench.browsers.chromium_based import helper
+from crossbench.browsers.version import BrowserVersionChannel
 from crossbench.browsers.viewport import Viewport
 from crossbench.flags.chrome import ChromeFlags
 from crossbench.types import JsonDict
 
 if TYPE_CHECKING:
+  from crossbench.browsers.chromium.version import ChromiumVersion
   from crossbench.browsers.settings import Settings
+  from crossbench.browsers.version import BrowserVersion
   from crossbench.flags.base import Flags, FlagsData
   from crossbench.flags.chrome import ChromeFeatures
   from crossbench.flags.js_flags import JSFlags
@@ -41,18 +47,35 @@ class ChromiumBased(Browser):
   )
 
   @classmethod
+  @abc.abstractmethod
+  def version_cls(cls) -> Type[ChromiumVersion]:
+    pass
+
+  @classmethod
+  @override
   def default_flags(cls, initial_data: FlagsData = None) -> ChromeFlags:
     return ChromeFlags(initial_data)
 
   def __init__(self,
                label: str,
                path: pth.AnyPath,
-               settings: Optional[Settings] = None):
+               settings: Optional[Settings] = None) -> None:
     super().__init__(label, path, settings=settings)
-    self._stdout_log_file: Optional[TextIO] = None
+    self._stdout_log_file: TextIO | None = None
     assert isinstance(self._flags, ChromeFlags)
 
-  def _setup_flags(self, settings: Settings) -> ChromeFlags:
+  @override
+  def _extract_version(self) -> BrowserVersion:
+    if path := self.path:
+      self._is_local_build = helper.is_in_build_dir(path, self.platform)
+    version = self.version_cls().parse(self.platform.app_version(self.path))
+    # Locally-built chrome versions should not have a channel
+    if self.is_local_build:
+      version = version.with_channel(BrowserVersionChannel.ANY)
+    return version
+
+  @override
+  def _init_flags(self, settings: Settings) -> ChromeFlags:
     flags: Flags = settings.flags
     js_flags: Flags = settings.js_flags
     self._flags = self.default_flags(self.DEFAULT_FLAGS)
@@ -85,45 +108,57 @@ class ChromiumBased(Browser):
   def _maybe_disable_gpu_compositing(self) -> None:
     # Chrome Remote Desktop provides no GPU and older chrome versions
     # don't handle this well.
-    if self.major_version > 92 or ("CHROME_REMOTE_DESKTOP_SESSION"
+    if self.version.major > 92 or ("CHROME_REMOTE_DESKTOP_SESSION"
                                    not in self.platform.environ):
       return
     self.flags.set("--disable-gpu-compositing")
     self.flags.set("--no-sandbox")
 
+  @override
   def validate_flags(self) -> None:
     super().validate_flags()
     field_trial_flags: ChromeFlags = self.flags.field_trial_flags
     no_finch_flags = self.flags.no_experiments_flags
     if field_trial_flags and no_finch_flags:
       raise argparse.ArgumentTypeError(
-          f"Conflicting {self.type_name} flags detected: "
+          f"Conflicting {self.type_name()} flags detected: "
           f"{field_trial_flags} vs {no_finch_flags}.\n"
           "Cannot enable and disable finch / field-trials at the same time.")
 
-  def _setup_cache_dir(self, settings: Settings) -> None:
-    cache_dir = settings.cache_dir
-    if cache_dir is None:
-      maybe_cache_dir = self._flags.get("--user-data-dir", None)
-      if maybe_cache_dir:
-        cache_dir = pth.AnyPath(maybe_cache_dir)
-    if cache_dir is None:
-      self.cache_dir = self.platform.mkdtemp(prefix=self.type_name)
-      self.clear_cache_dir = True
-    else:
-      self.cache_dir = cache_dir
-      self.clear_cache_dir = False
+  @override
+  def _setup_cache_dir(self) -> Optional[pth.AnyPath]:
+    # See documentation for more details:
+    # https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md
+    # We only deal with the user-data-dir here and ignore the user-cache-dir.
+    user_data_dir = self.settings.cache_dir
+    if flag_user_data_dir := self._flags.get("--user-data-dir", None):
+      if user_data_dir and str(user_data_dir) != str(flag_user_data_dir):
+        raise ValueError("Conflicting cache_dir from "
+                         f"settings.cache_dir={repr(str(user_data_dir))} and "
+                         f"--user-data-dir={repr(str(flag_user_data_dir))}")
+      return pth.AnyPath(flag_user_data_dir)
 
-  def _extract_version(self) -> str:
-    assert self.path
-    version_string = self.platform.app_version(self.path)
-    # Sample output: "Chromium 90.0.4430.212 dev" => "90.0.4430.212"
-    matches = re.findall(r"[\d.]+", version_string)
-    if not matches:
-      raise ValueError(
-          f"Could not extract version number from '{version_string}' "
-          f"for '{self.path}'")
-    return str(matches[0])
+    if user_data_dir:
+      return user_data_dir
+
+    temp_dir = None
+    if self.platform.is_android:
+      # On Android, not all apps have permission to write to /data/local/tmp.
+      # We use a folder on external storage instead.
+      # This does not affect the user-cache-dir which needs to be cleared
+      # separately.
+      temp_dir = "/storage/emulated/0/Documents"
+    # Using a temp-dir on macos also forces the user-cache-dir to be there.
+    user_data_dir = self.platform.mkdtemp(
+        prefix=f"{self.type_name()}_", dir=temp_dir)
+    return user_data_dir
+
+  @property
+  def user_data_dir(self) -> Optional[pth.AnyPath]:
+    # On chromium-based browsers we can have two separate caching dirs:
+    # - user-data-dir containing all profile data
+    # - cache-dir containing profile independent caches
+    return self._cache_dir
 
   @property
   def is_headless(self) -> bool:
@@ -132,29 +167,34 @@ class ChromiumBased(Browser):
   @property
   def chrome_log_file(self) -> pth.AnyPath:
     assert self.log_file
-    return self.log_file.with_suffix(f".{self.type_name}.log")
+    return self.log_file.with_suffix(f".{self.type_name()}.log")
 
   @property
+  @override
   def flags(self) -> ChromeFlags:
     return cast(ChromeFlags, self._flags)
 
   @property
+  @override
   def js_flags(self) -> JSFlags:
     return cast(ChromeFlags, self._flags).js_flags
 
   @property
+  @override
   def features(self) -> ChromeFeatures:
     return cast(ChromeFlags, self._flags).features
 
+  @override
   def details_json(self) -> JsonDict:
     details: JsonDict = super().details_json()
     if self.log_file:
       log = cast(JsonDict, details["log"])
-      log[self.type_name] = str(self.chrome_log_file)
+      log[self.type_name()] = str(self.chrome_log_file)
       log["stdout"] = str(self.stdout_log_file)
     details["js_flags"] = tuple(self.js_flags)
     return details
 
+  @override
   def _get_browser_flags_for_session(
       self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
     js_flags_copy = self.js_flags.copy()
@@ -162,7 +202,7 @@ class ChromiumBased(Browser):
 
     flags_copy = self.flags.copy()
     flags_copy.update(session.extra_flags)
-    flags_copy.update(self.network.extra_flags(self.attributes))
+    flags_copy.update(self.network.extra_flags(self.attributes()))
     self._handle_viewport_flags(flags_copy)
 
     if len(js_flags_copy):
@@ -189,11 +229,11 @@ class ChromiumBased(Browser):
     self._sync_viewport_flag(flags, "--headless", self.viewport.is_headless,
                              Viewport.HEADLESS)
     # M112 added --headless=new as replacement for --headless
-    if "--headless" in flags and (self.major_version
+    if "--headless" in flags and (self.version.major
                                   >= self.MIN_HEADLESS_NEW_VERSION):
       if flags["--headless"] is None:
         logging.info("Replacing --headless with --headless=new")
-        flags.set("--headless", "new", override=True)
+        flags.set("--headless", "new", should_override=True)
 
     if self.viewport.is_default:
       update_viewport = False
@@ -220,8 +260,11 @@ class ChromiumBased(Browser):
   def get_label_from_flags(self) -> str:
     return convert_flags_to_label(*self.flags, *self.js_flags)
 
+  @override
   def quit(self) -> None:
-    super().quit()
-    if self._stdout_log_file:
-      self._stdout_log_file.close()
-      self._stdout_log_file = None
+    try:
+      super().quit()
+    finally:
+      if self._stdout_log_file:
+        self._stdout_log_file.close()
+        self._stdout_log_file = None

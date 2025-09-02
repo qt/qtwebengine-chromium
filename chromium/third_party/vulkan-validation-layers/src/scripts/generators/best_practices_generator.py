@@ -17,7 +17,7 @@
 # limitations under the License.
 
 import os
-from generators.base_generator import BaseGenerator
+from base_generator import BaseGenerator
 from generators.generator_utils import PlatformGuardHelper
 
 # If there is another success code other than VK_SUCCESS
@@ -47,25 +47,16 @@ class BestPracticesOutputGenerator(BaseGenerator):
             'vkAllocateDescriptorSets' : 'vvl::AllocateDescriptorSetsData',
         }
         self.pipeline_parameter_map = {
-            'vkCreateGraphicsPipelines' : 'chassis::CreateGraphicsPipelines&',
-            'vkCreateComputePipelines' : 'chassis::CreateComputePipelines&',
-            'vkCreateRayTracingPipelinesNV' : 'chassis::CreateRayTracingPipelinesNV&',
-            'vkCreateRayTracingPipelinesKHR' : 'std::shared_ptr<chassis::CreateRayTracingPipelinesKHR>',
+            'vkCreateGraphicsPipelines' : ', chassis::CreateGraphicsPipelines& chassis_state',
+            'vkCreateComputePipelines' : ', chassis::CreateComputePipelines& chassis_state',
+            'vkCreateRayTracingPipelinesNV' : '',
+            'vkCreateRayTracingPipelinesKHR' : ', std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state',
         }
         # Commands that have a manually written post-call-record step which needs to be called from the autogen'd fcn
         self.manual_postcallrecord_list = [
-            'vkAllocateDescriptorSets',
             'vkQueuePresentKHR',
             'vkQueueBindSparse',
             'vkCreateGraphicsPipelines',
-            'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-            'vkGetPhysicalDeviceSurfaceCapabilities2KHR',
-            'vkGetPhysicalDeviceSurfaceCapabilities2EXT',
-            'vkGetPhysicalDeviceSurfacePresentModesKHR',
-            'vkGetPhysicalDeviceSurfaceFormatsKHR',
-            'vkGetPhysicalDeviceSurfaceFormats2KHR',
-            'vkGetPhysicalDeviceDisplayPlanePropertiesKHR',
-            'vkGetSwapchainImagesKHR',
             'vkBindBufferMemory2',
             'vkBindImageMemory2',
             # AMD tracked
@@ -135,7 +126,7 @@ class BestPracticesOutputGenerator(BaseGenerator):
             if command.name in self.extra_parameter_map:
                 prototype = prototype.replace(')', f', {self.extra_parameter_map[command.name]}& chassis_state)')
             elif command.name in self.pipeline_parameter_map:
-                prototype = prototype.replace(')', f', PipelineStates& pipeline_states, {self.pipeline_parameter_map[command.name]} chassis_state)')
+                prototype = prototype.replace(')', f', PipelineStates& pipeline_states {self.pipeline_parameter_map[command.name]})')
             out.append(prototype)
         out.extend(guard_helper.add_guard(None))
         self.write("".join(out))
@@ -205,7 +196,8 @@ class BestPracticesOutputGenerator(BaseGenerator):
                 paramList.append('chassis_state')
             elif command.name in self.pipeline_parameter_map:
                 paramList.append('pipeline_states')
-                paramList.append('chassis_state')
+                if self.pipeline_parameter_map[command.name]:
+                    paramList.append('chassis_state')
             params = ', '.join(paramList)
 
             class_name = 'BestPractices' if not command.instance else 'bp_state::Instance'
@@ -216,7 +208,7 @@ class BestPracticesOutputGenerator(BaseGenerator):
             if command.name in self.extra_parameter_map:
                 prototype = prototype.replace(')', f', {self.extra_parameter_map[command.name]}& chassis_state)')
             elif command.name in self.pipeline_parameter_map:
-                prototype = prototype.replace(')', f', PipelineStates& pipeline_states, {self.pipeline_parameter_map[command.name]} chassis_state)')
+                prototype = prototype.replace(')', f', PipelineStates& pipeline_states {self.pipeline_parameter_map[command.name]})')
             out.append(prototype)
 
             if command.alias:

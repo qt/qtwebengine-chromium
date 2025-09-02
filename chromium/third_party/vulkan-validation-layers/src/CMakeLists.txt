@@ -149,6 +149,18 @@ if (VVL_ENABLE_ASAN)
     endif()
 endif()
 
+option(VVL_ENABLE_UBSAN "Use undefined behavior sanitization")
+if (VVL_ENABLE_UBSAN)
+    if (NOT MSVC)
+        add_compile_options(-fsanitize=undefined)
+        add_link_options(-fsanitize=undefined)
+
+        # VVL's test-suites deliberately use invalid enum values.
+        # This creates a lot of false positives.
+        add_compile_options(-fno-sanitize=enum)
+    endif()
+endif()
+
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
     add_compile_options(
         -Wall
@@ -160,12 +172,9 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "(GNU|Clang)")
             -Wconversion
             -Wimplicit-fallthrough
             -Wstring-conversion
-        )
-
-        if (CMAKE_BUILD_TYPE MATCHES "Debug")
             # When using tools such as lldb, strings will produce "error: summary string parsing error"
-            add_compile_options(-fstandalone-debug)
-        endif()
+            $<$<CONFIG:Debug>:-fstandalone-debug>
+        )
     endif()
 elseif(MSVC)
     add_compile_options(

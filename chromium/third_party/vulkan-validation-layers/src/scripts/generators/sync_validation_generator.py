@@ -17,8 +17,8 @@
 
 import sys
 import os
-from generators.vulkan_object import Flag
-from generators.base_generator import BaseGenerator
+from vulkan_object import Flag
+from base_generator import BaseGenerator
 
 separator = ' |\n        '
 
@@ -70,9 +70,9 @@ class SyncValidationOutputGenerator(BaseGenerator):
         self.stageAccessCombo = []
 
         # fake stages and accesses for acquire present support
-        self.pipelineStagePresentEngine = Flag('VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL', 0, False, False, None, None)
-        self.accessAcquireRead = Flag('VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL', 0, False, False, None, None)
-        self.accessPresented = Flag('VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL', 0, False, False, None, None)
+        self.pipelineStagePresentEngine = Flag('VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL', 0, False, False, None, None, [])
+        self.accessAcquireRead = Flag('VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL', 0, False, False, None, None, [])
+        self.accessPresented = Flag('VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL', 0, False, False, None, None, [])
 
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
@@ -98,9 +98,9 @@ class SyncValidationOutputGenerator(BaseGenerator):
         self.write('// NOLINTBEGIN') # Wrap for clang-tidy to ignore
 
         # Set value to be at end of bitmask
-        self.pipelineStagePresentEngine.value = max([x.value for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags]) + 1
-        self.accessAcquireRead.value = max([x.value for x in self.vk.bitmasks['VkAccessFlagBits2'].flags]) + 1
-        self.accessPresented.value = max([x.value for x in self.vk.bitmasks['VkAccessFlagBits2'].flags]) + 2
+        self.pipelineStagePresentEngine.value = max([x.value for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags]) << 1
+        self.accessAcquireRead.value = max([x.value for x in self.vk.bitmasks['VkAccessFlagBits2'].flags]) << 1
+        self.accessPresented.value = max([x.value for x in self.vk.bitmasks['VkAccessFlagBits2'].flags]) << 2
 
         # Add into the VulkanObject so logic works as if they were in the XML
         self.vk.bitmasks['VkPipelineStageFlagBits2'].flags.append(self.pipelineStagePresentEngine)
@@ -171,9 +171,9 @@ class SyncValidationOutputGenerator(BaseGenerator):
 
         out.append(f'''
 // Fake stages and accesses for acquire present support
-static const VkPipelineStageFlagBits2 VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL = 0x{(1 << self.pipelineStagePresentEngine.value):016X}ULL;
-static const VkAccessFlagBits2 VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL = 0x{(1 << self.accessAcquireRead.value):016X}ULL;
-static const VkAccessFlagBits2 VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL = 0x{(1 << self.accessPresented.value):016X}ULL;
+static const VkPipelineStageFlagBits2 VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL = 0x{(self.pipelineStagePresentEngine.value):016X}ULL;
+static const VkAccessFlagBits2 VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL = 0x{(self.accessAcquireRead.value):016X}ULL;
+static const VkAccessFlagBits2 VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL = 0x{(self.accessPresented.value):016X}ULL;
 ''')
 
         out.append('// Unique number for each  stage/access combination\n')
@@ -204,7 +204,7 @@ struct SyncAccessInfo {{
 }};
 
 // Array of text names and component masks for each stage/access index
-const std::array<SyncAccessInfo, {len(self.stageAccessCombo)}>& syncAccessInfoByAccessIndex();
+const std::array<SyncAccessInfo, {len(self.stageAccessCombo)}>& GetSyncAccessInfos();
 
 ''')
 
@@ -251,9 +251,9 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
             #include "sync_validation_types.h"
             ''')
 
-        # syncAccessInfoByAccessIndex
+        # GetSyncAccessInfos
         out.append('// clang-format off\n')
-        out.append(f'const std::array<SyncAccessInfo, {len(self.stageAccessCombo)}>& syncAccessInfoByAccessIndex() {{\n')
+        out.append(f'const std::array<SyncAccessInfo, {len(self.stageAccessCombo)}>& GetSyncAccessInfos() {{\n')
         out.append(f'static const std::array<SyncAccessInfo, {len(self.stageAccessCombo)}> variable = {{ {{\n')
         for stageAccess in self.stageAccessCombo:
             out.append(f'''    {{
@@ -490,22 +490,11 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
                     stageToAccessMap[flag.name] = []
                 stageToAccessMap[flag.name].append(access.flag.name)
 
-        # ACCELERATION_STRUCTURE_BUILD accesses input geometry buffers using SHADER_READ access.
-        # The core of validation logic works with expanded stages and SHADER_STORAGE_READ was
-        # choosen to represent SHADER_READ access. Then SHADER_READ itself is handled correctly:
-        # validation logic automatically includes SHADER_READ when its sub-access is used.
-        #
-        # This new stage-access pair should be added manually because vk.xml does not define
-        # ACCELERATION_STRUCTURE_BUILD for SHADER_READ's sub-accesses.
-        #
-        # TODO: with this change SHADER_STORAGE_READ also passes validation (in addition to SHADER_READ),
-        # but other sub-accesses are not allowed. Update this logic if there is a confirmation
-        # how ACCELERATION_STRUCTURE_BUILD should work with sub-components of SHADER_READ:
-        # https://gitlab.khronos.org/vulkan/vulkan/-/issues/3640#note_434212
-        stageToAccessMap['VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR'].append('VK_ACCESS_2_SHADER_STORAGE_READ_BIT')
-        # Micro map, like AS Build, is a non *_STAGE_BIT that can have SHADER_READ
+        # A special case where compound access should be registered instead of its expansion.
+        # AS build and micromap build stages use SHADER_READ access directly.
+        stageToAccessMap['VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR'].append('VK_ACCESS_2_SHADER_READ_BIT')
         if 'VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT' in stageToAccessMap:
-            stageToAccessMap['VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT'].append('VK_ACCESS_2_SHADER_STORAGE_READ_BIT')
+            stageToAccessMap['VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT'].append('VK_ACCESS_2_SHADER_READ_BIT')
 
         for stage in [x for x in self.stages if x in stageToAccessMap]:
             mini_stage = stage.lstrip()

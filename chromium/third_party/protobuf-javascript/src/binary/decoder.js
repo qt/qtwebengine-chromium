@@ -1,6 +1,6 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
+// https://protobuf.dev/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -47,14 +47,14 @@
 goog.provide('jspb.BinaryDecoder');
 
 goog.require('jspb.asserts');
-goog.require('goog.crypt');
+goog.require('jspb.binary.utf8');
 goog.require('jspb.utils');
 
 
 
 /**
  * BinaryDecoder implements the decoders for all the wire types specified in
- * https://developers.google.com/protocol-buffers/docs/encoding.
+ * https://protobuf.dev/programming-guides/encoding/.
  *
  * @param {jspb.ByteSource=} opt_bytes The bytes we're reading from.
  * @param {number=} opt_start The optional offset to start reading at.
@@ -62,6 +62,7 @@ goog.require('jspb.utils');
  *     we'll throw an assertion if we go off the end of the block.
  * @constructor
  * @struct
+ * @export
  */
 jspb.BinaryDecoder = function(opt_bytes, opt_start, opt_length) {
   /**
@@ -108,6 +109,14 @@ jspb.BinaryDecoder.instanceCache_ = [];
 
 
 /**
+ * @return {number}
+ * @export
+ */
+jspb.BinaryDecoder.getInstanceCacheLength = function() {
+  return jspb.BinaryDecoder.instanceCache_.length;
+}
+
+/**
  * Pops an instance off the instance cache, or creates one if the cache is
  * empty.
  * @param {jspb.ByteSource=} opt_bytes The bytes we're reading from.
@@ -115,6 +124,7 @@ jspb.BinaryDecoder.instanceCache_ = [];
  * @param {number=} opt_length The optional length of the block to read -
  *     we'll throw an assertion if we go off the end of the block.
  * @return {!jspb.BinaryDecoder}
+ * @export
  */
 jspb.BinaryDecoder.alloc = function(opt_bytes, opt_start, opt_length) {
   if (jspb.BinaryDecoder.instanceCache_.length) {
@@ -131,6 +141,7 @@ jspb.BinaryDecoder.alloc = function(opt_bytes, opt_start, opt_length) {
 
 /**
  * Puts this instance back in the instance cache.
+ * @export
  */
 jspb.BinaryDecoder.prototype.free = function() {
   this.clear();
@@ -143,6 +154,7 @@ jspb.BinaryDecoder.prototype.free = function() {
 /**
  * Makes a copy of this decoder.
  * @return {!jspb.BinaryDecoder}
+ * @export
  */
 jspb.BinaryDecoder.prototype.clone = function() {
   return jspb.BinaryDecoder.alloc(
@@ -152,6 +164,7 @@ jspb.BinaryDecoder.prototype.clone = function() {
 
 /**
  * Clears the decoder.
+ * @export
  */
 jspb.BinaryDecoder.prototype.clear = function() {
   this.bytes_ = null;
@@ -165,6 +178,7 @@ jspb.BinaryDecoder.prototype.clear = function() {
 /**
  * Returns the raw buffer.
  * @return {?Uint8Array} The raw buffer.
+ * @export
  */
 jspb.BinaryDecoder.prototype.getBuffer = function() {
   return this.bytes_;
@@ -177,6 +191,7 @@ jspb.BinaryDecoder.prototype.getBuffer = function() {
  * @param {number=} opt_start The optional offset to start reading at.
  * @param {number=} opt_length The optional length of the block to read -
  *     we'll throw an assertion if we go off the end of the block.
+ * @export
  */
 jspb.BinaryDecoder.prototype.setBlock = function(data, opt_start, opt_length) {
   this.bytes_ = jspb.utils.byteSourceToUint8Array(data);
@@ -189,6 +204,7 @@ jspb.BinaryDecoder.prototype.setBlock = function(data, opt_start, opt_length) {
 
 /**
  * @return {number}
+ * @export
  */
 jspb.BinaryDecoder.prototype.getEnd = function() {
   return this.end_;
@@ -197,6 +213,7 @@ jspb.BinaryDecoder.prototype.getEnd = function() {
 
 /**
  * @param {number} end
+ * @export
  */
 jspb.BinaryDecoder.prototype.setEnd = function(end) {
   this.end_ = end;
@@ -205,6 +222,7 @@ jspb.BinaryDecoder.prototype.setEnd = function(end) {
 
 /**
  * Moves the read cursor back to the start of the block.
+ * @export
  */
 jspb.BinaryDecoder.prototype.reset = function() {
   this.cursor_ = this.start_;
@@ -214,6 +232,7 @@ jspb.BinaryDecoder.prototype.reset = function() {
 /**
  * Returns the internal read cursor.
  * @return {number} The internal read cursor.
+ * @export
  */
 jspb.BinaryDecoder.prototype.getCursor = function() {
   return this.cursor_;
@@ -223,6 +242,7 @@ jspb.BinaryDecoder.prototype.getCursor = function() {
 /**
  * Returns the internal read cursor.
  * @param {number} cursor The new cursor.
+ * @export
  */
 jspb.BinaryDecoder.prototype.setCursor = function(cursor) {
   this.cursor_ = cursor;
@@ -232,16 +252,18 @@ jspb.BinaryDecoder.prototype.setCursor = function(cursor) {
 /**
  * Advances the stream cursor by the given number of bytes.
  * @param {number} count The number of bytes to advance by.
+ * @export
  */
 jspb.BinaryDecoder.prototype.advance = function(count) {
   this.cursor_ += count;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
 };
 
 
 /**
  * Returns true if this decoder is at the end of the block.
  * @return {boolean}
+ * @export
  */
 jspb.BinaryDecoder.prototype.atEnd = function() {
   return this.cursor_ == this.end_;
@@ -251,6 +273,7 @@ jspb.BinaryDecoder.prototype.atEnd = function() {
 /**
  * Returns true if this decoder is at the end of the block.
  * @return {boolean}
+ * @export
  */
 jspb.BinaryDecoder.prototype.pastEnd = function() {
   return this.cursor_ > this.end_;
@@ -260,6 +283,7 @@ jspb.BinaryDecoder.prototype.pastEnd = function() {
 /**
  * Returns true if this decoder encountered an error due to corrupt data.
  * @return {boolean}
+ * @export
  */
 jspb.BinaryDecoder.prototype.getError = function() {
   return this.error_ || (this.cursor_ < 0) || (this.cursor_ > this.end_);
@@ -277,12 +301,13 @@ jspb.BinaryDecoder.prototype.getError = function() {
  *
  * Decoding varints requires doing some funny base-128 math - for more
  * details on the format, see
- * https://developers.google.com/protocol-buffers/docs/encoding
+ * https://protobuf.dev/programming-guides/encoding/
  *
  * @param {function(number, number): T} convert Conversion function to produce
  *     the result value, takes parameters (lowBits, highBits).
  * @return {T}
  * @template T
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSplitVarint64 = function(convert) {
   var temp = 128;
@@ -333,12 +358,13 @@ jspb.BinaryDecoder.prototype.readSplitVarint64 = function(convert) {
  *
  * Zigzag encoding is a modification of varint encoding that reduces the
  * storage overhead for small negative integers - for more details on the
- * format, see https://developers.google.com/protocol-buffers/docs/encoding
+ * format, see https://protobuf.dev/programming-guides/encoding/
  *
  * @param {function(number, number): T} convert Conversion function to produce
  *     the result value, takes parameters (lowBits, highBits).
  * @return {T}
  * @template T
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSplitZigzagVarint64 = function(convert) {
   return this.readSplitVarint64(function(low, high) {
@@ -356,6 +382,7 @@ jspb.BinaryDecoder.prototype.readSplitZigzagVarint64 = function(convert) {
  *     the result value, takes parameters (lowBits, highBits).
  * @return {T}
  * @template T
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSplitFixed64 = function(convert) {
   var bytes = this.bytes_;
@@ -370,9 +397,21 @@ jspb.BinaryDecoder.prototype.readSplitFixed64 = function(convert) {
   return convert(lowBits, highBits);
 };
 
+/**
+  * Asserts that our cursor is in bounds.
+  *
+  * @private
+  * @return {void}
+  */
+jspb.BinaryDecoder.prototype.checkCursor = function () {
+  if (this.cursor_ > this.end_) {
+    jspb.asserts.fail('Read past the end ' + this.cursor_ + ' > ' + this.end_);
+  }
+}
 
 /**
  * Skips over a varint in the block without decoding it.
+ * @export
  */
 jspb.BinaryDecoder.prototype.skipVarint = function() {
   while (this.bytes_[this.cursor_] & 0x80) {
@@ -386,6 +425,7 @@ jspb.BinaryDecoder.prototype.skipVarint = function() {
  * Skips backwards over a varint in the block - to do this correctly, we have
  * to know the value we're skipping backwards over or things are ambiguous.
  * @param {number} value The varint value to unskip.
+ * @export
  */
 jspb.BinaryDecoder.prototype.unskipVarint = function(value) {
   while (value > 128) {
@@ -410,9 +450,10 @@ jspb.BinaryDecoder.prototype.unskipVarint = function(value) {
  *
  * Decoding varints requires doing some funny base-128 math - for more
  * details on the format, see
- * https://developers.google.com/protocol-buffers/docs/encoding
+ * https://protobuf.dev/programming-guides/encoding/
  *
  * @return {number} The decoded unsigned 32-bit varint.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
   var temp;
@@ -422,7 +463,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
   var x = (temp & 0x7F);
   if (temp < 128) {
     this.cursor_ += 1;
-    jspb.asserts.assert(this.cursor_ <= this.end_);
+    this.checkCursor();
     return x;
   }
 
@@ -430,7 +471,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
   x |= (temp & 0x7F) << 7;
   if (temp < 128) {
     this.cursor_ += 2;
-    jspb.asserts.assert(this.cursor_ <= this.end_);
+    this.checkCursor();
     return x;
   }
 
@@ -438,7 +479,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
   x |= (temp & 0x7F) << 14;
   if (temp < 128) {
     this.cursor_ += 3;
-    jspb.asserts.assert(this.cursor_ <= this.end_);
+    this.checkCursor();
     return x;
   }
 
@@ -446,7 +487,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
   x |= (temp & 0x7F) << 21;
   if (temp < 128) {
     this.cursor_ += 4;
-    jspb.asserts.assert(this.cursor_ <= this.end_);
+    this.checkCursor();
     return x;
   }
 
@@ -456,7 +497,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
     // We're reading the high bits of an unsigned varint. The byte we just read
     // also contains bits 33 through 35, which we're going to discard.
     this.cursor_ += 5;
-    jspb.asserts.assert(this.cursor_ <= this.end_);
+    this.checkCursor();
     return x >>> 0;
   }
 
@@ -470,7 +511,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
     jspb.asserts.assert(false);
   }
 
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return x;
 };
 
@@ -479,6 +520,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint32 = function() {
  * Coerces the output of readUnsignedVarint32 to an int32.
  *
  * @return {number} The decoded signed 32-bit varint.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSignedVarint32 =
     function() {
@@ -507,6 +549,7 @@ jspb.BinaryDecoder.prototype.readSignedVarint32 =
  * Reads a 32-bit signed variant and returns its value as a string.
  *
  * @return {string} The decoded signed 32-bit varint as a string.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSignedVarint32String = function() {
   // 32-bit integers fit in JavaScript numbers without loss of precision, so
@@ -522,9 +565,10 @@ jspb.BinaryDecoder.prototype.readSignedVarint32String = function() {
  *
  * Zigzag encoding is a modification of varint encoding that reduces the
  * storage overhead for small negative integers - for more details on the
- * format, see https://developers.google.com/protocol-buffers/docs/encoding
+ * format, see https://protobuf.dev/programming-guides/encoding/
  *
  * @return {number} The decoded signed, zigzag-encoded 32-bit varint.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readZigzagVarint32 = function() {
   var result = this.readUnsignedVarint32();
@@ -539,6 +583,7 @@ jspb.BinaryDecoder.prototype.readZigzagVarint32 = function() {
  *
  * @return {number} The decoded unsigned varint. Precision will be lost if the
  *     integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUnsignedVarint64 = function() {
   return this.readSplitVarint64(jspb.utils.joinUint64);
@@ -550,6 +595,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint64 = function() {
  * as a decimal string.
  *
  * @return {string} The decoded unsigned varint as a decimal string.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUnsignedVarint64String = function() {
   return this.readSplitVarint64(jspb.utils.joinUnsignedDecimalString);
@@ -563,6 +609,7 @@ jspb.BinaryDecoder.prototype.readUnsignedVarint64String = function() {
  *
  * @return {number} The decoded signed varint. Precision will be lost if the
  *     integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSignedVarint64 = function() {
   return this.readSplitVarint64(jspb.utils.joinInt64);
@@ -574,6 +621,7 @@ jspb.BinaryDecoder.prototype.readSignedVarint64 = function() {
  * as a decimal string.
  *
  * @return {string} The decoded signed varint as a decimal string.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readSignedVarint64String = function() {
   return this.readSplitVarint64(jspb.utils.joinSignedDecimalString);
@@ -588,10 +636,11 @@ jspb.BinaryDecoder.prototype.readSignedVarint64String = function() {
  *
  * Zigzag encoding is a modification of varint encoding that reduces the
  * storage overhead for small negative integers - for more details on the
- * format, see https://developers.google.com/protocol-buffers/docs/encoding
+ * format, see https://protobuf.dev/programming-guides/encoding/
  *
  * @return {number} The decoded zigzag varint. Precision will be lost if the
  *     integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readZigzagVarint64 = function() {
   return this.readSplitVarint64(jspb.utils.joinZigzag64);
@@ -605,9 +654,10 @@ jspb.BinaryDecoder.prototype.readZigzagVarint64 = function() {
  *
  * Zigzag encoding is a modification of varint encoding that reduces the
  * storage overhead for small negative integers - for more details on the
- * format, see https://developers.google.com/protocol-buffers/docs/encoding
+ * format, see https://protobuf.dev/programming-guides/encoding/
  *
  * @return {string} The decoded zigzag varint in hash64 format.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readZigzagVarintHash64 = function() {
   return this.readSplitZigzagVarint64(jspb.utils.joinHash64);
@@ -620,10 +670,11 @@ jspb.BinaryDecoder.prototype.readZigzagVarintHash64 = function() {
  *
  * Zigzag encoding is a modification of varint encoding that reduces the
  * storage overhead for small negative integers - for more details on the
- * format, see https://developers.google.com/protocol-buffers/docs/encoding
+ * format, see https://protobuf.dev/programming-guides/encoding/
  *
  * @return {string} The decoded signed, zigzag-encoded 64-bit varint as a
  * string.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readZigzagVarint64String = function() {
   return this.readSplitZigzagVarint64(jspb.utils.joinSignedDecimalString);
@@ -634,11 +685,12 @@ jspb.BinaryDecoder.prototype.readZigzagVarint64String = function() {
  * Reads a raw unsigned 8-bit integer from the binary stream.
  *
  * @return {number} The unsigned 8-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUint8 = function() {
   var a = this.bytes_[this.cursor_ + 0];
   this.cursor_ += 1;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return a;
 };
 
@@ -647,12 +699,13 @@ jspb.BinaryDecoder.prototype.readUint8 = function() {
  * Reads a raw unsigned 16-bit integer from the binary stream.
  *
  * @return {number} The unsigned 16-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUint16 = function() {
   var a = this.bytes_[this.cursor_ + 0];
   var b = this.bytes_[this.cursor_ + 1];
   this.cursor_ += 2;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return (a << 0) | (b << 8);
 };
 
@@ -661,6 +714,7 @@ jspb.BinaryDecoder.prototype.readUint16 = function() {
  * Reads a raw unsigned 32-bit integer from the binary stream.
  *
  * @return {number} The unsigned 32-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUint32 = function() {
   var a = this.bytes_[this.cursor_ + 0];
@@ -668,7 +722,7 @@ jspb.BinaryDecoder.prototype.readUint32 = function() {
   var c = this.bytes_[this.cursor_ + 2];
   var d = this.bytes_[this.cursor_ + 3];
   this.cursor_ += 4;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return ((a << 0) | (b << 8) | (c << 16) | (d << 24)) >>> 0;
 };
 
@@ -680,6 +734,7 @@ jspb.BinaryDecoder.prototype.readUint32 = function() {
  *
  * @return {number} The unsigned 64-bit integer read from the binary stream.
  *     Precision will be lost if the integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUint64 = function() {
   var bitsLow = this.readUint32();
@@ -694,6 +749,7 @@ jspb.BinaryDecoder.prototype.readUint64 = function() {
  * precision lost if the absolute value of the integer is larger than 2^53.
  *
  * @return {string} The unsigned 64-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readUint64String = function() {
   var bitsLow = this.readUint32();
@@ -706,11 +762,12 @@ jspb.BinaryDecoder.prototype.readUint64String = function() {
  * Reads a raw signed 8-bit integer from the binary stream.
  *
  * @return {number} The signed 8-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readInt8 = function() {
   var a = this.bytes_[this.cursor_ + 0];
   this.cursor_ += 1;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return (a << 24) >> 24;
 };
 
@@ -719,12 +776,13 @@ jspb.BinaryDecoder.prototype.readInt8 = function() {
  * Reads a raw signed 16-bit integer from the binary stream.
  *
  * @return {number} The signed 16-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readInt16 = function() {
   var a = this.bytes_[this.cursor_ + 0];
   var b = this.bytes_[this.cursor_ + 1];
   this.cursor_ += 2;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return (((a << 0) | (b << 8)) << 16) >> 16;
 };
 
@@ -733,6 +791,7 @@ jspb.BinaryDecoder.prototype.readInt16 = function() {
  * Reads a raw signed 32-bit integer from the binary stream.
  *
  * @return {number} The signed 32-bit integer read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readInt32 = function() {
   var a = this.bytes_[this.cursor_ + 0];
@@ -740,7 +799,7 @@ jspb.BinaryDecoder.prototype.readInt32 = function() {
   var c = this.bytes_[this.cursor_ + 2];
   var d = this.bytes_[this.cursor_ + 3];
   this.cursor_ += 4;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return (a << 0) | (b << 8) | (c << 16) | (d << 24);
 };
 
@@ -752,6 +811,7 @@ jspb.BinaryDecoder.prototype.readInt32 = function() {
  *
  * @return {number} The signed 64-bit integer read from the binary stream.
  *     Precision will be lost if the integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readInt64 = function() {
   var bitsLow = this.readUint32();
@@ -766,6 +826,7 @@ jspb.BinaryDecoder.prototype.readInt64 = function() {
  *
  * @return {string} The signed 64-bit integer read from the binary stream.
  *     Precision will be lost if the integer exceeds 2^53.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readInt64String = function() {
   var bitsLow = this.readUint32();
@@ -779,6 +840,7 @@ jspb.BinaryDecoder.prototype.readInt64String = function() {
  * temporary buffer to realign the data.
  *
  * @return {number} The float read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readFloat = function() {
   var bitsLow = this.readUint32();
@@ -792,6 +854,7 @@ jspb.BinaryDecoder.prototype.readFloat = function() {
  * temporary buffer to realign the data.
  *
  * @return {number} The double read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readDouble = function() {
   var bitsLow = this.readUint32();
@@ -803,9 +866,12 @@ jspb.BinaryDecoder.prototype.readDouble = function() {
 /**
  * Reads a boolean value from the binary stream.
  * @return {boolean} The boolean read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readBool = function() {
-  return !!this.bytes_[this.cursor_++];
+  const b = !!this.bytes_[this.cursor_++];
+  this.checkCursor();
+  return b;
 };
 
 
@@ -813,6 +879,7 @@ jspb.BinaryDecoder.prototype.readBool = function() {
  * Reads an enum value from the binary stream, which are always encoded as
  * signed varints.
  * @return {number} The enum value read from the binary stream.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readEnum = function() {
   return this.readSignedVarint32();
@@ -825,72 +892,19 @@ jspb.BinaryDecoder.prototype.readEnum = function() {
  * Supports codepoints from U+0000 up to U+10FFFF.
  * (http://en.wikipedia.org/wiki/UTF-8).
  * @param {number} length The length of the string to read.
+ * @param {boolean} requireUtf8 Whether to throw when invalid utf8 is found.
  * @return {string} The decoded string.
+ * @export
  */
-jspb.BinaryDecoder.prototype.readString = function(length) {
-  var bytes = this.bytes_;
-  var cursor = this.cursor_;
-  var end = cursor + length;
-  var codeUnits = [];
 
-  var result = '';
-  while (cursor < end) {
-    var c = bytes[cursor++];
-    if (c < 128) {  // Regular 7-bit ASCII.
-      codeUnits.push(c);
-    } else if (c < 192) {
-      // UTF-8 continuation mark. We are out of sync. This
-      // might happen if we attempted to read a character
-      // with more than four bytes.
-      continue;
-    } else if (c < 224) {  // UTF-8 with two bytes.
-      var c2 = bytes[cursor++];
-      codeUnits.push(((c & 31) << 6) | (c2 & 63));
-    } else if (c < 240) {  // UTF-8 with three bytes.
-      var c2 = bytes[cursor++];
-      var c3 = bytes[cursor++];
-      codeUnits.push(((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63));
-    } else if (c < 248) {  // UTF-8 with 4 bytes.
-      var c2 = bytes[cursor++];
-      var c3 = bytes[cursor++];
-      var c4 = bytes[cursor++];
-      // Characters written on 4 bytes have 21 bits for a codepoint.
-      // We can't fit that on 16bit characters, so we use surrogates.
-      var codepoint =
-          ((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63);
-      // Surrogates formula from wikipedia.
-      // 1. Subtract 0x10000 from codepoint
-      codepoint -= 0x10000;
-      // 2. Split this into the high 10-bit value and the low 10-bit value
-      // 3. Add 0xD800 to the high value to form the high surrogate
-      // 4. Add 0xDC00 to the low value to form the low surrogate:
-      var low = (codepoint & 1023) + 0xDC00;
-      var high = ((codepoint >> 10) & 1023) + 0xD800;
-      codeUnits.push(high, low);
-    }
-
-    // Avoid exceeding the maximum stack size when calling `apply`.
-    if (codeUnits.length >= 8192) {
-      result += String.fromCharCode.apply(null, codeUnits);
-      codeUnits.length = 0;
-    }
-  }
-  result += goog.crypt.byteArrayToString(codeUnits);
-  this.cursor_ = cursor;
+jspb.BinaryDecoder.prototype.readString = function (length, requireUtf8) {
+  const cursor = this.cursor_;
+  this.cursor_ += length;
+  this.checkCursor();
+  const result =
+	jspb.binary.utf8.decodeUtf8(jspb.asserts.assert(this.bytes_), cursor, length, requireUtf8);
   return result;
 };
-
-
-/**
- * Reads and parses a UTF-8 encoded unicode string (with length prefix) from
- * the stream.
- * @return {string} The decoded string.
- */
-jspb.BinaryDecoder.prototype.readStringWithLength = function() {
-  var length = this.readUnsignedVarint32();
-  return this.readString(length);
-};
-
 
 /**
  * Reads a block of raw bytes from the binary stream.
@@ -898,6 +912,7 @@ jspb.BinaryDecoder.prototype.readStringWithLength = function() {
  * @param {number} length The number of bytes to read.
  * @return {!Uint8Array} The decoded block of bytes, or an empty block if the
  *     length was invalid.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readBytes = function(length) {
   if (length < 0 || this.cursor_ + length > this.bytes_.length) {
@@ -909,7 +924,7 @@ jspb.BinaryDecoder.prototype.readBytes = function(length) {
   var result = this.bytes_.subarray(this.cursor_, this.cursor_ + length);
 
   this.cursor_ += length;
-  jspb.asserts.assert(this.cursor_ <= this.end_);
+  this.checkCursor();
   return result;
 };
 
@@ -919,6 +934,7 @@ jspb.BinaryDecoder.prototype.readBytes = function(length) {
  * Unicode string for use as a hash table key.
  *
  * @return {string} The hash value.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readVarintHash64 = function() {
   return this.readSplitVarint64(jspb.utils.joinHash64);
@@ -930,6 +946,7 @@ jspb.BinaryDecoder.prototype.readVarintHash64 = function() {
  * 8-character Unicode string for use as a hash table key.
  *
  * @return {string} The hash value.
+ * @export
  */
 jspb.BinaryDecoder.prototype.readFixedHash64 = function() {
   var bytes = this.bytes_;

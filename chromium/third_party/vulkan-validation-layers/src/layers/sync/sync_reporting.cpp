@@ -18,71 +18,74 @@
 #include "sync/sync_reporting.h"
 #include "sync/sync_image.h"
 #include "sync/sync_validation.h"
+#include "error_message/error_strings.h"
 
-SyncNodeFormatter::SyncNodeFormatter(const SyncValidator &sync_state, const vvl::CommandBuffer *cb_state)
-    : debug_report(sync_state.debug_report), node(cb_state), label("command_buffer") {}
-
-SyncNodeFormatter::SyncNodeFormatter(const SyncValidator &sync_state, const vvl::Image *image)
-    : debug_report(sync_state.debug_report), node(image), label("image") {}
-
-SyncNodeFormatter::SyncNodeFormatter(const SyncValidator &sync_state, const vvl::Queue *q_state)
-    : debug_report(sync_state.debug_report), node(q_state), label("queue") {}
-
-SyncNodeFormatter::SyncNodeFormatter(const SyncValidator &sync_state, const vvl::StateObject *state_object, const char *label_)
-    : debug_report(sync_state.debug_report), node(state_object), label(label_) {}
-
-std::string FormatStateObject(const SyncNodeFormatter &formatter) {
-    std::stringstream out;
-    if (formatter.label) {
-        out << formatter.label << ": ";
+static const char *string_SyncHazard(SyncHazard hazard) {
+    switch (hazard) {
+        case SyncHazard::NONE:
+            return "NONE";
+        case SyncHazard::READ_AFTER_WRITE:
+            return "READ_AFTER_WRITE";
+        case SyncHazard::WRITE_AFTER_READ:
+            return "WRITE_AFTER_READ";
+        case SyncHazard::WRITE_AFTER_WRITE:
+            return "WRITE_AFTER_WRITE";
+        case SyncHazard::READ_RACING_WRITE:
+            return "READ_RACING_WRITE";
+        case SyncHazard::WRITE_RACING_WRITE:
+            return "WRITE_RACING_WRITE";
+        case SyncHazard::WRITE_RACING_READ:
+            return "WRITE_RACING_READ";
+        case SyncHazard::READ_AFTER_PRESENT:
+            return "READ_AFTER_PRESENT";
+        case SyncHazard::WRITE_AFTER_PRESENT:
+            return "WRITE_AFTER_PRESENT";
+        case SyncHazard::PRESENT_AFTER_WRITE:
+            return "PRESENT_AFTER_WRITE";
+        case SyncHazard::PRESENT_AFTER_READ:
+            return "PRESENT_AFTER_READ";
+        default:
+            assert(0);
+            return "INVALID HAZARD";
     }
-    if (formatter.node) {
-        out << formatter.debug_report->FormatHandle(*formatter.node).c_str();
-        if (formatter.node->Destroyed()) {
-            out << " (destroyed)";
-        }
-    } else {
-        out << "null handle";
+}
+
+static bool IsHazardVsRead(SyncHazard hazard) {
+    switch (hazard) {
+        case SyncHazard::WRITE_AFTER_READ:
+        case SyncHazard::WRITE_RACING_READ:
+        case SyncHazard::PRESENT_AFTER_READ:
+            return true;
+        default:
+            return false;
     }
-    return out.str();
 }
 
-void ReportKeyValues::Add(std::string_view key, std::string_view value) {
-    key_values.emplace_back(KeyValue{std::string(key), std::string(value)});
-}
+static auto SortKeyValues(const std::vector<ReportProperties::NameValue> &name_values) {
+    const std::vector<std::string> std_properties = {
+        kPropertyMessageType,   kPropertyHazardType, kPropertyAccess,       kPropertyPriorAccess, kPropertyReadBarriers,
+        kPropertyWriteBarriers, kPropertyCommand,    kPropertyPriorCommand, kPropertyDebugRegion, kPropertyPriorDebugRegion};
+    const uint32_t other_properties_order = uint32_t(std_properties.size());
+    const uint32_t debug_properties_order = other_properties_order + 1;
 
-void ReportKeyValues::Add(std::string_view key, uint64_t value) {
-    key_values.emplace_back(KeyValue{std::string(key), std::to_string(value)});
-}
-
-static auto SortKeyValues(const std::vector<ReportKeyValues::KeyValue> &key_values) {
-    auto get_sort_order = [](const std::string &key) -> uint32_t {
-        // message_type goes first
-        if (key == kPropertyMessageType) {
-            return 0;
-        }
-        // followed by hazard type
-        if (key == kPropertyHazardType) {
-            return 1;
-        }
-        // then some common properties
-        const char *common_properties[] = {kPropertyAccess,       kPropertyPriorAccess,  kPropertyCommand,
-                                           kPropertyPriorCommand, kPropertyReadBarriers, kPropertyWriteBarriers};
-        if (IsValueIn(key, common_properties)) {
-            return 2;
+    auto get_sort_order = [&](const std::string &key) -> uint32_t {
+        // at first put standard properties
+        auto std_it = std::find(std_properties.begin(), std_properties.end(), key);
+        if (std_it != std_properties.end()) {
+            const uint32_t std_order = uint32_t(&*std_it - std_properties.data());
+            return std_order;
         }
         // debug properties are at the end
-        const char *debug_properties[] = {kPropertySeqNo, kPropertySubCmd, kPropertyResetNo, kPropertyBatchTag};
+        const char *debug_properties[] = {kPropertySeqNo, kPropertyResetNo, kPropertyBatchTag};
         if (IsValueIn(key, debug_properties)) {
-            return 4;
+            return debug_properties_order;
         }
-        // everything else
-        return 3;
+        return other_properties_order;
     };
-    auto sorted = key_values;
+    auto sorted = name_values;
     std::stable_sort(sorted.begin(), sorted.end(), [&get_sort_order](const auto &a, const auto &b) {
-        const uint32_t a_order = get_sort_order(a.key);
-        const uint32_t b_order = get_sort_order(b.key);
+        const uint32_t a_order = get_sort_order(a.name);
+        const uint32_t b_order = get_sort_order(b.name);
         // Sort ordering groups
         if (a_order != b_order) {
             return a_order < b_order;
@@ -94,122 +97,64 @@ static auto SortKeyValues(const std::vector<ReportKeyValues::KeyValue> &key_valu
     return sorted;
 }
 
-std::string ReportKeyValues::GetExtraPropertiesSection(bool pretty_print) const {
-    if (key_values.empty()) {
-        return {};
+static std::string FormatAccessProperty(const SyncAccessInfo &access) {
+    constexpr std::array special_accesses = {SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL,
+                                             SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL, SYNC_IMAGE_LAYOUT_TRANSITION,
+                                             SYNC_QUEUE_FAMILY_OWNERSHIP_TRANSFER};
+    if (IsValueIn(access.access_index, special_accesses)) {
+        // Print internal name for accesses that don't have corresponding Vulkan constants
+        return access.name;
     }
-    const auto sorted = SortKeyValues(key_values);
     std::stringstream ss;
-    ss << "\n[Extra properties]\n";
-    bool first = true;
-    for (const auto &kv : sorted) {
-        if (!first) {
-            ss << "\n";
-        }
-        first = false;
-
-        const uint32_t pretty_print_alignment = 18;
-        uint32_t extra_space_count = 0;
-        if (pretty_print && kv.key.length() < pretty_print_alignment) {
-            extra_space_count = pretty_print_alignment - (uint32_t)kv.key.length();
-        }
-
-        ss << kv.key << std::string(extra_space_count, ' ') << " = " << kv.value;
-    }
+    ss << string_VkPipelineStageFlagBits2(access.stage_mask);
+    ss << "(";
+    ss << string_VkAccessFlagBits2(access.access_mask);
+    ss << ")";
     return ss.str();
 }
 
-const std::string *ReportKeyValues::FindProperty(const std::string &key) const {
-    for (const auto &property : key_values) {
-        if (property.key == key) {
-            return &property.value;
-        }
-    }
-    return nullptr;
-}
+static void GetAccessProperties(const HazardResult &hazard_result, const vvl::Device &device, VkQueueFlags allowed_queue_flags,
+                                ReportProperties &properties) {
+    const HazardResult::HazardState &hazard = hazard_result.State();
+    const SyncAccessInfo &access_info = GetSyncAccessInfos()[hazard.access_index];
+    const SyncAccessInfo &prior_access_info = GetSyncAccessInfos()[hazard.prior_access_index];
 
-static std::string FormatHandleRecord(const HandleRecord::FormatterState &formatter) {
-    std::stringstream out;
-    const HandleRecord &handle = formatter.that;
-    bool labeled = false;
-
-    // Hardcode possible options in order not to store string per HandleRecord object.
-    // If more general solution is needed the preference should be to store const char*
-    // literal (8 bytes on 64 bit) instead of std::string which, even if empty,
-    // can occupy 40 bytes, as was observed in one implementation. HandleRecord is memory
-    // sensitive object (there can be a lot of instances).
-    if (handle.type == kVulkanObjectTypeRenderPass) {
-        out << "renderpass";
-        labeled = true;
-    } else if (handle.type == kVulkanObjectTypeCommandBuffer && handle.IsIndexed()) {
-        out << "pCommandBuffers";
-        labeled = true;
+    if (!hazard.recorded_access.get()) {
+        properties.Add(kPropertyAccess, FormatAccessProperty(access_info));
     }
+    properties.Add(kPropertyPriorAccess, FormatAccessProperty(prior_access_info));
 
-    if (handle.IsIndexed()) {
-        out << "[" << handle.index << "]";
-        labeled = true;
-    }
-    if (labeled) {
-        out << ": ";
-    }
-    out << formatter.state.FormatHandle(handle.TypedHandle());
-    return out.str();
-}
-
-static std::string FormatResourceUsageRecord(const ResourceUsageRecord::FormatterState &formatter, ReportKeyValues &key_values) {
-    std::stringstream out;
-    const ResourceUsageRecord &record = formatter.record;
-    if (record.alt_usage) {
-        out << record.alt_usage.Formatter(formatter.sync_state);
+    if (IsHazardVsRead(hazard.hazard)) {
+        const VkPipelineStageFlags2 barriers = hazard.access_state->GetReadBarriers(hazard.prior_access_index);
+        const std::string barriers_str = string_VkPipelineStageFlags2(barriers);
+        properties.Add(kPropertyReadBarriers, barriers ? barriers_str : "0");
     } else {
-        out << "command: " << vvl::String(record.command);
-        // Note: ex_cb_state set to null forces output of record.cb_state
-        if (!formatter.ex_cb_state || (formatter.ex_cb_state != record.cb_state)) {
-            out << ", " << FormatStateObject(SyncNodeFormatter(formatter.sync_state, record.cb_state));
-        }
-
-        // Associated resource
-        if (formatter.handle_index != vvl::kNoIndex32) {
-            auto cb_context = static_cast<const syncval_state::CommandBuffer *>(record.cb_state);
-            const auto handle_records = cb_context->access_context.GetHandleRecords();
-
-            // Command buffer can be in inconsistent state due to unhandled core validation error (core validation is disabled).
-            // In this case the goal is not to crash, no guarantees that reported information (handle index) makes sense.
-            const bool valid_handle_index = formatter.handle_index < handle_records.size();
-
-            if (valid_handle_index) {
-                out << ", resource: " << FormatHandleRecord(handle_records[formatter.handle_index].Formatter(formatter.sync_state));
-            }
-        }
-        // Report debug region name. Empty name means that we are not inside any debug region.
-        if (formatter.debug_name_provider) {
-            const std::string debug_region_name = formatter.debug_name_provider->GetDebugRegionName(record);
-            if (!debug_region_name.empty()) {
-                out << ", debug_region: " << debug_region_name;
-                key_values.Add(kPropertyDebugRegion, debug_region_name);
-            }
-        }
+        const SyncAccessFlags barriers = hazard.access_state->GetWriteBarriers();
+        const std::string property_barriers_str = FormatSyncAccesses(barriers, device, allowed_queue_flags, true);
+        properties.Add(kPropertyWriteBarriers, property_barriers_str);
     }
-    return out.str();
 }
 
-static bool IsHazardVsRead(SyncHazard hazard) {
-    bool vs_read = false;
-    switch (hazard) {
-        case SyncHazard::WRITE_AFTER_READ:
-            vs_read = true;
-            break;
-        case SyncHazard::WRITE_RACING_READ:
-            vs_read = true;
-            break;
-        case SyncHazard::PRESENT_AFTER_READ:
-            vs_read = true;
-            break;
-        default:
-            break;
+static void GetPriorUsageProperties(const ResourceUsageInfo &prior_usage_info, ReportProperties &properties) {
+    properties.Add(kPropertyPriorCommand, vvl::String(prior_usage_info.command));
+
+    if (!prior_usage_info.debug_region_name.empty()) {
+        properties.Add(kPropertyPriorDebugRegion, prior_usage_info.debug_region_name);
     }
-    return vs_read;
+
+    // These commands are not recorded/submitted, so the rest of the properties are not applicable.
+    // TODO: we can track command seq number.
+    if (IsValueIn(prior_usage_info.command,
+                  {vvl::Func::vkQueuePresentKHR, vvl::Func::vkAcquireNextImageKHR, vvl::Func::vkAcquireNextImage2KHR})) {
+        return;
+    }
+    properties.Add(kPropertySeqNo, prior_usage_info.command_seq);
+    properties.Add(kPropertyResetNo, prior_usage_info.command_buffer_reset_count);
+    if (prior_usage_info.queue) {
+        properties.Add(kPropertyBatchTag, prior_usage_info.batch_base_tag);
+        properties.Add(kPropertySubmitIndex, prior_usage_info.submit_index);
+        properties.Add(kPropertyBatchIndex, prior_usage_info.batch_index);
+    }
 }
 
 static VkPipelineStageFlags2 GetAllowedStages(VkQueueFlags queue_flags, VkPipelineStageFlagBits2 disabled_stages) {
@@ -224,7 +169,7 @@ static VkPipelineStageFlags2 GetAllowedStages(VkQueueFlags queue_flags, VkPipeli
 
 static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags &accesses, VkPipelineStageFlags2 allowed_stages) {
     SyncAccessFlags filtered_accesses = accesses;
-    const auto &access_infos = syncAccessInfoByAccessIndex();
+    const auto &access_infos = GetSyncAccessInfos();
     for (size_t i = 0; i < access_infos.size(); i++) {
         const SyncAccessInfo &access_info = access_infos[i];
         const bool is_stage_allowed = (access_info.stage_mask & allowed_stages) != 0;
@@ -237,7 +182,7 @@ static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags
 
 static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFlags &accesses, VkAccessFlags2 allowed_vk_accesses) {
     SyncAccessFlags filtered_accesses = accesses;
-    const auto &access_infos = syncAccessInfoByAccessIndex();
+    const auto &access_infos = GetSyncAccessInfos();
     for (size_t i = 0; i < access_infos.size(); i++) {
         const SyncAccessInfo &access_info = access_infos[i];
         if (filtered_accesses[i]) {
@@ -250,14 +195,13 @@ static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFla
     return filtered_accesses;
 }
 
-std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccessesToCompactVkForm(
-    const SyncAccessFlags &sync_accesses, VkQueueFlags allowed_queue_flags, const DeviceFeatures &features,
-    const DeviceExtensions &device_extensions) {
+static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccessesToCompactVkForm(
+    const SyncAccessFlags &sync_accesses, const vvl::Device &device, VkQueueFlags allowed_queue_flags) {
     if (sync_accesses.none()) {
         return {};
     }
 
-    const VkPipelineStageFlags2 disabled_stages = sync_utils::DisabledPipelineStages(features, device_extensions);
+    const VkPipelineStageFlags2 disabled_stages = sync_utils::DisabledPipelineStages(device.enabled_features, device.extensions);
     const VkPipelineStageFlags2 all_transfer_expand_bits = kAllTransferExpandBits & ~disabled_stages;
 
     // Build stage -> accesses mapping. OR-merge accesses that happen on the same stage.
@@ -282,7 +226,7 @@ std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccesse
         } else {
             for (size_t i = 0; i < filtered_accesses.size(); i++) {
                 if (filtered_accesses[i]) {
-                    const SyncAccessInfo &info = syncAccessInfoByAccessIndex()[i];
+                    const SyncAccessInfo &info = GetSyncAccessInfos()[i];
                     stage_to_accesses[info.stage_mask] |= info.access_mask;
                 }
             }
@@ -315,7 +259,7 @@ std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccesse
             all_supported_accesses &= ~VK_ACCESS_2_SHADER_WRITE_BIT;
             // Remove unsupported accesses, otherwise the access mask won't be detected as the one that covers ALL accesses
             // TODO: ideally this should be integrated into utilities logic (need to revisit all use cases)
-            if (!IsExtEnabled(device_extensions.vk_ext_blend_operation_advanced)) {
+            if (!IsExtEnabled(device.extensions.vk_ext_blend_operation_advanced)) {
                 all_supported_accesses &= ~VK_ACCESS_2_COLOR_ATTACHMENT_READ_NONCOHERENT_BIT_EXT;
             }
             if (accesses == all_supported_accesses) {
@@ -342,11 +286,229 @@ std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccesse
     return result;
 }
 
-std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, VkQueueFlags allowed_queue_flags,
-                               const DeviceFeatures &features, const DeviceExtensions &device_extensions,
+// Given that access is hazardous, we check if at least stage or access part of it is covered
+// by the synchronization. If applied synchronization covers at least stage or access component
+// then we can provide more precise message by focusing on the other component.
+static std::pair<bool, bool> GetPartialProtectedInfo(const SyncAccessInfo &access, const SyncAccessFlags &write_barriers,
+                                                     const CommandExecutionContext &context) {
+    const auto protected_stage_access_pairs =
+        ConvertSyncAccessesToCompactVkForm(write_barriers, context.GetSyncState(), context.GetQueueFlags());
+    bool is_stage_protected = false;
+    bool is_access_protected = false;
+    for (const auto &protected_stage_access : protected_stage_access_pairs) {
+        if (protected_stage_access.first & access.stage_mask) {
+            is_stage_protected = true;
+        }
+        if (protected_stage_access.second & access.access_mask) {
+            is_access_protected = true;
+        }
+    }
+    return std::make_pair(is_stage_protected, is_access_protected);
+}
+
+void ReportProperties::Add(std::string_view property_name, std::string_view value) {
+    name_values.emplace_back(NameValue{std::string(property_name), std::string(value)});
+}
+
+void ReportProperties::Add(std::string_view property_name, uint64_t value) {
+    name_values.emplace_back(NameValue{std::string(property_name), std::to_string(value)});
+}
+
+std::string ReportProperties::FormatExtraPropertiesSection(bool pretty_print) const {
+    if (name_values.empty()) {
+        return {};
+    }
+    const uint32_t pretty_print_alignment = 18;
+    const auto sorted = SortKeyValues(name_values);
+    std::stringstream ss;
+    ss << "[Extra properties]\n";
+    bool first = true;
+    for (const NameValue &property : sorted) {
+        if (!first) {
+            ss << "\n";
+        }
+        first = false;
+        uint32_t extra_space_count = 0;
+        if (pretty_print && property.name.length() < pretty_print_alignment) {
+            extra_space_count = pretty_print_alignment - (uint32_t)property.name.length();
+        }
+        ss << property.name << std::string(extra_space_count, ' ') << " = " << property.value;
+    }
+    return ss.str();
+}
+
+ReportProperties GetErrorMessageProperties(const HazardResult &hazard, const CommandExecutionContext &context, vvl::Func command,
+                                           const char *message_type, const AdditionalMessageInfo &additional_info) {
+    ReportProperties properties;
+    properties.Add(kPropertyMessageType, message_type);
+    properties.Add(kPropertyHazardType, string_SyncHazard(hazard.Hazard()));
+    properties.Add(kPropertyCommand, vvl::String(command));
+
+    GetAccessProperties(hazard, context.GetSyncState(), context.GetQueueFlags(), properties);
+
+    if (hazard.Tag() != kInvalidTag) {
+        ResourceUsageInfo prior_usage_info = context.GetResourceUsageInfo(hazard.TagEx());
+        GetPriorUsageProperties(prior_usage_info, properties);
+    }
+    for (const auto &property : additional_info.properties.name_values) {
+        properties.Add(property.name, property.value);
+    }
+    return properties;
+}
+
+std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutionContext &context, vvl::Func command,
+                               const std::string &resouce_description, const AdditionalMessageInfo &additional_info) {
+    const SyncHazard hazard_type = hazard.Hazard();
+    const SyncHazardInfo hazard_info = GetSyncHazardInfo(hazard_type);
+
+    const SyncAccessInfo &access = GetSyncAccessInfos()[hazard.State().access_index];
+    const SyncAccessInfo &prior_access = GetSyncAccessInfos()[hazard.State().prior_access_index];
+
+    const SyncAccessFlags write_barriers = hazard.State().access_state->GetWriteBarriers();
+    const VkPipelineStageFlags2 read_barriers = hazard.State().access_state->GetReadBarriers(hazard.State().prior_access_index);
+
+    // TODO: BOTTOM_OF_PIPE part will go away when syncval switches internally to use NONE/ALL for everything
+    const bool missing_synchronization = (hazard_info.IsPriorWrite() && write_barriers.none()) ||
+                                         (hazard_info.IsPriorRead() && (read_barriers == VK_PIPELINE_STAGE_2_NONE ||
+                                                                        read_barriers == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT));
+
+    std::stringstream ss;
+
+    // Brief description of what happened
+    ss << string_SyncHazard(hazard_type) << " hazard detected";
+    if (!additional_info.hazard_overview.empty()) {
+        ss << ": " << additional_info.hazard_overview;
+    }
+    ss << ". ";
+    ss << (additional_info.access_initiator.empty() ? vvl::String(command) : additional_info.access_initiator);
+    ss << " ";
+    if (!additional_info.access_action.empty()) {
+        ss << additional_info.access_action;
+    } else {
+        ss << (hazard_info.IsWrite() ? "writes to" : "reads");
+    }
+    ss << " " << resouce_description << ", which was previously ";
+    if (hazard_info.IsPriorWrite()) {
+        if (prior_access.access_index == SYNC_IMAGE_LAYOUT_TRANSITION) {
+            ss << "written during an image layout transition initiated by ";
+        } else {
+            ss << "written by ";
+        }
+    } else {
+        ss << "read by ";
+    }
+    if (hazard.Tag() == kInvalidTag) {
+        // Invalid tag for prior access means the same command performed ILT before loadOp access
+        ss << "the same command";
+    } else {
+        const ResourceUsageInfo prior_usage_info = context.GetResourceUsageInfo(hazard.TagEx());
+        if (prior_usage_info.command == command) {
+            ss << "another ";
+        }
+        ss << vvl::String(prior_usage_info.command);
+        if (!prior_usage_info.debug_region_name.empty()) {
+            ss << "[" << prior_usage_info.debug_region_name << "]";
+        }
+        if (prior_usage_info.command == command) {
+            ss << " command";
+        }
+    }
+    if (!additional_info.brief_description_end_text.empty()) {
+        ss << " " << additional_info.brief_description_end_text;
+    }
+    ss << ". ";
+
+    // Additional information before synchronization section.
+    if (!additional_info.pre_synchronization_text.empty()) {
+        ss << additional_info.pre_synchronization_text;
+    }
+
+    // Synchronization information
+    ss << "\n";
+    if (missing_synchronization) {
+        const char *access_type = hazard_info.IsWrite() ? "write" : "read";
+        const char *prior_access_type = hazard_info.IsPriorWrite() ? "write" : "read";
+
+        auto get_special_access_name = [](SyncAccessIndex access) -> const char * {
+            if (access == SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL) {
+                return "swapchain image acquire operation";
+            } else if (access == SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL) {
+                return "swapchain present operation";
+            } else if (access == SYNC_IMAGE_LAYOUT_TRANSITION) {
+                return "layout transition";
+            } else if (access == SYNC_QUEUE_FAMILY_OWNERSHIP_TRANSFER) {
+                return "ownership transfer";
+            }
+            return nullptr;
+        };
+
+        ss << "No sufficient synchronization is present to ensure that a ";
+        if (const char *special_access_name = get_special_access_name(access.access_index)) {
+            ss << special_access_name;
+        } else {
+            assert(access.access_mask != VK_ACCESS_2_NONE);
+            assert(access.stage_mask != VK_PIPELINE_STAGE_2_NONE);
+            ss << access_type << " (" << string_VkAccessFlagBits2(access.access_mask) << ") at ";
+            ss << string_VkPipelineStageFlagBits2(access.stage_mask);
+        }
+
+        ss << " does not conflict with a prior ";
+        if (const char *special_access_name = get_special_access_name(prior_access.access_index)) {
+            ss << special_access_name;
+        } else {
+            assert(prior_access.access_mask != VK_ACCESS_2_NONE);
+            assert(prior_access.stage_mask != VK_PIPELINE_STAGE_2_NONE);
+            ss << prior_access_type;
+            if (prior_access.access_mask != access.access_mask) {
+                ss << " (" << string_VkAccessFlags2(prior_access.access_mask) << ")";
+            } else {
+                ss << " of the same type";
+            }
+            ss << " at ";
+            if (prior_access.stage_mask == access.stage_mask) {
+                ss << "the same stage";
+            } else {
+                ss << string_VkPipelineStageFlagBits2(prior_access.stage_mask);
+            }
+        }
+        ss << ".";
+    } else if (hazard_info.IsPriorWrite()) {  // RAW/WAW hazards
+        ss << "The current synchronization allows ";
+        ss << FormatSyncAccesses(write_barriers, context.GetSyncState(), context.GetQueueFlags(), false);
+        ss << ", but to prevent this hazard, ";
+        auto [is_stage_protected, is_access_protected] = GetPartialProtectedInfo(access, write_barriers, context);
+        if (is_access_protected) {
+            ss << "it must allow these accesses at ";
+            ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
+        } else if (access.access_mask != VK_ACCESS_2_NONE) {
+            ss << "it must allow ";
+            ss << string_VkAccessFlagBits2(access.access_mask) << " accesses at ";
+            ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
+        } else {
+            // TODO: analyse exact form of synchronization is needed or specific options to use
+            ss << "it must protect layout transition accesses.";
+        }
+    } else {  // WAR hazard
+        ss << "The current synchronization defines the destination stage mask as ";
+        ss << string_VkPipelineStageFlags2(read_barriers);
+        ss << ", but to prevent this hazard, it must include ";
+        ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
+    }
+
+    // Give a hint for WAR hazard
+    if (IsValueIn(hazard_type, {WRITE_AFTER_READ, WRITE_RACING_READ, PRESENT_AFTER_READ})) {
+        ss << "\nVulkan insight: an execution dependency is sufficient to prevent this hazard.";
+    }
+
+    if (!additional_info.message_end_text.empty()) {
+        ss << additional_info.message_end_text;
+    }
+    return ss.str();
+}
+
+std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const vvl::Device &device, VkQueueFlags allowed_queue_flags,
                                bool format_as_extra_property) {
-    const auto report_accesses =
-        ConvertSyncAccessesToCompactVkForm(sync_accesses, allowed_queue_flags, features, device_extensions);
+    const auto report_accesses = ConvertSyncAccessesToCompactVkForm(sync_accesses, device, allowed_queue_flags);
     if (report_accesses.empty()) {
         return "0";
     }
@@ -354,7 +516,7 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, VkQueueFlag
     bool first = true;
     for (const auto &[stages, accesses] : report_accesses) {
         if (!first) {
-            out << ":";
+            out << (format_as_extra_property ? ":" : ", ");
         }
         if (format_as_extra_property) {
             if (accesses == sync_utils::kAllAccesses) {
@@ -364,9 +526,9 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, VkQueueFlag
             }
         } else {
             if (accesses == sync_utils::kAllAccesses) {
-                out << "all accesses at " << string_VkPipelineStageFlags2(stages) << " stage";
+                out << "all accesses at " << string_VkPipelineStageFlags2(stages);
             } else {
-                out << string_VkAccessFlags2(accesses) << " accesses at " << string_VkPipelineStageFlags2(stages) << " stage";
+                out << string_VkAccessFlags2(accesses) << " accesses at " << string_VkPipelineStageFlags2(stages);
             }
         }
         first = false;
@@ -374,113 +536,75 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, VkQueueFlag
     return out.str();
 }
 
-static std::string FormatAccessProperty(const SyncAccessInfo &access) {
-    constexpr std::array special_accesses = {SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL,
-                                             SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL, SYNC_IMAGE_LAYOUT_TRANSITION,
-                                             SYNC_QUEUE_FAMILY_OWNERSHIP_TRANSFER};
-    if (IsValueIn(access.access_index, special_accesses)) {
-        // Print internal name for accesses that don't have corresponding Vulkan constants
-        return access.name;
-    }
-    return string_VkPipelineStageFlagBits2(access.stage_mask) + std::string("(") + string_VkAccessFlagBits2(access.access_mask) +
-           ")";
+void FormatVideoPictureResouce(const Logger &logger, const VkVideoPictureResourceInfoKHR &video_picture, std::stringstream &ss) {
+    ss << "{";
+    ss << logger.FormatHandle(video_picture.imageViewBinding);
+    ss << ", codedOffset (" << string_VkOffset2D(video_picture.codedOffset) << ")";
+    ss << ", codedExtent (" << string_VkExtent2D(video_picture.codedExtent) << ")";
+    ss << ", baseArrayLayer = " << video_picture.baseArrayLayer;
+    ss << "}";
 }
 
-static std::string FormatHazardState(const HazardResult::HazardState &hazard, VkQueueFlags queue_flags,
-                                     const DeviceFeatures &features, const DeviceExtensions &device_extensions,
-                                     ReportKeyValues &key_values) {
-    std::stringstream out;
-    assert(hazard.access_index < static_cast<SyncAccessIndex>(syncAccessInfoByAccessIndex().size()));
-    assert(hazard.prior_access_index < static_cast<SyncAccessIndex>(syncAccessInfoByAccessIndex().size()));
-    const auto &usage_info = syncAccessInfoByAccessIndex()[hazard.access_index];
-    const auto &prior_usage_info = syncAccessInfoByAccessIndex()[hazard.prior_access_index];
-    out << "(";
-    if (!hazard.recorded_access.get()) {
-        // if we have a recorded usage the usage is reported from the recorded contexts point of view
-        out << "usage: " << usage_info.name << ", ";
-        key_values.Add(kPropertyAccess, FormatAccessProperty(usage_info));
-    }
-    out << "prior_usage: " << prior_usage_info.name;
-    key_values.Add(kPropertyPriorAccess, FormatAccessProperty(prior_usage_info));
-    if (IsHazardVsRead(hazard.hazard)) {
-        const VkPipelineStageFlags2 barriers = hazard.access_state->GetReadBarriers(hazard.prior_access_index);
-        const std::string barriers_str = string_VkPipelineStageFlags2(barriers);
-        out << ", read_barriers: " << barriers_str;
-        key_values.Add(kPropertyReadBarriers, barriers ? barriers_str : "0");
-    } else {
-        const SyncAccessFlags barriers = hazard.access_state->GetWriteBarriers();
-
-        const std::string message_barriers_str = FormatSyncAccesses(barriers, queue_flags, features, device_extensions, false);
-        out << ", write_barriers: " << message_barriers_str;
-
-        const std::string property_barriers_str = FormatSyncAccesses(barriers, queue_flags, features, device_extensions, true);
-        key_values.Add(kPropertyWriteBarriers, property_barriers_str);
-    }
-    return out.str();
+void FormatVideoQuantizationMap(const Logger &logger, const VkVideoEncodeQuantizationMapInfoKHR &quantization_map,
+                                std::stringstream &ss) {
+    ss << "{";
+    ss << logger.FormatHandle(quantization_map.quantizationMap);
+    ss << ", quantizationMapExtent (" << string_VkExtent2D(quantization_map.quantizationMapExtent) << ")";
+    ss << "}";
 }
 
-std::string CommandExecutionContext::FormatHazard(const HazardResult &hazard, ReportKeyValues &key_values) const {
-    std::stringstream out;
-    assert(hazard.IsHazard());
-    out << FormatHazardState(hazard.State(), queue_flags_, sync_state_.enabled_features, sync_state_.extensions, key_values);
-    out << ", " << FormatUsage(hazard.TagEx(), key_values) << ")";
-    return out.str();
-}
-
-ReportUsageInfo CommandBufferAccessContext::GetReportUsageInfo(ResourceUsageTagEx tag_ex) const {
-    const ResourceUsageRecord &record = (*access_log_)[tag_ex.tag];
-    ReportUsageInfo info;
+static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_ex, const ResourceUsageRecord &record,
+                                                        const DebugNameProvider *debug_name_provider) {
+    ResourceUsageInfo info;
     if (record.alt_usage) {
         info.command = record.alt_usage.GetCommand();
     } else {
         info.command = record.command;
+        info.command_seq = record.seq_num;
+        info.command_buffer_reset_count = record.reset_count;
+
+        // Associated resource
+        if (tag_ex.handle_index != vvl::kNoIndex32) {
+            auto &cb_context = syncval_state::SubState(*record.cb_state);
+            const auto &handle_records = cb_context.access_context.GetHandleRecords();
+
+            // Command buffer can be in inconsistent state due to unhandled core validation error (core validation is disabled).
+            // In this case the goal is not to crash, no guarantees that reported information (handle index) makes sense.
+            const bool valid_handle_index = tag_ex.handle_index < handle_records.size();
+            if (valid_handle_index) {
+                info.resource_handle = handle_records[tag_ex.handle_index].TypedHandle();
+                // TODO: also extract optional index or get rid of index
+            }
+        }
+        // Debug region name. Empty name means that we are not inside any debug region.
+        if (debug_name_provider) {
+            info.debug_region_name = debug_name_provider->GetDebugRegionName(record);
+        }
     }
+    info.cb = record.cb_state;
     return info;
 }
 
-std::string CommandBufferAccessContext::FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const {
-    if (tag_ex.tag >= access_log_->size()) return std::string();
-
-    std::stringstream out;
-    assert(tag_ex.tag < access_log_->size());
-    const auto &record = (*access_log_)[tag_ex.tag];
+ResourceUsageInfo CommandBufferAccessContext::GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const {
+    const ResourceUsageRecord &record = (*access_log_)[tag_ex.tag];
     const auto debug_name_provider = (record.label_command_index == vvl::kU32Max) ? nullptr : this;
-    out << FormatResourceUsageRecord(record.Formatter(sync_state_, cb_state_, debug_name_provider, tag_ex.handle_index),
-                                     extra_properties);
-    return out.str();
+    return GetResourceUsageInfoFromRecord(tag_ex, record, debug_name_provider);
 }
 
-void CommandBufferAccessContext::AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const {
-    if (tag >= access_log_->size()) return;
-    const ResourceUsageRecord &record = (*access_log_)[tag];
-    extra_properties.Add(kPropertyPriorCommand, vvl::String(record.command));
-    extra_properties.Add(kPropertySeqNo, record.seq_num);
-    if (record.sub_command != 0) {
-        extra_properties.Add(kPropertySubCmd, record.sub_command);
-    }
-    extra_properties.Add(kPropertyResetNo, record.reset_count);
-}
-
-std::string QueueBatchContext::FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const {
-    std::stringstream out;
+ResourceUsageInfo QueueBatchContext::GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const {
     BatchAccessLog::AccessRecord access = batch_log_.GetAccessRecord(tag_ex.tag);
-    if (access.IsValid()) {
-        const BatchAccessLog::BatchRecord &batch = *access.batch;
-        const ResourceUsageRecord &record = *access.record;
-        if (batch.queue) {
-            // Queue and Batch information (for enqueued operations)
-            out << FormatStateObject(SyncNodeFormatter(sync_state_, batch.queue->GetQueueState()));
-            out << ", submit: " << batch.submit_index << ", batch: " << batch.batch_index << ", ";
-        }
-        out << FormatResourceUsageRecord(record.Formatter(sync_state_, nullptr, access.debug_name_provider, tag_ex.handle_index),
-                                         extra_properties);
+    if (!access.IsValid()) {
+        return {};
     }
-    return out.str();
-}
+    const ResourceUsageRecord &record = *access.record;
+    ResourceUsageInfo info = GetResourceUsageInfoFromRecord(tag_ex, record, access.debug_name_provider);
 
-void QueueBatchContext::AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const {
-    BatchAccessLog::AccessRecord access = batch_log_.GetAccessRecord(tag);
-    if (access.IsValid()) {
-        extra_properties.Add(kPropertyBatchTag, access.batch->base_tag);
+    const BatchAccessLog::BatchRecord &batch = *access.batch;
+    if (batch.queue) {
+        info.queue = batch.queue->GetQueueState();
+        info.submit_index = batch.submit_index;
+        info.batch_index = batch.batch_index;
+        info.batch_base_tag = batch.base_tag;
     }
+    return info;
 }

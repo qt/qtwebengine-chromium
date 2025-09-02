@@ -1,4 +1,4 @@
-/* Copyright (c) 2024 LunarG, Inc.
+/* Copyright (c) 2024-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,13 @@
 #pragma once
 
 #include <vector>
-#include "instruction.h"
+#include <memory>
+#include "state_tracker/shader_instruction.h"
 #include "generated/spirv_grammar_helper.h"
 
 namespace gpuav {
 namespace spirv {
+using Instruction = ::spirv::Instruction;
 
 class Module;
 class TypeManager;
@@ -53,7 +55,11 @@ struct Type {
 
     bool operator==(Type const& other) const;
     uint32_t Id() const { return inst_.ResultId(); }
-    bool IsArray() const { return spv_type_ == SpvType::kArray || spv_type_ == SpvType::kRuntimeArray; }
+
+    // Helpers to detect what the type is
+    bool IsArray() const;
+    bool IsSignedInt() const;
+    bool IsIVec3(const TypeManager& type_manager) const;
 
     const SpvType spv_type_;
     const Instruction& inst_;
@@ -71,6 +77,9 @@ struct Constant {
         : type_(type), inst_(inst), is_spec_constant_(IsSpecConstant(inst.Opcode())) {}
 
     uint32_t Id() const { return inst_.ResultId(); }
+
+    // Only for cases where we know the constant value
+    uint32_t GetValueUint32() const;
 
     const Type& type_;
     const Instruction& inst_;

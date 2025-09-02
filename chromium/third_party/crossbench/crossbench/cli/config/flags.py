@@ -4,22 +4,45 @@
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import functools
 import logging
-from typing import Any, Dict, Final, List, Optional, Sequence, Set, Tuple
+from typing import (TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional,
+                    Self, Sequence, Set, Tuple, Type)
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
+from typing_extensions import override
 
 from crossbench import exception
 from crossbench.browsers.browser_helper import convert_flags_to_label
 from crossbench.config import ConfigError, ConfigObject
 from crossbench.flags.base import Flags
+from crossbench.flags.chrome import ChromeFlags
+from crossbench.flags.js_flags import JSFlags
 from crossbench.parse import ObjectParser
+
+if TYPE_CHECKING:
+  from crossbench.flags.base import FlagsData
+
 
 DEFAULT_LABEL: Final[str] = "default"
 
+
+def _parse_flags(flag_data: str | list | tuple | FlagsData | None) -> Flags:
+  if not flag_data:
+    return Flags().freeze()
+  if isinstance(flag_data, str):
+    return Flags.parse_str(flag_data).freeze()
+  if isinstance(flag_data, (list, tuple)):
+    return _parse_flags_sequence(flag_data)
+  return Flags.parse(flag_data).freeze()
+
+
+def _parse_flags_sequence(flag_data: Iterable) -> Flags:
+  split_flags = (Flags.split(flag) for flag in flag_data)
+  return Flags(split_flags).freeze()
 
 @dataclasses.dataclass(frozen=True)
 class FlagsVariantConfig:
@@ -29,7 +52,7 @@ class FlagsVariantConfig:
 
   @classmethod
   def parse(cls, name: str, index: int, data: Any) -> FlagsVariantConfig:
-    return cls(name, index, Flags.parse(data).freeze())
+    return cls(name, index, _parse_flags(data))
 
   def merge_copy(self,
                  other: FlagsVariantConfig,
@@ -61,9 +84,9 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
   """
 
   @classmethod
-  def parse(cls, data: Any) -> FlagsGroupConfig:
+  def parse(cls, data: Any) -> Self:
     if data is None:
-      return FlagsGroupConfig()
+      return cls()
     if isinstance(data, str):
       return cls.parse_str(data)
     if isinstance(data, dict):
@@ -73,9 +96,9 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
     raise ConfigError(f"Invalid type {type(data)}: {repr(data)}")
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> FlagsGroupConfig:
+  def parse_dict(cls, config: Dict) -> Self:
     if not config:
-      return FlagsGroupConfig()
+      return cls()
     all_flag_keys = all(key.startswith("-") for key in config.keys())
     all_str_values = all(isinstance(value, str) for value in config.values())
     if not all_flag_keys:
@@ -85,7 +108,7 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
     return cls._parse_variants_dict(config)
 
   @classmethod
-  def parse_dict_with_labels(cls, config: Dict) -> FlagsGroupConfig:
+  def parse_dict_with_labels(cls, config: Dict) -> Self:
     variants: OrderedSet[FlagsVariantConfig] = OrderedSet()
     logging.debug("Using custom flag group labels")
     for label, value in config.items():
@@ -95,25 +118,28 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
         if variant in variants:
           raise ConfigError(f"Duplicate flag variant: {value}")
         variants.add(variant)
-    return FlagsGroupConfig(tuple(variants))
+    return cls(tuple(variants))
 
   @classmethod
-  def parse_dict_simple(cls, config: Dict) -> FlagsGroupConfig:
+  def parse_dict_simple(cls, config: Dict) -> Self:
     logging.debug("Using single flag group dict")
     variants = (FlagsVariantConfig.parse(DEFAULT_LABEL, 0, config),)
-    return FlagsGroupConfig(variants)
+    return cls(variants)
 
   @classmethod
-  def _parse_variants_dict(cls, data: Dict[str, Any]) -> FlagsGroupConfig:
+  def _parse_variants_dict(cls: Type[Self], data: Dict[str, Any]) -> Self:
     # data == {
     #  "--flag": None,
     #  "--flag-b": "custom flag value",
     #  "--flag-c": (None, "value 2", "value 3"),
     # }
     cls._validate_variants_dict(data)
-    per_flag_groups: List[FlagsGroupConfig] = []
+    # TODO: Use List[Self] once pytype supports it.
+    per_flag_groups: List = []
     for flag_name, flag_data in data.items():
-      per_flag_groups.append(cls._dict_variant_to_group(flag_name, flag_data))
+      group = cls._dict_variant_to_group(flag_name, flag_data)
+      assert isinstance(group, cls)
+      per_flag_groups.append(group)
 
     variants = per_flag_groups[0]
     for next_variant in per_flag_groups[1:]:
@@ -138,8 +164,7 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
               flag_value, f"flag {repr(flag_name)} variant values", ConfigError)
 
   @classmethod
-  def _dict_variant_to_group(cls, flag_name: str,
-                             data: Any) -> FlagsGroupConfig:
+  def _dict_variant_to_group(cls, flag_name: str, data: Any) -> Self:
     if data is None:
       return cls.parse_str(flag_name)
     if isinstance(data, str):
@@ -148,7 +173,7 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
         return cls.parse_str(flag_name)
       data = (data_str,)
     assert isinstance(data, (list, tuple)), "Invalid flag variant type"
-    flags: OrderedSet[Optional[Flags]] = OrderedSet()
+    flags: OrderedSet[Flags | None] = OrderedSet()
     for variant in data:
       if variant is None:
         flag = None
@@ -170,33 +195,56 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
                         f"None (from python) for flag {repr(flag_name)}")
 
   @classmethod
-  def parse_sequence(cls, data: Sequence) -> FlagsGroupConfig:
+  def parse_sequence(cls, data: Sequence) -> Self:
     variants: List[FlagsVariantConfig] = []
     duplicates: Set[str] = set()
     for flag_data in data:
-      if not flag_data:
-        flags = Flags()
-      else:
-        flags = Flags.parse(flag_data)
+      flags = _parse_flags(flag_data)
       if flag_data in duplicates:
         raise ConfigError(f"Duplicate variant: {flags}")
       duplicates.add(flag_data)
-      variants.append(
-          FlagsVariantConfig(
-              convert_flags_to_label(*flags), len(variants), flags))
-    return FlagsGroupConfig(tuple(variants))
+      label = convert_flags_to_label(*flags)
+      variants.append(FlagsVariantConfig(label, len(variants), flags))
+    return cls(tuple(variants))
 
   @classmethod
-  def parse_str(cls, value: str) -> FlagsGroupConfig:
+  def parse_str(cls, value: str) -> Self:
     if not value.strip():
-      return FlagsGroupConfig()
+      return cls()
     variants = (FlagsVariantConfig.parse(DEFAULT_LABEL, 0, value),)
-    return FlagsGroupConfig(variants)
+    return cls(variants)
 
-  def product(self, *args: FlagsGroupConfig) -> FlagsGroupConfig:
+  @classmethod
+  def parse_args(cls, args: argparse.Namespace) -> Self:
+    args_config = cls.config_from_args_flags(args)
+    return cls.parse(args_config)
+
+  @classmethod
+  def config_from_args_flags(
+      cls, args: argparse.Namespace) -> Dict[str, List[str] | str | None]:
+    initial_flags = ChromeFlags(_parse_flags(args.other_browser_args))
+    if args.enable_features:
+      initial_flags["--enable-features"] = args.enable_features
+    if args.disable_features:
+      initial_flags["--disable-features"] = args.disable_features
+    if args.enable_field_trial_config is True:
+      initial_flags.set("--enable-field-trial-config")
+    if args.enable_field_trial_config is False:
+      initial_flags.set("--disable-field-trial-config")
+
+    args_config: Dict[str, List[str] | str | None] = dict(initial_flags.items())
+    if args.js_flags:
+      # Create a variant for every js flag:
+      args_config["--js-flags"] = [
+          str(JSFlags.parse(flags)) for flags in args.js_flags
+      ]
+    return args_config
+
+
+  def product(self, *args: Self) -> Self:
     return functools.reduce(lambda a, b: a.inner_product(b), args, self)
 
-  def inner_product(self, other: FlagsGroupConfig) -> FlagsGroupConfig:
+  def inner_product(self, other: Self) -> Self:
     """Create a new FlagsGroupConfig as the combination of
     self.variants x other.variants"""
     new_variants: List[FlagsVariantConfig] = []
@@ -214,7 +262,7 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
             variant_other, index=len(new_variants), label=new_label)
         new_variants.append(new_variant)
 
-    return FlagsGroupConfig(tuple(new_variants))
+    return type(self)(tuple(new_variants))
 
   def _unique_product_label(self, label_set: Set[str],
                             variant_a: FlagsVariantConfig,
@@ -239,13 +287,15 @@ class FlagsGroupConfig(Tuple[FlagsVariantConfig, ...]):
 class FlagsConfig(ConfigObject, immutabledict[str, FlagsGroupConfig]):
 
   @classmethod
-  def parse_str(cls, value: str) -> FlagsConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     if not value:
       raise ConfigError("Cannot parse empty string")
     return cls({"default": FlagsGroupConfig.parse_str(value)})
 
   @classmethod
-  def parse_dict(cls, config: Dict[str, Any]) -> FlagsConfig:
+  @override
+  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
     groups: Dict[str, FlagsGroupConfig] = {}
     for group_name, group_data in config.items():
       with exception.annotate(f"Parsing flag-group: flags[{repr(group_name)}]"):

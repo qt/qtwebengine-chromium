@@ -58,18 +58,15 @@ class StrokeShapeBuilder {
   ~StrokeShapeBuilder() = default;
 
   // Clears any ongoing stroke geometry and starts a new stroke with the given
-  // brush tips, size, and epsilon.
+  // brush tip, size, and epsilon.
   //
-  // `coat` and its `BrushTips`  must remain valid and unchanged for the
+  // `coat` and its `BrushTip`  must remain valid and unchanged for the
   // duration of the stroke. `brush_size` and `brush_epsilon` must be greater
   // than zero. See also `Brush::Create()` for detailed documentation. This
   // function must be called before calling `ExtendStroke()`.
-  //
-  // For now, `coat` must contain exactly one brush tip.
-  // TODO: b/285594469 - Lift this restriction.
   void StartStroke(const BrushFamily::InputModel& input_model,
-                   const BrushCoat& coat, float brush_size,
-                   float brush_epsilon);
+                   const BrushCoat& coat, float brush_size, float brush_epsilon,
+                   uint32_t noise_seed = 0);
 
   // Adds new incremental real and predicted inputs to the current stroke.
   //
@@ -84,9 +81,9 @@ class StrokeShapeBuilder {
                                  const StrokeInputBatch& predicted_inputs,
                                  Duration32 current_elapsed_time);
 
-  // Returns true if any of the brush tips for this builder have any behaviors
-  // whose source values could continue to change with the further passage of
-  // time (even in the absence of any new inputs).
+  // Returns true if the `BrushTip` for this builder has any behaviors whose
+  // source values could continue to change with the further passage of time
+  // (even in the absence of any new inputs).
   bool HasUnfinishedTimeBehaviors() const;
 
   const MutableMesh& GetMesh() const;
@@ -94,32 +91,29 @@ class StrokeShapeBuilder {
   const Envelope& GetMeshBounds() const;
 
   // Returns spans of outline indices, one for each of the outlines generated
-  // for the stroke.
+  // for the brush coat. This returns zero or more outlines, all non-empty.
   //
   // The return value will be empty if no stroke has been started. See the
   // public `InProgressStroke::GetCoatOutlines()` for more details.
   absl::Span<const absl::Span<const uint32_t>> GetOutlines() const;
 
  private:
-  // Returns the number of brush tips being used to extrude the current shape.
-  uint32_t BrushTipCount() const;
-
   StrokeInputModeler input_modeler_;
   MutableMesh mesh_;
   Envelope mesh_bounds_;
 
-  // The outline for each brush tip. The size of this vector is always equal to
-  // the number of brush tips.
-  absl::InlinedVector<absl::Span<const uint32_t>, 1> outline_indices_;
+  // The outlines for the brush coat. The size of this is at least one, but may
+  // be larger because particle brushes can have more than one outline per tip.
+  // The usual case is one tip and one outline per tip.
+  absl::InlinedVector<absl::Span<const uint32_t>, 1> outlines_;
 
   struct BrushTipModelerAndExtruder {
     BrushTipModeler modeler;
     BrushTipExtruder extruder;
   };
-  // The modeler/extruder for each brush tip. In order to cache allocations, we
-  // never shrink this vector; its size is always at least the number of brush
-  // tips, but may be more if a previous brush had more tips.
-  absl::InlinedVector<BrushTipModelerAndExtruder, 1> tips_;
+
+  // The modeler/extruder for the brush tip.
+  BrushTipModelerAndExtruder tip_;
 };
 
 // ---------------------------------------------------------------------------
@@ -136,11 +130,7 @@ inline const Envelope& StrokeShapeBuilder::GetMeshBounds() const {
 
 inline absl::Span<const absl::Span<const uint32_t>>
 StrokeShapeBuilder::GetOutlines() const {
-  return outline_indices_;
-}
-
-inline uint32_t StrokeShapeBuilder::BrushTipCount() const {
-  return outline_indices_.size();
+  return outlines_;
 }
 
 }  // namespace ink::strokes_internal

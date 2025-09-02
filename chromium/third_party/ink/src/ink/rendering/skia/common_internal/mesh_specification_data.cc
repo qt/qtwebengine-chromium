@@ -47,6 +47,10 @@ constexpr absl::string_view kUniformSideDerivativeUnpackingTransformName =
 constexpr absl::string_view kUniformForwardDerivativeUnpackingTransformName =
     "uForwardUnpackingTransform";
 constexpr absl::string_view kTextureMappingName = "uTextureMapping";
+constexpr absl::string_view kTextureAnimationProgressName =
+    "uTextureAnimationProgress";
+constexpr absl::string_view kNumTextureAnimationFramesName =
+    "uNumTextureAnimationFrames";
 
 // Shared fragment shader used for both InProgressStroke and Stroke.
 constexpr absl::string_view kFragmentMain = R"(
@@ -74,6 +78,10 @@ absl::string_view MeshSpecificationData::GetUniformName(UniformId uniform_id) {
       return kUniformForwardDerivativeUnpackingTransformName;
     case UniformId::kTextureMapping:
       return kTextureMappingName;
+    case UniformId::kTextureAnimationProgress:
+      return kTextureAnimationProgressName;
+    case UniformId::kNumTextureAnimationFrames:
+      return kNumTextureAnimationFramesName;
   }
   return "";
 }
@@ -89,12 +97,12 @@ MeshSpecificationData::CreateForInProgressStroke(
 }
 
 MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
-  // TODO: b/373649230 - Add a uniform for animation progress, and use it in the
-  // calculation of `varyings.textureCoords` in `kVertexMain`.
   static_assert(kUniformBrushColorName == "uBrushColor");
   static_assert(kObjectToCanvasLinearComponentName ==
                 "uObjectToCanvasLinearComponent");
   static_assert(kTextureMappingName == "uTextureMapping");
+  static_assert(kTextureAnimationProgressName == "uTextureAnimationProgress");
+  static_assert(kNumTextureAnimationFramesName == "uNumTextureAnimationFrames");
   // Do not use `layout(color)` for uBrushColor, as the color is being converted
   // into the shader color space manually rather than relying on the implicit
   // conversion of setColorUniform.
@@ -102,6 +110,8 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
       uniform float4 uObjectToCanvasLinearComponent;
       uniform float4 uBrushColor;
       uniform int uTextureMapping;
+      uniform float uTextureAnimationProgress;
+      uniform int uNumTextureAnimationFrames;
 
       Varyings main(const Attributes attributes) {
         Varyings varyings;
@@ -121,7 +131,11 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
         varyings.color.rgb *= varyings.color.a;
 
         if (uTextureMapping == 1) {
-          varyings.textureCoords = attributes.surfaceUv;
+          varyings.textureCoords = calculateWindingTextureUv(
+              unpackSurfaceUv(attributes.surfaceUvAndAnimationOffset.xy),
+              unpackAnimationOffset(attributes.surfaceUvAndAnimationOffset.z),
+              uTextureAnimationProgress,
+              uNumTextureAnimationFrames);
         } else {
           varyings.textureCoords = varyings.position;
         }
@@ -177,11 +191,11 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
                     .unpacked_offset,
       .name = "forwardDerivativeAndLabel"};
 
-  // Surface UV
+  // Surface UV + animation offset
   rendering_attributes[4] = {
-      .type = AttributeType::kFloat2,
+      .type = AttributeType::kFloat3,
       .offset = format_attributes[kAttributeIndices.surface_uv].unpacked_offset,
-      .name = "surfaceUv"};
+      .name = "surfaceUvAndAnimationOffset"};
 
   return MeshSpecificationData{
       .attributes = rendering_attributes,
@@ -196,7 +210,11 @@ MeshSpecificationData MeshSpecificationData::CreateForInProgressStroke() {
                     .id = UniformId::kObjectToCanvasLinearComponent},
                    {.type = UniformType::kFloat4, .id = UniformId::kBrushColor},
                    {.type = UniformType::kInt,
-                    .id = UniformId::kTextureMapping}},
+                    .id = UniformId::kTextureMapping},
+                   {.type = UniformType::kFloat,
+                    .id = UniformId::kTextureAnimationProgress},
+                   {.type = UniformType::kInt,
+                    .id = UniformId::kNumTextureAnimationFrames}},
       .vertex_shader_source = absl::StrCat(
           kSkSLCommonShaderHelpers, kSkSLVertexShaderHelpers, kVertexMain),
       .fragment_shader_source = absl::StrCat(
@@ -211,13 +229,14 @@ namespace {
 std::optional<MeshSpecificationData::AttributeType>
 FindTypeForPositionAndOpacityShift(MeshFormat::AttributeType position_type,
                                    MeshFormat::AttributeType opacity_type) {
-  if (position_type == MeshFormat::AttributeType::kFloat2PackedIn1Float &&
+  if (position_type == MeshFormat::AttributeType::kFloat2PackedInOneFloat &&
       opacity_type == MeshFormat::AttributeType::kFloat1Unpacked) {
     return MeshSpecificationData::AttributeType::kFloat2;
   }
   if (position_type ==
-          MeshFormat::AttributeType::kFloat2PackedIn3UnsignedBytes_XY12 &&
-      opacity_type == MeshFormat::AttributeType::kFloat1PackedIn1UnsignedByte) {
+          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
+      opacity_type ==
+          MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
     return MeshSpecificationData::AttributeType::kUByte4;
   }
   return std::nullopt;
@@ -231,7 +250,7 @@ std::optional<MeshSpecificationData::AttributeType> FindTypeForHslShift(
     return MeshSpecificationData::AttributeType::kFloat3;
   }
   if (hsl_shift_type ==
-      MeshFormat::AttributeType::kFloat3PackedIn4UnsignedBytes_XYZ10) {
+      MeshFormat::AttributeType::kFloat3PackedInFourUnsignedBytes_XYZ10) {
     return MeshSpecificationData::AttributeType::kUByte4;
   }
   return std::nullopt;
@@ -247,8 +266,8 @@ FindTypeForDerivativeAndLabel(MeshFormat::AttributeType derivative_type,
     return MeshSpecificationData::AttributeType::kFloat3;
   }
   if (derivative_type ==
-          MeshFormat::AttributeType::kFloat2PackedIn3UnsignedBytes_XY12 &&
-      label_type == MeshFormat::AttributeType::kFloat1PackedIn1UnsignedByte) {
+          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
+      label_type == MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
     return MeshSpecificationData::AttributeType::kUByte4;
   }
   return std::nullopt;
@@ -256,13 +275,23 @@ FindTypeForDerivativeAndLabel(MeshFormat::AttributeType derivative_type,
 
 // Returns the supported `AttributeType` for the surface UV attribute based on
 // its `MeshFormat::AttributeType`.
-std::optional<MeshSpecificationData::AttributeType> FindTypeForSurfaceUv(
-    MeshFormat::AttributeType surface_uv_type) {
-  if (surface_uv_type == MeshFormat::AttributeType::kFloat2Unpacked) {
-    return MeshSpecificationData::AttributeType::kFloat2;
+std::optional<MeshSpecificationData::AttributeType>
+FindTypeForSurfaceUvAndAnimationOffset(
+    MeshFormat::AttributeType surface_uv_type,
+    std::optional<MeshFormat::AttributeType> animation_offset_type) {
+  if (surface_uv_type == MeshFormat::AttributeType::kFloat2Unpacked &&
+      animation_offset_type == MeshFormat::AttributeType::kFloat1Unpacked) {
+    return MeshSpecificationData::AttributeType::kFloat3;
   }
   if (surface_uv_type ==
-      MeshFormat::AttributeType::kFloat2PackedIn4UnsignedBytes_X12_Y20) {
+          MeshFormat::AttributeType::kFloat2PackedInThreeUnsignedBytes_XY12 &&
+      animation_offset_type ==
+          MeshFormat::AttributeType::kFloat1PackedInOneUnsignedByte) {
+    return MeshSpecificationData::AttributeType::kUByte4;
+  }
+  if (surface_uv_type ==
+          MeshFormat::AttributeType::kFloat2PackedInFourUnsignedBytes_X12_Y20 &&
+      animation_offset_type == std::nullopt) {
     return MeshSpecificationData::AttributeType::kUByte4;
   }
   return std::nullopt;
@@ -279,7 +308,7 @@ struct SkiaStrokeAttributeTypesAndOffsets {
   std::optional<TypeAndByteOffset> hsl_shift;
   TypeAndByteOffset side_derivative_and_label;
   TypeAndByteOffset forward_derivative_and_label;
-  std::optional<TypeAndByteOffset> surface_uv;
+  std::optional<TypeAndByteOffset> surface_uv_and_animation_offset;
 };
 
 // Validates that the given `mesh_format` is supported and returns the shader
@@ -392,17 +421,33 @@ GetValidatedStrokeAttributeTypesAndOffsets(
       .offset = attributes[attribute_indices.forward_derivative].packed_offset};
 
   // --------------------------------------------------------------------------
-  // Surface UV
+  // Surface UV + animation offset
   if (attribute_indices.surface_uv != -1) {
-    std::optional<MeshSpecificationData::AttributeType> surface_uv_type =
-        FindTypeForSurfaceUv(attributes[attribute_indices.surface_uv].type);
-    if (!surface_uv_type.has_value()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Unsupported type for `kSurfaceUv` attribute. Got `mesh_format`: ",
-          mesh_format));
+    std::optional<MeshFormat::AttributeType> animation_offset_type;
+    if (attribute_indices.animation_offset != -1) {
+      if (attribute_indices.surface_uv + 1 !=
+          attribute_indices.animation_offset) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "The `kAnimationOffset` attribute must be immediately after the "
+            "`kSurfaceUv` attribute. Got `mesh_format`: ",
+            mesh_format));
+      }
+      animation_offset_type =
+          attributes[attribute_indices.animation_offset].type;
     }
-    result.surface_uv = {
-        .type = *surface_uv_type,
+    std::optional<MeshSpecificationData::AttributeType>
+        surface_uv_and_animation_offset_type =
+            FindTypeForSurfaceUvAndAnimationOffset(
+                attributes[attribute_indices.surface_uv].type,
+                animation_offset_type);
+    if (!surface_uv_and_animation_offset_type.has_value()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported type combination for `kSurfaceUv` and "
+                       "`kAnimationOffset` attributes. Got `mesh_format`: ",
+                       mesh_format));
+    }
+    result.surface_uv_and_animation_offset = {
+        .type = *surface_uv_and_animation_offset_type,
         .offset = attributes[attribute_indices.surface_uv].packed_offset};
   }
 
@@ -420,8 +465,6 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
                                                  attribute_indices);
   if (!types_and_offsets.ok()) return types_and_offsets.status();
 
-  // TODO: b/373649230 - Add a uniform for animation progress, and use it in the
-  // calculation of `varyings.textureCoords` in `kVertexMainStart`.
   static_assert(kUniformBrushColorName == "uBrushColor");
   static_assert(kUniformPositionUnpackingTransformName ==
                 "uPositionUnpackingTransform");
@@ -432,6 +475,8 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
   static_assert(kUniformForwardDerivativeUnpackingTransformName ==
                 "uForwardUnpackingTransform");
   static_assert(kTextureMappingName == "uTextureMapping");
+  static_assert(kTextureAnimationProgressName == "uTextureAnimationProgress");
+  static_assert(kNumTextureAnimationFramesName == "uNumTextureAnimationFrames");
   // Do not use `layout(color)` for uBrushColor, as the color is being converted
   // into the shader color space manually rather than relying on the implicit
   // conversion of setColorUniform.
@@ -442,6 +487,8 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
       uniform float4 uSideUnpackingTransform;
       uniform float4 uForwardUnpackingTransform;
       uniform int uTextureMapping;
+      uniform float uTextureAnimationProgress;
+      uniform int uNumTextureAnimationFrames;
 
       Varyings main(const Attributes attributes) {
         Varyings varyings;
@@ -470,17 +517,37 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
         float a = applyOpacityShift(positionAndOpacityShift.z, uBrushColor.a);
         varyings.color = float4(uBrushColor.rgb * a, a);
   )";
+
+  // There are three cases for computing texture coordinates in the shader.
+  //
+  // Case 1: 12-bit surface U and V and 8-bit animation offset. This is used for
+  // particle-based meshes to support (potentially-animated) "winding" textured
+  // particles.
   static_assert(static_cast<int>(BrushPaint::TextureMapping::kWinding) == 1);
-  constexpr absl::string_view kVertexMainTextureUvWithSurfaceUv = R"(
+  constexpr absl::string_view
+      kVertexMainTextureUvWithSurfaceUvAndAnimationOffset = R"(
         if (uTextureMapping == 1) {
-          varyings.textureCoords = unpackSurfaceUv(attributes.surfaceUv);
+          varyings.textureCoords = calculateWindingTextureUv(
+              unpackSurfaceUv(attributes.surfaceUvAndAnimationOffset.xyz),
+              unpackAnimationOffset(attributes.surfaceUvAndAnimationOffset.w),
+              uTextureAnimationProgress,
+              uNumTextureAnimationFrames);
         } else {
           varyings.textureCoords = varyings.position;
         }
   )";
+  // Case 2: 12-bit surface U, 20-bit surface V, and no animation offset. This
+  // is used for extruded (non-particle-based) meshes to support winding
+  // textured extruded strokes.
+  //
+  // TODO: b/330511293 - Support this case.
+  //
+  // Case 3: No surface UV or animation offset attribute is available at all;
+  // winding textures are not supported for this mesh.
   constexpr absl::string_view kVertexMainTextureUvWithoutSurfaceUv = R"(
         varyings.textureCoords = varyings.position;
   )";
+
   constexpr absl::string_view kVertexMainEnd = R"(
         return varyings;
       }
@@ -503,11 +570,11 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
          .offset = types_and_offsets->hsl_shift->offset,
          .name = "hslShift"});
   }
-  if (types_and_offsets->surface_uv.has_value()) {
+  if (types_and_offsets->surface_uv_and_animation_offset.has_value()) {
     mesh_specification_attributes.push_back(
-        {.type = types_and_offsets->surface_uv->type,
-         .offset = types_and_offsets->surface_uv->offset,
-         .name = "surfaceUv"});
+        {.type = types_and_offsets->surface_uv_and_animation_offset->type,
+         .offset = types_and_offsets->surface_uv_and_animation_offset->offset,
+         .name = "surfaceUvAndAnimationOffset"});
   }
 
   return MeshSpecificationData{
@@ -533,14 +600,20 @@ absl::StatusOr<MeshSpecificationData> MeshSpecificationData::CreateForStroke(
            {.type = UniformType::kFloat4,
             .id = UniformId::kForwardDerivativeUnpackingTransform,
             .unpacking_attribute_index = attribute_indices.forward_derivative},
-           {.type = UniformType::kInt, .id = UniformId::kTextureMapping}},
+           {.type = UniformType::kInt, .id = UniformId::kTextureMapping},
+           {.type = UniformType::kFloat,
+            .id = UniformId::kTextureAnimationProgress},
+           {.type = UniformType::kInt,
+            .id = UniformId::kNumTextureAnimationFrames}},
       .vertex_shader_source = absl::StrCat(
           kSkSLCommonShaderHelpers, kSkSLVertexShaderHelpers, kVertexMainStart,
           types_and_offsets->hsl_shift.has_value()
               ? kVertexMainColorWithHslShift
               : kVertexMainColorWithoutHslShift,
-          types_and_offsets->surface_uv.has_value()
-              ? kVertexMainTextureUvWithSurfaceUv
+          types_and_offsets->surface_uv_and_animation_offset.has_value()
+              // TODO: b/330511293 - If there's a surface UV, but no animation
+              // offset, use `kVertexMainTextureUvWithSurfaceUvOnly` here.
+              ? kVertexMainTextureUvWithSurfaceUvAndAnimationOffset
               : kVertexMainTextureUvWithoutSurfaceUv,
           kVertexMainEnd),
       .fragment_shader_source = absl::StrCat(

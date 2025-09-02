@@ -27,6 +27,9 @@
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/ray_tracing_state.h"
+#include "error_message/error_strings.h"
+#include "containers/limits.h"
+#include "generated/dispatch_functions.h"
 
 // For given mem object, verify that it is not null or UNBOUND, if it is, report error. Return skip value.
 bool CoreChecks::VerifyBoundMemoryIsValid(const vvl::DeviceMemory *memory_state, const LogObjectList &objlist,
@@ -105,8 +108,8 @@ bool CoreChecks::ValidateAccelStructsMemoryDoNotOverlap(const Location &function
     const vvl::Buffer &buffer_a = *accel_struct_a.buffer_state;
     const vvl::Buffer &buffer_b = *accel_struct_b.buffer_state;
 
-    const sparse_container::range<VkDeviceSize> range_a(accel_struct_a.create_info.offset, accel_struct_a.create_info.size);
-    const sparse_container::range<VkDeviceSize> range_b(accel_struct_b.create_info.offset, accel_struct_b.create_info.size);
+    const vvl::range<VkDeviceSize> range_a(accel_struct_a.create_info.offset, accel_struct_a.create_info.size);
+    const vvl::range<VkDeviceSize> range_b(accel_struct_b.create_info.offset, accel_struct_b.create_info.size);
 
     if (const auto [memory, overlap_range] = buffer_a.GetResourceMemoryOverlap(range_a, &buffer_b, range_b);
         memory != VK_NULL_HANDLE) {
@@ -124,11 +127,11 @@ bool CoreChecks::ValidateAccelStructsMemoryDoNotOverlap(const Location &function
 }
 
 static bool ValidateBufferAndAccelStructsMemoryDoNotOverlap(const CoreChecks &validator, const vvl::Buffer &buffer_a,
-                                                            sparse_container::range<VkDeviceSize> range_a,
+                                                            vvl::range<VkDeviceSize> range_a,
                                                             const vvl::AccelerationStructureKHR &accel_struct_b,
                                                             const Location &loc_b, std::string *err_msg) {
     const vvl::Buffer &buffer_b = *accel_struct_b.buffer_state;
-    const sparse_container::range<VkDeviceSize> range_b(accel_struct_b.create_info.offset, accel_struct_b.create_info.size);
+    const vvl::range<VkDeviceSize> range_b(accel_struct_b.create_info.offset, accel_struct_b.create_info.size);
 
     if (const auto [memory, overlap_range] = buffer_a.GetResourceMemoryOverlap(range_a, &buffer_b, range_b);
         memory != VK_NULL_HANDLE) {
@@ -171,7 +174,7 @@ bool CoreChecks::ValidateScratchMemoryNoOverlap(const Location &function_loc, Lo
          [this, scratch_a_address, scratch_a_size, &dst_accel_struct, &loc_dst_accel_struct](vvl::Buffer *const scratch_a,
                                                                                              std::string *out_error_msg) {
              const VkDeviceSize scratch_a_offset = scratch_a_address - scratch_a->deviceAddress;
-             const sparse_container::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
+             const vvl::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
 
              const bool no_overlap_found = ValidateBufferAndAccelStructsMemoryDoNotOverlap(
                  *this, *scratch_a, scratch_a_range, dst_accel_struct, loc_dst_accel_struct, out_error_msg);
@@ -191,7 +194,7 @@ bool CoreChecks::ValidateScratchMemoryNoOverlap(const Location &function_loc, Lo
              [this, scratch_a_address, scratch_a_size, src_accel_struct, &loc_src_accel_struct](vvl::Buffer *const scratch_a,
                                                                                                 std::string *out_error_msg) {
                  const VkDeviceSize scratch_a_offset = scratch_a_address - scratch_a->deviceAddress;
-                 const sparse_container::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
+                 const vvl::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
 
                  const bool no_overlap_found = ValidateBufferAndAccelStructsMemoryDoNotOverlap(
                      *this, *scratch_a, scratch_a_range, *src_accel_struct, loc_src_accel_struct, out_error_msg);
@@ -212,12 +215,11 @@ bool CoreChecks::ValidateScratchMemoryNoOverlap(const Location &function_loc, Lo
              [this, scratch_a_address, scratch_a_size, scratches_b, scratch_b_address, scratch_b_size](vvl::Buffer *const scratch_a,
                                                                                                        std::string *out_error_msg) {
                  const VkDeviceSize scratch_a_offset = scratch_a_address - scratch_a->deviceAddress;
-                 const sparse_container::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
+                 const vvl::range<VkDeviceSize> scratch_a_range(scratch_a_offset, scratch_a_offset + scratch_a_size);
 
                  for (auto scratch_b : scratches_b) {
                      const VkDeviceSize scratch_b_offset = scratch_b_address - scratch_b->deviceAddress;
-                     const sparse_container::range<VkDeviceSize> scratch_b_range(scratch_b_offset,
-                                                                                 scratch_b_offset + scratch_b_size);
+                     const vvl::range<VkDeviceSize> scratch_b_range(scratch_b_offset, scratch_b_offset + scratch_b_size);
 
                      if (auto [mem, mem_range] = scratch_b->GetResourceMemoryOverlap(scratch_b_range, scratch_a, scratch_a_range);
                          mem != VK_NULL_HANDLE) {
@@ -370,7 +372,7 @@ bool CoreChecks::HasExternalMemoryImportSupport(const vvl::Buffer &buffer, VkExt
     info.usage = buffer.create_info.usage;
     info.handleType = handle_type;
     VkExternalBufferProperties properties = vku::InitStructHelper();
-    instance_state->DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(physical_device, &info, &properties);
+    DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(api_version, physical_device, &info, &properties);
     return (properties.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
 }
 
@@ -384,12 +386,31 @@ bool CoreChecks::HasExternalMemoryImportSupport(const vvl::Image &image, VkExter
     info.usage = image.create_info.usage;
     info.flags = image.create_info.flags;
 
+    // TODO - Want to use vvl::PnextChainExtract, but would need to cleanup (and test) rest of how we add the other pNext here
+    // Note - some pNext structs that can be found in VkImageCreateInfo::pNext are not allowed in VkPhysicalDeviceImageFormatInfo2
+    VkImageFormatListCreateInfo format_list = vku::InitStructHelper();
+    if (auto original_format_list = vku::FindStructInPNextChain<VkImageFormatListCreateInfo>(image.create_info.pNext)) {
+        format_list.pViewFormats = original_format_list->pViewFormats;
+        format_list.viewFormatCount = original_format_list->viewFormatCount;
+        vvl::PnextChainAdd(&external_info, &format_list);
+    }
+    VkImageStencilUsageCreateInfo stencil_usage = vku::InitStructHelper();
+    if (auto original_stencil_usage = vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(image.create_info.pNext)) {
+        stencil_usage.stencilUsage = original_stencil_usage->stencilUsage;
+        vvl::PnextChainAdd(&external_info, &stencil_usage);
+    }
+    VkPhysicalDeviceImageViewImageFormatInfoEXT image_view_format = vku::InitStructHelper();
+    if (auto original_image_view_format =
+            vku::FindStructInPNextChain<VkPhysicalDeviceImageViewImageFormatInfoEXT>(image.create_info.pNext)) {
+        image_view_format.imageViewType = original_image_view_format->imageViewType;
+        vvl::PnextChainAdd(&external_info, &image_view_format);
+    }
+
     VkExternalImageFormatProperties external_properties = vku::InitStructHelper();
     VkImageFormatProperties2 properties = vku::InitStructHelper(&external_properties);
     if (image.create_info.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         // Can't get into function with using external memory extensions which require GPDP2
-        if (instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(physical_device, &info, &properties) !=
-            VK_SUCCESS) {
+        if (DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &info, &properties) != VK_SUCCESS) {
             return false;
         }
     } else {
@@ -404,8 +425,7 @@ bool CoreChecks::HasExternalMemoryImportSupport(const vvl::Image &image, VkExter
             return false;
         }
         drm_format_modifier.drmFormatModifier = drm_format_properties.drmFormatModifier;
-        if (instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(physical_device, &info, &properties) !=
-            VK_SUCCESS) {
+        if (DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device, &info, &properties) != VK_SUCCESS) {
             return false;
         }
     }
@@ -907,8 +927,8 @@ bool CoreChecks::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory
 
             auto validate_export_handle_types = [&](VkExternalMemoryHandleTypeFlagBits flag) {
                 external_info.handleType = flag;
-                instance_state->DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(physical_device, &external_info,
-                                                                                        &external_properties);
+                DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(api_version, physical_device, &external_info,
+                                                                        &external_properties);
                 const auto external_features = external_properties.externalMemoryProperties.externalMemoryFeatures;
                 if ((external_features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0) {
                     export_supported = false;
@@ -986,7 +1006,7 @@ bool CoreChecks::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory
             buffer_memory_requirements_info_2.buffer = buffer;
             VkMemoryDedicatedRequirements memory_dedicated_requirements = vku::InitStructHelper();
             VkMemoryRequirements2 memory_requirements = vku::InitStructHelper(&memory_dedicated_requirements);
-            DispatchGetBufferMemoryRequirements2Helper(device, &buffer_memory_requirements_info_2, &memory_requirements);
+            DispatchGetBufferMemoryRequirements2Helper(api_version, device, &buffer_memory_requirements_info_2, &memory_requirements);
 
             if (memory_dedicated_requirements.requiresDedicatedAllocation) {
                 const char *vuid =
@@ -1015,7 +1035,8 @@ bool CoreChecks::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory
                                                  : "VUID-vkBindBufferMemory-bufferDeviceAddress-03339";
             skip |= LogError(vuid, objlist, loc.dot(Field::buffer),
                              "was created with the VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT bit set, "
-                             "memory must have been allocated with the VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT bit set.");
+                             "memory must have been allocated with the VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT bit set%s.",
+                             chained_flags_struct ? "" : " (Need to add VkMemoryAllocateFlagsInfo to VkMemoryAllocateInfo::pNext)");
         }
         const VkMemoryAllocateFlags memory_allocate_flags = chained_flags_struct ? chained_flags_struct->flags : 0;
         if (buffer_state->create_info.flags & VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT) {
@@ -1750,6 +1771,31 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                                 FormatHandle(bind_info.image).c_str(), bind_info.memoryOffset);
                         }
                     }
+                } else if (IsExtEnabled(extensions.vk_khr_dedicated_allocation)) {
+                    VkImageMemoryRequirementsInfo2 image_memory_requirements_info_2 = vku::InitStructHelper();
+                    image_memory_requirements_info_2.image = bind_info.image;
+                    VkMemoryDedicatedRequirements memory_dedicated_requirements = vku::InitStructHelper();
+                    VkMemoryRequirements2 memory_requirements = vku::InitStructHelper(&memory_dedicated_requirements);
+                    DispatchGetImageMemoryRequirements2Helper(api_version, device, &image_memory_requirements_info_2,
+                                                              &memory_requirements);
+
+                    if (memory_dedicated_requirements.requiresDedicatedAllocation) {
+                        const char *vuid =
+                            bind_image_mem_2 ? "VUID-VkBindImageMemoryInfo-image-01445" : "VUID-vkBindImageMemory-image-01445";
+                        if (dedicated_image == VK_NULL_HANDLE) {
+                            const LogObjectList objlist(bind_info.image, bind_info.memory);
+                            skip |= LogError(vuid, objlist, loc.dot(Field::memory),
+                                             "was created without a VkMemoryDedicatedAllocateInfo in the pNext chain, but "
+                                             "vkGetImageMemoryRequirements2() reports "
+                                             "VkImageMemoryRequirementsInfo2::requiresDedicatedAllocation = VK_TRUE.");
+                        } else if (dedicated_image != bind_info.image) {
+                            const LogObjectList objlist(bind_info.image, bind_info.memory);
+                            skip |= LogError(vuid, objlist,
+                                             loc.pNext(Struct::VkMemoryDedicatedAllocateInfo, Field::pNext).dot(Field::image),
+                                             "is %s, but VkBindImageMemoryInfo::image is %s.",
+                                             FormatHandle(dedicated_image).c_str(), FormatHandle(bind_info.image).c_str());
+                        }
+                    }
                 }
 
                 auto chained_flags_struct = vku::FindStructInPNextChain<VkMemoryAllocateFlagsInfo>(mem_info->allocate_info.pNext);
@@ -1784,12 +1830,39 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                     drm_format_modifier.queueFamilyIndexCount = image_state->create_info.queueFamilyIndexCount;
                     drm_format_modifier.pQueueFamilyIndices = image_state->create_info.pQueueFamilyIndices;
                     VkPhysicalDeviceExternalImageFormatInfo external_info = vku::InitStructHelper();
-                    VkPhysicalDeviceImageFormatInfo2 image_info = vku::InitStructHelper(&external_info);
-                    image_info.format = image_state->create_info.format;
-                    image_info.type = image_state->create_info.imageType;
-                    image_info.tiling = image_state->create_info.tiling;
-                    image_info.usage = image_state->create_info.usage;
-                    image_info.flags = image_state->create_info.flags;
+
+                    VkPhysicalDeviceImageFormatInfo2 image_format_info = vku::InitStructHelper();
+                    image_format_info.format = image_state->create_info.format;
+                    image_format_info.type = image_state->create_info.imageType;
+                    image_format_info.tiling = image_state->create_info.tiling;
+                    image_format_info.usage = image_state->create_info.usage;
+                    image_format_info.flags = image_state->create_info.flags;
+
+                    // TODO - Want to use vvl::PnextChainExtract, but would need to cleanup (and test) rest of how we add the other
+                    // pNext here
+                    VkImageFormatListCreateInfo format_list = vku::InitStructHelper();
+                    if (auto original_format_list =
+                            vku::FindStructInPNextChain<VkImageFormatListCreateInfo>(image_state->create_info.pNext)) {
+                        format_list.pViewFormats = original_format_list->pViewFormats;
+                        format_list.viewFormatCount = original_format_list->viewFormatCount;
+                        vvl::PnextChainAdd(&image_format_info, &format_list);
+                    }
+                    VkImageStencilUsageCreateInfo stencil_usage = vku::InitStructHelper();
+                    if (auto original_stencil_usage =
+                            vku::FindStructInPNextChain<VkImageStencilUsageCreateInfo>(image_state->create_info.pNext)) {
+                        stencil_usage.stencilUsage = original_stencil_usage->stencilUsage;
+                        vvl::PnextChainAdd(&image_format_info, &stencil_usage);
+                    }
+                    VkPhysicalDeviceImageViewImageFormatInfoEXT image_view_format = vku::InitStructHelper();
+                    if (auto original_image_view_format = vku::FindStructInPNextChain<VkPhysicalDeviceImageViewImageFormatInfoEXT>(
+                            image_state->create_info.pNext)) {
+                        image_view_format.imageViewType = original_image_view_format->imageViewType;
+                        vvl::PnextChainAdd(&image_format_info, &image_view_format);
+                    }
+
+                    // Add last as the Lambda will add to this
+                    vvl::PnextChainAdd(&image_format_info, &external_info);
+
                     VkExternalImageFormatProperties external_properties = vku::InitStructHelper();
                     VkImageFormatProperties2 image_properties = vku::InitStructHelper(&external_properties);
                     bool export_supported = true;
@@ -1806,49 +1879,43 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                                 drm_format_modifier.drmFormatModifier = drm_modifier_properties.drmFormatModifier;
                             }
                         }
-                        auto result = instance_state->DispatchGetPhysicalDeviceImageFormatProperties2Helper(
-                            physical_device, &image_info, &image_properties);
+                        auto result = DispatchGetPhysicalDeviceImageFormatProperties2Helper(api_version, physical_device,
+                                                                                            &image_format_info, &image_properties);
                         if (result != VK_SUCCESS) {
                             export_supported = false;
                             const LogObjectList objlist(bind_info.image, bind_info.memory);
-                            skip |= LogError(
-                                "VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc,
-                                "The handle type (%s) specified by the memory's VkExportMemoryAllocateInfo, and format (%s), "
-                                "type (%s), tiling (%s), usage (%s), flags (%s) specified by the image's VkImageCreateInfo is not "
-                                "supported combination of parameters. vkGetPhysicalDeviceImageFormatProperties2 returned back %s.",
-                                string_VkExternalMemoryHandleTypeFlagBits(flag), string_VkFormat(image_info.format),
-                                string_VkImageType(image_info.type), string_VkImageTiling(image_info.tiling),
-                                string_VkImageUsageFlags(image_info.usage).c_str(),
-                                string_VkImageCreateFlags(image_info.flags).c_str(), string_VkResult(result));
+                            skip |= LogError("VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc,
+                                             "The handle type (%s) specified by the memory's VkExportMemoryAllocateInfo, and the "
+                                             "VkImageCreateInfo\n%s"
+                                             "is not supported combination of parameters. "
+                                             "vkGetPhysicalDeviceImageFormatProperties2 returned back %s.",
+                                             string_VkExternalMemoryHandleTypeFlagBits(flag),
+                                             string_VkPhysicalDeviceImageFormatInfo2(image_format_info).c_str(),
+                                             string_VkResult(result));
                             return;  // this exits lambda, not parent function
                         }
                         const auto external_features = external_properties.externalMemoryProperties.externalMemoryFeatures;
                         if ((external_features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0) {
                             export_supported = false;
                             const LogObjectList objlist(bind_info.image, bind_info.memory);
-                            skip |= LogError("VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc.dot(Field::memory),
-                                             "(%s) has VkExportMemoryAllocateInfo::handleTypes with the %s "
-                                             "flag set, which does not support VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT with the "
-                                             "image create format (%s), type (%s), tiling (%s), usage (%s), flags (%s).",
-                                             FormatHandle(bind_info.memory).c_str(),
-                                             string_VkExternalMemoryHandleTypeFlagBits(flag), string_VkFormat(image_info.format),
-                                             string_VkImageType(image_info.type), string_VkImageTiling(image_info.tiling),
-                                             string_VkImageUsageFlags(image_info.usage).c_str(),
-                                             string_VkImageCreateFlags(image_info.flags).c_str());
+                            skip |=
+                                LogError("VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc.dot(Field::memory),
+                                         "(%s) has VkExportMemoryAllocateInfo::handleTypes with the %s "
+                                         "flag set, which does not support VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT with the "
+                                         "VkImageCreateInfo\n%s",
+                                         FormatHandle(bind_info.memory).c_str(), string_VkExternalMemoryHandleTypeFlagBits(flag),
+                                         string_VkPhysicalDeviceImageFormatInfo2(image_format_info).c_str());
                         }
                         if ((external_features & VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT) != 0) {
                             if (!mem_info->IsDedicatedImage()) {
                                 const LogObjectList objlist(bind_info.image, bind_info.memory);
-                                skip |= LogError(
-                                    "VUID-VkMemoryAllocateInfo-pNext-00639", objlist, loc.dot(Field::memory),
-                                    "(%s) has VkExportMemoryAllocateInfo::handleTypes with the %s "
-                                    "flag set, which requires dedicated allocation for the image created with format "
-                                    "(%s), type (%s), tiling (%s), usage (%s), flags (%s), but the memory is allocated "
-                                    "without dedicated allocation support.",
-                                    FormatHandle(bind_info.memory).c_str(), string_VkExternalMemoryHandleTypeFlagBits(flag),
-                                    string_VkFormat(image_info.format), string_VkImageType(image_info.type),
-                                    string_VkImageTiling(image_info.tiling), string_VkImageUsageFlags(image_info.usage).c_str(),
-                                    string_VkImageCreateFlags(image_info.flags).c_str());
+                                skip |= LogError("VUID-VkMemoryAllocateInfo-pNext-00639", objlist, loc.dot(Field::memory),
+                                                 "(%s) has VkExportMemoryAllocateInfo::handleTypes with the %s "
+                                                 "flag set, which requires dedicated allocation for the VkImageCreateInfo\n%s"
+                                                 "but the memory is allocated without dedicated allocation support.",
+                                                 FormatHandle(bind_info.memory).c_str(),
+                                                 string_VkExternalMemoryHandleTypeFlagBits(flag),
+                                                 string_VkPhysicalDeviceImageFormatInfo2(image_format_info).c_str());
                             }
                         }
                     };
@@ -1858,16 +1925,13 @@ bool CoreChecks::ValidateBindImageMemory(uint32_t bindInfoCount, const VkBindIma
                     const auto compatible_types = external_properties.externalMemoryProperties.compatibleHandleTypes;
                     if (export_supported && (mem_info->export_handle_types & compatible_types) != mem_info->export_handle_types) {
                         const LogObjectList objlist(bind_info.image, bind_info.memory);
-                        skip |=
-                            LogError("VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc.dot(Field::memory),
-                                     "(%s) has VkExportMemoryAllocateInfo::handleTypes (%s) that are not "
-                                     "reported as compatible by vkGetPhysicalDeviceImageFormatProperties2 with the image create "
-                                     "format (%s), type (%s), tiling (%s), usage (%s), flags (%s).",
-                                     FormatHandle(bind_info.memory).c_str(),
-                                     string_VkExternalMemoryHandleTypeFlags(mem_info->export_handle_types).c_str(),
-                                     string_VkFormat(image_info.format), string_VkImageType(image_info.type),
-                                     string_VkImageTiling(image_info.tiling), string_VkImageUsageFlags(image_info.usage).c_str(),
-                                     string_VkImageCreateFlags(image_info.flags).c_str());
+                        skip |= LogError(
+                            "VUID-VkExportMemoryAllocateInfo-handleTypes-00656", objlist, loc.dot(Field::memory),
+                            "(%s) has VkExportMemoryAllocateInfo::handleTypes (%s) that are not "
+                            "reported as compatible by vkGetPhysicalDeviceImageFormatProperties2 with VkImageCreateInfo\n%s",
+                            FormatHandle(bind_info.memory).c_str(),
+                            string_VkExternalMemoryHandleTypeFlags(mem_info->export_handle_types).c_str(),
+                            string_VkPhysicalDeviceImageFormatInfo2(image_format_info).c_str());
                     }
 
                     // Check if the memory meets the image's external memory requirements

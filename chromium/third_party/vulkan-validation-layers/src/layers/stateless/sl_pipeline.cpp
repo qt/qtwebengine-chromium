@@ -21,6 +21,7 @@
 #include "generated/enum_flag_bits.h"
 #include "generated/dispatch_functions.h"
 #include "stateless/sl_vuid_maps.h"
+#include "containers/container_utils.h"
 
 namespace stateless {
 
@@ -92,8 +93,8 @@ bool Device::ValidatePushConstantRange(uint32_t push_constant_range_count, const
 
         // size needs to be non-zero and a multiple of 4.
         if (size == 0) {
-            skip |= LogError("VUID-VkPushConstantRange-size-00296", device, pc_loc.dot(Field::size),
-                             "(%" PRIu32 ") is not greater than zero.", size);
+            skip |=
+                LogError("VUID-VkPushConstantRange-size-00296", device, pc_loc.dot(Field::size), "(%" PRIu32 ") is zero.", size);
         }
         if (size & 0x3) {
             skip |= LogError("VUID-VkPushConstantRange-size-00297", device, pc_loc.dot(Field::size),
@@ -468,7 +469,7 @@ bool Device::manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
         }
 
         // <VkDynamicState, index in pDynamicStates, hash for enum key>
-        vvl::unordered_map<VkDynamicState, uint32_t, std::hash<int>> dynamic_state_map;
+        vvl::unordered_map<VkDynamicState, uint32_t, vvl::hash<int>> dynamic_state_map;
         // TODO probably should check dynamic state from graphics libraries, at least when creating an "executable pipeline"
         if (create_info.pDynamicState != nullptr) {
             const auto &dynamic_state_info = *create_info.pDynamicState;
@@ -1324,8 +1325,6 @@ bool Device::manual_PreCallValidateCreateComputePipelines(VkDevice device, VkPip
         const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
         const VkComputePipelineCreateInfo &create_info = pCreateInfos[i];
 
-        skip |= context.ValidateString(create_info_loc.dot(Field::stage).dot(Field::pName),
-                                       "VUID-VkPipelineShaderStageCreateInfo-pName-parameter", create_info.stage.pName);
         auto feedback_struct = vku::FindStructInPNextChain<VkPipelineCreationFeedbackCreateInfo>(create_info.pNext);
         if (feedback_struct) {
             const uint32_t feedback_count = feedback_struct->pipelineStageCreationFeedbackCount;
@@ -1467,7 +1466,7 @@ bool Device::manual_PreCallValidateGetPipelinePropertiesEXT(VkDevice device, con
         }
         if (pPipelineProperties->pNext != nullptr) {
             skip |= LogError("VUID-VkPipelinePropertiesIdentifierEXT-pNext-pNext", device,
-                             pipeline_properties_loc.dot(Field::sType), "is not NULL.");
+                             pipeline_properties_loc.dot(Field::pNext), "is not NULL.");
         }
     } else {
         skip |= LogError("VUID-vkGetPipelinePropertiesEXT-pPipelineProperties-06739", device, pipeline_properties_loc, "is NULL.");

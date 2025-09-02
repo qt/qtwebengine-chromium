@@ -16,6 +16,7 @@ from ordered_set import OrderedSet
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.settings import Settings
+from crossbench.browsers.version import BrowserVersion, UnknownBrowserVersion
 from crossbench.flags.base import Flags, FlagsData, FlagsT
 
 if TYPE_CHECKING:
@@ -39,60 +40,59 @@ class Browser(abc.ABC):
   def default_flags(cls, initial_data: FlagsData = None) -> Flags:
     return Flags(initial_data)
 
+  @classmethod
+  @abc.abstractmethod
+  def type_name(cls) -> str:
+    pass
+
+  @classmethod
+  @abc.abstractmethod
+  def attributes(cls) -> BrowserAttributes:
+    pass
+
   def __init__(self,
                label: str,
                path: Optional[pth.AnyPath] = None,
-               settings: Optional[Settings] = None):
+               settings: Optional[Settings] = None) -> None:
     self._settings = settings or Settings()
     self._platform = self._settings.platform
     self.label: str = label
-    self._unique_name: str = ""
-    self.app_name: str = self.type_name
-    self.version: str = "custom"
-    self.major_version: int = 0
+    self.app_name: str = self.type_name()
     self.app_path: pth.AnyPath = pth.AnyPath()
-    self.path = pth.AnyPath()
-    self._setup_path(path)
+    self._path = pth.AnyPath()
+    self._is_local_build: bool = False
+    self._unique_name: str = ""
+    self._version: BrowserVersion = UnknownBrowserVersion()
+    self._init_path_and_version(path)
     self._is_running: bool = False
-    self._pid: Optional[int] = None
+    self._pid: int | None = None
     self._probes: OrderedSet[Probe] = OrderedSet()
-    self._flags: Flags = self._setup_flags(self._settings)
-    self.log_file: Optional[pth.AnyPath] = None
-    self.cache_dir: Optional[pth.AnyPath] = self._settings.cache_dir
-    self.clear_cache_dir: bool = True
-    self._setup_cache_dir(self._settings)
+    self._flags: Flags = self._init_flags(self._settings)
+    self.log_file: pth.AnyPath | None = None
+    # Optional location of the browser's main cache dir.
+    # If set and settings.clear_cache, this should be cleared before and after
+    # running the browser.
+    # For chrome browsers this corresponds to the user-data-dir.
+    self._cache_dir: pth.AnyPath | None = None
 
-  def _setup_path(self, path: Optional[pth.AnyPath] = None) -> None:
+  def _init_path_and_version(self, path: Optional[pth.AnyPath] = None) -> None:
     if not path:
       # TODO: separate class for remote browser (selenium) without an explicit
       # binary path.
-      self.unique_name = f"{self.type_name}_{self.label}".lower()
+      self._version = self._extract_version()
+      self._unique_name = f"{self.type_name()}_{self.label}".lower()
       return
-    self.path = self._resolve_binary(path)
+    self._path = self._init_resolve_binary(path)
     # TODO clean up
     if not self.platform.is_android:
       assert self.path.is_absolute()
-    self.version = self._extract_version()
-    self.major_version = int(self.version.split(".")[0])
-    self.unique_name = f"{self.type_name}_v{self.major_version}_{self.label}"
+    self._version = self._extract_version()
+    self._unique_name = f"{self.type_name()}_v{self.version.major}_{self.label}"
 
-  def _setup_flags(self, settings: Settings) -> Flags:
+  def _init_flags(self, settings: Settings) -> Flags:
     assert not self._settings.js_flags, (
         f"{self} doesn't support custom js_flags")
     return self.default_flags(settings.flags)
-
-  def _setup_cache_dir(self, settings: Settings) -> None:
-    pass
-
-  @property
-  @abc.abstractmethod
-  def type_name(self) -> str:
-    pass
-
-  @property
-  @abc.abstractmethod
-  def attributes(self) -> BrowserAttributes:
-    pass
 
   @property
   def platform(self) -> plt.Platform:
@@ -103,6 +103,10 @@ class Browser(abc.ABC):
     return self._platform.host_platform
 
   @property
+  def version(self) -> BrowserVersion:
+    return self._version
+
+  @property
   def unique_name(self) -> str:
     return self._unique_name
 
@@ -111,6 +115,10 @@ class Browser(abc.ABC):
     assert name
     # Replace any potentially unsafe chars in the name
     self._unique_name = pth.safe_filename(name).lower()
+
+  @property
+  def path(self) -> pth.AnyPath:
+    return self._path
 
   @property
   def driver_logging(self) -> bool:
@@ -127,6 +135,10 @@ class Browser(abc.ABC):
   @property
   def settings(self):
     return self._settings
+
+  @property
+  def clear_cache_dir(self) -> bool:
+    return self._settings.clear_cache_dir
 
   @property
   def viewport(self) -> Viewport:
@@ -147,6 +159,10 @@ class Browser(abc.ABC):
   @property
   def driver_path(self) -> Optional[pth.AnyPath]:
     return self._settings.driver_path
+
+  @property
+  def is_local_build(self) -> bool:
+    return self._is_local_build
 
   @property
   def probes(self) -> Iterable[Probe]:
@@ -201,6 +217,10 @@ class Browser(abc.ABC):
   def is_remote(self) -> bool:
     return self.platform.is_remote
 
+  @property
+  def cache_dir(self) -> Optional[pth.AnyPath]:
+    return self._cache_dir
+
   def set_log_file(self, path: pth.AnyPath) -> None:
     self.log_file = path
 
@@ -213,18 +233,18 @@ class Browser(abc.ABC):
   def driver_log_file(self) -> Optional[pth.LocalPath]:
     return None
 
-  def _resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
+  def _init_resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
     path = self.platform.absolute(path)
     assert self.platform.exists(path), f"Binary at path={path} does not exist."
     self.app_path = path
     self.app_name = self.app_path.stem
     if self.platform.is_macos:
-      path = self._resolve_macos_binary(path)
+      path = self._init_resolve_macos_binary(path)
     assert self.platform.is_file(path), (
         f"Binary at path={path} is not a file.")
     return path
 
-  def _resolve_macos_binary(self, path: pth.AnyPath) -> pth.AnyPath:
+  def _init_resolve_macos_binary(self, path: pth.AnyPath) -> pth.AnyPath:
     assert self.platform.is_macos
     candidate = self.platform.search_binary(path)
     if not candidate or not self.platform.is_file(candidate):
@@ -240,17 +260,22 @@ class Browser(abc.ABC):
   def details_json(self) -> JsonDict:
     return {
         "label": self.label,
-        "browser": self.type_name,
+        "browser": self.type_name(),
         "unique_name": self.unique_name,
         "app_name": self.app_name,
-        "version": self.version,
+        "version": self.version.parts_str,
+        "channel": self.version.channel_name,
         "flags": tuple(self.flags),
         "js_flags": tuple(),
         "path": os.fspath(self.path),
         "clear_cache_dir": self.clear_cache_dir,
-        "major_version": self.major_version,
+        "major_version": self.version.major,
         "log": {}
     }
+
+  def validate(self):
+    self.validate_flags()
+    self.validate_binary()
 
   def validate_flags(self) -> None:
     """ Helper method is called from the Runner before any Runs / Sessions
@@ -260,16 +285,15 @@ class Browser(abc.ABC):
     """ Helper method is called from the Runner before any Runs / Sessions
     have started."""
 
-  def setup_binary(self) -> None:
+  def setup(self) -> None:
+    assert not self._is_running, "setup() called in wrong order."
+    self._setup_binary()
+    assert not self._cache_dir
+    self._cache_dir = self._setup_cache_dir()
+
+  def _setup_binary(self) -> None:
     """ This helper is called in the setup steps of each Session.
     This can be used to install a custom binary on remote devices. """
-
-  def setup(self, session: BrowserSessionRunGroup) -> None:
-    assert not self._is_running, (
-        "Previously used browser was not correctly stopped.")
-    self.clear_cache()
-    self.start(session)
-    assert self._is_running
 
   def is_logged_in(self,
                    secret: UsernamePassword,
@@ -293,35 +317,44 @@ class Browser(abc.ABC):
     return False
 
   @abc.abstractmethod
-  def _extract_version(self) -> str:
+  def _extract_version(self) -> BrowserVersion:
     pass
-
-  def clear_cache(self) -> None:
-    if self.clear_cache_dir and self.cache_dir:
-      self.platform.rm(self.cache_dir, missing_ok=True, dir=True)
-      self.platform.mkdir(self.cache_dir, parents=True)
 
   @abc.abstractmethod
-  def start(self, session: BrowserSessionRunGroup) -> None:
+  def _setup_cache_dir(self) -> Optional[pth.AnyPath]:
     pass
+
+  def _teardown_cache_dir(self) -> None:
+    self._clear_cache(self._cache_dir)
+
+  def _clear_cache(self, cache_dir: Optional[pth.AnyPath]) -> None:
+    if self.clear_cache_dir and cache_dir:
+      logging.debug("CLEAR CACHE: %s", cache_dir)
+      self.platform.rm(cache_dir, missing_ok=True, dir=True)
+    self._cache_dir = None
+
+  def start(self, session: BrowserSessionRunGroup) -> None:
+    del session
+    assert not self._is_running, (
+        "Previously used browser was not correctly stopped.")
 
   def _log_browser_start(self,
                          args: Tuple[str, ...],
                          driver_path: Optional[pth.AnyPath] = None) -> None:
-    logging.info("STARTING BROWSER Binary:  %s", self.path)
-    logging.info("STARTING BROWSER Version: %s", self.version)
+    logging.info("🌐 STARTING BROWSER Binary:  %s", self.path)
+    logging.info("🏷️  STARTING BROWSER Version: %s", self.version)
     if driver_path:
-      logging.info("STARTING BROWSER Driver:  %s", driver_path)
-    logging.info("STARTING BROWSER Network: %s", self.network)
-    logging.info("STARTING BROWSER Probes:  %s",
+      logging.info("🐎 STARTING BROWSER Driver:  %s", driver_path)
+    logging.info("🕸  STARTING BROWSER Network: %s", self.network)
+    logging.info("🩺 STARTING BROWSER Probes:  %s",
                  ", ".join(p.NAME for p in self.probes))
-    logging.info("STARTING BROWSER Flags:   %s", shlex.join(args))
+    logging.info("🚩 STARTING BROWSER Flags:   %s", shlex.join(args))
 
   def _get_browser_flags_for_session(
       self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
     flags_copy: Flags = self.flags.copy()
     flags_copy.update(session.extra_flags)
-    flags_copy.update(self.network.extra_flags(self.attributes))
+    flags_copy.update(self.network.extra_flags(self.attributes()))
     flags_copy = self._filter_flags_for_run(flags_copy)
     return tuple(flags_copy)
 
@@ -334,6 +367,7 @@ class Browser(abc.ABC):
       self.force_quit()
     finally:
       self._pid = None
+      self._teardown_cache_dir()
 
   def force_quit(self) -> None:
     if not self._is_running:
@@ -376,12 +410,29 @@ class Browser(abc.ABC):
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
-  ) -> None:
+  ) -> str:
     del title
     del url
     del tab_index
     del timeout
     raise NotImplementedError(f"Switching tabs is not supported by {self}")
+
+  def close_tab(
+      self,
+      title: Optional[re.Pattern] = None,
+      url: Optional[re.Pattern] = None,
+      tab_index: Optional[int] = None,
+      timeout: dt.timedelta = dt.timedelta(seconds=0)
+  ) -> None:
+    del title
+    del url
+    del tab_index
+    del timeout
+    raise NotImplementedError(f"Closing tabs is not supported by {self}")
+
+  @property
+  def current_url(self) -> str:
+    raise NotImplementedError(f"Getting current url is not supported by {self}")
 
   @abc.abstractmethod
   def show_url(self, url: str, target: Optional[str] = None) -> None:
@@ -410,11 +461,11 @@ class Browser(abc.ABC):
     platform_prefix = ""
     if self.platform.is_remote:
       platform_prefix = str(self.platform)
-    return f"{platform_prefix}{self.type_name.capitalize()}:{self.label}"
+    return f"{platform_prefix}{self.type_name().capitalize()}:{self.label}"
 
   def __hash__(self) -> int:
     # Poor-man's hash, browsers should be unique.
     return hash(id(self))
 
-  def performance_mark(self, name: str):
+  def performance_mark(self, name: str) -> None:
     self.js("performance.mark(arguments[0]);", arguments=[name])

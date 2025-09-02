@@ -9,11 +9,12 @@ import dataclasses
 import logging
 import os
 import re
-from typing import Any, Dict, Optional, TextIO, Tuple, cast
+from typing import Any, Optional, Self, TextIO, Tuple, cast
 
 import hjson
+from typing_extensions import override
 
-import crossbench.browsers.all as browsers
+import crossbench.browsers.all as all_browsers
 from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
@@ -25,7 +26,7 @@ from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvironmentConfig
 from crossbench.cli.config.network import NetworkConfig
 from crossbench.cli.config.network_speed import NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
-from crossbench.parse import NumberParser, PathParser
+from crossbench.parse import NumberParser, ObjectParser, PathParser
 
 SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox")
 
@@ -42,12 +43,14 @@ NETWORK_PRESETS: str = "|".join(
     re.escape(preset.value) for preset in NetworkSpeedPreset)  # pytype: disable=missing-parameter
 ENV_PRESETS: str = "|".join(re.escape(preset) for preset in ENV_CONFIG_PRESETS)
 
-SHORT_FORM_RE = re.compile(r"((?P<driver>\w{3,}):)??"
-                           r"(?P<path>([A-Z]:[/\\])?[^:]+)"
-                           f"(:(?P<network>{NETWORK_PRESETS}))?"
-                           f"(:(?P<env>{ENV_PRESETS}))?")
-ANDROID_PACKAGE_RE = re.compile(r"[a-z]+(\.[a-z]+){2,}")
-VERSION_FOR_RANGE_RE = re.compile(r"(?P<prefix>[^\d]*)(?P<milestone>\d+)")
+SHORT_FORM_RE: re.Pattern[str] = re.compile(
+    r"((?P<driver>\w{3,}):)??"
+    r"(?P<path>([A-Z]:[/\\])?[^:]+)"
+    f"(:(?P<network>{NETWORK_PRESETS}))?"
+    f"(:(?P<env>{ENV_PRESETS}))?")
+ANDROID_PACKAGE_RE: re.Pattern[str] = re.compile(r"[a-z]+(\.[a-z]+){2,}")
+VERSION_FOR_RANGE_RE: re.Pattern[str] = re.compile(
+    r"(?P<prefix>[^\d]*)(?P<milestone>\d+)")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,8 +60,11 @@ class BrowserConfig(ConfigObject):
   # Make network optional since --network provides a global default and we do
   # want to have the option to explicitly specify the default network in a
   # browser config.
-  network: Optional[NetworkConfig] = None
-  env: Optional[EnvironmentConfig] = None
+  network: NetworkConfig | None = None
+  env: EnvironmentConfig | None = None
+
+  cache_dir: pth.AnyPath | None = None
+  clear_cache: bool | None = None
 
   def __post_init__(self) -> None:
     if not self.browser:
@@ -67,18 +73,19 @@ class BrowserConfig(ConfigObject):
       raise ValueError(f"{type(self).__name__}.driver cannot be None.")
 
   @classmethod
-  def default(cls) -> BrowserConfig:
+  def default(cls) -> Self:
     return cls(
-        browsers.Chrome.stable_path(plt.PLATFORM), DriverConfig.default())
+        all_browsers.Chrome.stable_path(plt.PLATFORM), DriverConfig.default())
 
   @classmethod
-  def parse_str(cls, value: str) -> BrowserConfig:
+  @override
+  def parse_str(cls, value: str) -> Self:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
-    path: Optional[pth.AnyPathLike] = None
+    path: pth.AnyPathLike | None = None
     driver = DriverConfig.default()
-    network: Optional[NetworkConfig] = None
-    env: Optional[EnvironmentConfig] = None
+    network: NetworkConfig | None = None
+    env: EnvironmentConfig | None = None
     if ":" not in value or cls.value_has_path_prefix(value):
       # Variant 1: $PATH_OR_IDENTIFIER
       path = cls._parse_path_or_identifier(value)
@@ -92,13 +99,13 @@ class BrowserConfig(ConfigObject):
     return cls(path, driver, network, env)
 
   @classmethod
-  def parse_with_range(cls, value: Any) -> Tuple[BrowserConfig, ...]:
+  def parse_with_range(cls, value: Any) -> Tuple[Self, ...]:
     if isinstance(value, str):
       return cls._parse_with_range(value)
     return (cls.parse(value),)
 
   @classmethod
-  def _parse_with_range(cls, value: str) -> Tuple[BrowserConfig, ...]:
+  def _parse_with_range(cls, value: str) -> Tuple[Self, ...]:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     parts = value.split("...", maxsplit=1)
@@ -211,53 +218,50 @@ class BrowserConfig(ConfigObject):
     if identifier in ("chrome", "chrome-stable", "chr-stable", "chr"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("com.android.chrome")
-      return browsers.Chrome.stable_path(platform)
+      return all_browsers.Chrome.stable_path(platform)
     if identifier in ("chrome-app"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("com.google.android.apps.chrome")
     if identifier in ("chrome-beta", "chr-beta"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("com.chrome.beta")
-      return browsers.Chrome.beta_path(platform)
+      return all_browsers.Chrome.beta_path(platform)
     if identifier in ("chrome-dev", "chr-dev"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("com.chrome.dev")
-      return browsers.Chrome.dev_path(platform)
+      return all_browsers.Chrome.dev_path(platform)
     if identifier in ("chrome-canary", "chr-canary"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("com.chrome.canary")
-      return browsers.Chrome.canary_path(platform)
+      return all_browsers.Chrome.canary_path(platform)
     if identifier == "chromium":
       if driver_type == BrowserDriverType.ANDROID:
         return pth.AnyPosixPath("org.chromium.chrome")
-      return browsers.Chromium.default_path(platform)
+      return all_browsers.Chromium.default_path(platform)
     if identifier in ("edge", "edge-stable"):
-      return browsers.Edge.stable_path(platform)
+      return all_browsers.Edge.stable_path(platform)
     if identifier == "edge-beta":
-      return browsers.Edge.beta_path(platform)
+      return all_browsers.Edge.beta_path(platform)
     if identifier == "edge-dev":
-      return browsers.Edge.dev_path(platform)
+      return all_browsers.Edge.dev_path(platform)
     if identifier == "edge-canary":
-      return browsers.Edge.canary_path(platform)
+      return all_browsers.Edge.canary_path(platform)
     if identifier in ("safari", "sf", "safari-stable", "sf-stable"):
-      return browsers.Safari.default_path(platform)
+      return all_browsers.Safari.default_path(platform)
     if identifier in ("safari-technology-preview", "safari-tp", "sf-tp", "tp"):
-      return browsers.Safari.technology_preview_path(platform)
+      return all_browsers.Safari.technology_preview_path(platform)
     if identifier in ("firefox", "firefox-stable", "ff", "ff-stable"):
-      return browsers.Firefox.default_path(platform)
+      return all_browsers.Firefox.default_path(platform)
     if identifier in ("firefox-dev", "firefox-developer-edition", "ff-dev"):
-      return browsers.Firefox.developer_edition_path(platform)
+      return all_browsers.Firefox.developer_edition_path(platform)
     if identifier in ("firefox-nightly", "ff-nightly", "ff-trunk"):
-      return browsers.Firefox.nightly_path(platform)
+      return all_browsers.Firefox.nightly_path(platform)
     return None
 
   @classmethod
   def is_supported_browser_path(cls, path: pth.AnyPath) -> bool:
     path_str = os.fspath(path).lower()
-    for short_name in SUPPORTED_BROWSER:
-      if short_name in path_str:
-        return True
-    return False
+    return any(short_name in path_str for short_name in SUPPORTED_BROWSER)
 
   @classmethod
   def _parse_inline_short_form(
@@ -289,7 +293,7 @@ class BrowserConfig(ConfigObject):
     return (driver, path, network, env)
 
   @classmethod
-  def parse_text_io(cls, f: TextIO) -> BrowserConfig:
+  def parse_text_io(cls, f: TextIO) -> Self:
     with exception.annotate(f"Loading browser config file: {f.name}"):
       config = {}
       with exception.annotate("Parsing hjson"):
@@ -299,11 +303,8 @@ class BrowserConfig(ConfigObject):
     raise argparse.ArgumentTypeError(f"Could not parse : '{f.name}'")
 
   @classmethod
-  def parse_dict(cls, config: Dict[str, Any]) -> BrowserConfig:
-    return cls.config_parser().parse(config)
-
-  @classmethod
-  def config_parser(cls) -> ConfigParser[BrowserConfig]:
+  @override
+  def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument(
         "browser",
@@ -314,6 +315,17 @@ class BrowserConfig(ConfigObject):
     parser.add_argument(
         "driver", type=DriverConfig, default=DriverConfig.default())
     parser.add_argument("network", type=NetworkConfig)
+    parser.add_argument(
+        "cache_dir",
+        aliases=("browser_cache", "browser_cache_dir"),
+        type=PathParser.optional_any_path,
+        default=None)
+    parser.add_argument(
+        "clear_cache",
+        aliases=("clear_cache_dir", "clear_browser_cache",
+                 "clear_browser_cache_dir"),
+        type=ObjectParser.optional_bool,
+        default=None)
     return parser
 
   @property

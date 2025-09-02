@@ -111,18 +111,23 @@ bool DebugReport::UpdateLogMsgCounts(int32_t vuid_hash) const {
     }
 }
 
-bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, const char *msg, const char *text_vuid) const {
-    bool bail = false;
+bool DebugReport::LogMessage(VkFlags msg_flags, std::string_view vuid_text, const LogObjectList &objects, const Location &loc,
+                             const std::string &main_message) {
+    // Convert the info to the VK_EXT_debug_utils format
+    VkDebugUtilsMessageSeverityFlagsEXT msg_severity;
+    VkDebugUtilsMessageTypeFlagsEXT msg_type;
+    DebugReportFlagsToAnnotFlags(msg_flags, &msg_severity, &msg_type);
+
+    std::unique_lock<std::mutex> lock(debug_output_mutex);
+
+    // Avoid logging cost if msg is to be ignored
+    const uint32_t vuid_hash = hash_util::VuidHash(vuid_text);
+    if (!LogMsgEnabled(vuid_hash, msg_severity, msg_type)) {
+        return false;
+    }
+
     std::vector<VkDebugUtilsLabelEXT> queue_labels;
     std::vector<VkDebugUtilsLabelEXT> cmd_buf_labels;
-
-    // Convert the info to the VK_EXT_debug_utils format
-    VkDebugUtilsMessageTypeFlagsEXT msg_type;
-    VkDebugUtilsMessageSeverityFlagsEXT msg_severity;
-    DebugReportFlagsToAnnotFlags(msg_flags, &msg_severity, &msg_type);
-    if (!(active_msg_severities & msg_severity) || !(active_msg_types & msg_type)) {
-        return false;  // quick check again to make sure user wants these printed
-    }
 
     std::vector<std::string> object_labels;
     // Ensures that push_back will not reallocate, thereby providing pointer
@@ -173,12 +178,10 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
         object_name_infos.push_back(object_name_info);
     }
 
-    const uint32_t message_id_number = text_vuid ? hash_util::VuidHash(text_vuid) : 0U;
-
     VkDebugUtilsMessengerCallbackDataEXT callback_data = vku::InitStructHelper();
     callback_data.flags = 0;
-    callback_data.pMessageIdName = text_vuid;
-    callback_data.messageIdNumber = vvl_bit_cast<int32_t>(message_id_number);
+    callback_data.pMessageIdName = vuid_text.data();
+    callback_data.messageIdNumber = vvl_bit_cast<int32_t>(vuid_hash);
     callback_data.pMessage = nullptr;
     callback_data.queueLabelCount = static_cast<uint32_t>(queue_labels.size());
     callback_data.pQueueLabels = queue_labels.empty() ? nullptr : queue_labels.data();
@@ -187,50 +190,10 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
     callback_data.objectCount = static_cast<uint32_t>(object_name_infos.size());
     callback_data.pObjects = object_name_infos.data();
 
-    std::ostringstream oss;
-
-#if defined(BUILD_SELF_VVL)
-    oss << "Self ";
-#endif
-
-    if (message_format_settings.display_application_name && !message_format_settings.application_name.empty()) {
-        oss << "[AppName: " << message_format_settings.application_name << "] ";
-    }
-
-    if (msg_flags & kErrorBit) {
-        oss << "Validation Error: ";
-    } else if (msg_flags & kWarningBit) {
-        oss << "Validation Warning: ";
-    } else if (msg_flags & kPerformanceWarningBit) {
-        oss << "Validation Performance Warning: ";
-    } else if (msg_flags & kInformationBit) {
-        oss << "Validation Information: ";
-    } else if (msg_flags & kVerboseBit) {
-        oss << "Verbose Information: ";
-    }
-
-    if (text_vuid != nullptr) {
-        oss << "[ " << text_vuid << " ] ";
-    }
-    uint32_t index = 0;
-    for (const auto &src_object : object_name_infos) {
-        if (0 != src_object.objectHandle) {
-            oss << "Object " << index++ << ": ";
-            if (!debug_stable_messages) {
-                oss << "handle = 0x" << std::hex << src_object.objectHandle << ", ";
-            }
-            if (src_object.pObjectName) {
-                oss << "name = " << src_object.pObjectName << ", type = ";
-            } else {
-                oss << "type = ";
-            }
-            oss << string_VkObjectType(src_object.objectType) << "; ";
-        } else {
-            oss << "Object " << index++ << ": VK_NULL_HANDLE, type = " << string_VkObjectType(src_object.objectType) << "; ";
-        }
-    }
-    oss << "| MessageID = 0x" << std::hex << message_id_number << " | " << msg;
-    std::string composite = oss.str();
+    // The text format is more minimal and will have other information in the callback, the JSON is designed to contain everything
+    std::string full_message = message_format_settings.json
+                                   ? CreateMessageJson(msg_flags, loc, object_name_infos, vuid_hash, vuid_text, main_message)
+                                   : CreateMessageText(loc, vuid_text, main_message);
 
     const auto callback_list = &debug_callback_list;
     // We only output to default callbacks if there are no non-default callbacks
@@ -246,6 +209,7 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
 #endif
 
     const char *layer_prefix = "Validation";
+    bool bail = false;
     for (const auto &current_callback : *callback_list) {
         // Skip callback if it's a default callback and there are non-default callbacks present
         if (current_callback.IsDefault() && !use_default_callbacks) continue;
@@ -253,7 +217,7 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
         // VK_EXT_debug_utils callback
         if (current_callback.IsUtils() && (current_callback.debug_utils_msg_flags & msg_severity) &&
             (current_callback.debug_utils_msg_type & msg_type)) {
-            callback_data.pMessage = composite.c_str();
+            callback_data.pMessage = full_message.c_str();
             if (current_callback.debug_utils_callback_function_ptr(
                     static_cast<VkDebugUtilsMessageSeverityFlagBitsEXT>(msg_severity), msg_type, &callback_data,
                     current_callback.pUserData)) {
@@ -269,13 +233,198 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
             }
             if (current_callback.debug_report_callback_function_ptr(
                     msg_flags, ConvertCoreObjectToDebugReportObject(object_name_infos[0].objectType),
-                    object_name_infos[0].objectHandle, message_id_number, 0, layer_prefix, composite.c_str(),
+                    object_name_infos[0].objectHandle, vuid_hash, 0, layer_prefix, full_message.c_str(),
                     current_callback.pUserData)) {
                 bail = true;
             }
         }
     }
     return bail;
+}
+
+std::string DebugReport::CreateMessageText(const Location &loc, std::string_view vuid_text, const std::string &main_message) {
+    std::ostringstream oss;
+
+#if defined(BUILD_SELF_VVL)
+    oss << "[Self Validation] ";  // How we know if the error is from Self Validation when debugging GPU-AV
+#endif
+
+    if (message_format_settings.display_application_name && !message_format_settings.application_name.empty()) {
+        oss << "[AppName: " << message_format_settings.application_name << "] ";
+    }
+
+    oss << loc.Message() << " " << main_message;
+
+    // Append the spec error text to the error message, unless it contains a word treated as special
+    if ((vuid_text.find("VUID-") != std::string::npos)) {
+        // Linear search makes no assumptions about the layout of the string table. This is not fast, but it does not need to be at
+        // this point in the error reporting path
+        uint32_t num_vuids = sizeof(vuid_spec_text) / sizeof(vuid_spec_text_pair);
+        const char *spec_text = nullptr;
+        // Only the Antora site will make use of the sections
+        const char *spec_url_section = nullptr;
+        for (uint32_t i = 0; i < num_vuids; i++) {
+            if (0 == strncmp(vuid_text.data(), vuid_spec_text[i].vuid, vuid_text.size())) {
+                spec_text = vuid_spec_text[i].spec_text;
+                spec_url_section = vuid_spec_text[i].url_id;
+                break;
+            }
+        }
+
+        // Construct and append the specification text and link to the appropriate version of the spec
+        if (spec_text && spec_url_section) {
+#ifdef ANNOTATED_SPEC_LINK
+            const char *spec_url_base = ANNOTATED_SPEC_LINK;
+#else
+            const char *spec_url_base = "https://docs.vulkan.org/spec/latest/";
+#endif
+
+            // Add period at end if forgotten
+            // This provides better seperation between error message and spec text
+            if (main_message.back() != '.' && main_message.back() != '\n') {
+                oss << '.';
+            }
+
+            // Start Vulkan spec text with a new line to make it easier visually
+            if (main_message.back() != '\n') {
+                oss << '\n';
+            }
+
+            oss << "The Vulkan spec states: " << spec_text << " (" << spec_url_base << spec_url_section << "#" << vuid_text << ")";
+        }
+    }
+
+    return oss.str();
+}
+
+std::string DebugReport::CreateMessageJson(VkFlags msg_flags, const Location &loc,
+                                           const std::vector<VkDebugUtilsObjectNameInfoEXT> &object_name_infos,
+                                           const uint32_t vuid_hash, std::string_view vuid_text, const std::string &main_message) {
+    std::ostringstream oss;
+    // For now we just list each JSON field as a new line as it is "pretty-print enough".
+    // For Android, things get logged in logcat and having the JSON as a single line is easier to grab from the terminal.
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+    char new_line = ' ';
+    char line_start = ' ';
+#else
+    char new_line = '\n';
+    char line_start = '\t';
+#endif
+
+    oss << "{" << new_line;
+
+    if (message_format_settings.display_application_name && !message_format_settings.application_name.empty()) {
+        oss << line_start << "\"AppName\" : \"" << message_format_settings.application_name << "\"," << new_line;
+    }
+
+    {
+        oss << line_start << "\"Severity\" : \"";
+        if (msg_flags & kErrorBit) {
+            oss << "Error";
+        } else if (msg_flags & kWarningBit) {
+            oss << "Warning";
+        } else if (msg_flags & kPerformanceWarningBit) {
+            oss << "Performance Warning";
+        } else if (msg_flags & kInformationBit) {
+            oss << "Information";
+        } else if (msg_flags & kVerboseBit) {
+            oss << "Verbose";
+        }
+        oss << "\"," << new_line;
+    }
+
+    { oss << line_start << "\"VUID\" : \"" << vuid_text << "\"," << new_line; }
+
+    {
+        oss << line_start << "\"Objects\" : [" << new_line;
+        for (uint32_t i = 0; i < object_name_infos.size(); i++) {
+            const VkDebugUtilsObjectNameInfoEXT &src_object = object_name_infos[i];
+
+            oss << line_start << line_start;
+            oss << "{\"type\" : \"" << string_VkObjectTypeHandleName(src_object.objectType) << "\", \"handle\" : \"";
+            if (0 != src_object.objectHandle) {
+                if (!debug_stable_messages) {
+                    oss << "0x" << std::hex << src_object.objectHandle;
+                }
+                oss << "\", \"name\" : \"";
+                if (src_object.pObjectName) {
+                    oss << src_object.pObjectName;
+                }
+                oss << "\"}";
+            } else {
+                oss << "VK_NULL_HANDLE\", \"name\" : \"\"}";
+            }
+            if (i + 1 != object_name_infos.size()) {
+                oss << ",";
+            }
+            oss << new_line;
+        }
+        oss << line_start << "]," << new_line;
+    }
+
+    { oss << line_start << "\"MessageID\" : \"0x" << std::hex << vuid_hash << "\"," << new_line; }
+    { oss << line_start << "\"Function\" : \"" << loc.StringFunc() << "\"," << new_line; }
+    { oss << line_start << "\"Location\" : \"" << loc.Fields() << "\"," << new_line; }
+    {
+        oss << line_start << "\"MainMessage\" : \"";
+        // For cases were where have multi-lines in the message, we need to escape them.
+        // The idea is the JSON is machine readable and when someone prints the value out, the new lines will resolve then.
+        for (char c : main_message) {
+            if (c == '\n') {
+                oss << "\\n";
+            } else {
+                oss << c;
+            }
+        }
+        oss << "\"," << new_line;
+    }
+    {
+        oss << line_start << "\"DebugRegion\" : \"";
+        if (loc.debug_region && !loc.debug_region->empty()) {
+            oss << loc.debug_region;
+        }
+        oss << "\"," << new_line;
+    }
+
+    if ((vuid_text.find("VUID-") != std::string::npos)) {
+        // Linear search makes no assumptions about the layout of the string table. This is not fast, but it does not need to be at
+        // this point in the error reporting path
+        uint32_t num_vuids = sizeof(vuid_spec_text) / sizeof(vuid_spec_text_pair);
+        const char *spec_text = nullptr;
+        // Only the Antora site will make use of the sections
+        const char *spec_url_section = nullptr;
+        for (uint32_t i = 0; i < num_vuids; i++) {
+            if (0 == strncmp(vuid_text.data(), vuid_spec_text[i].vuid, vuid_text.size())) {
+                spec_text = vuid_spec_text[i].spec_text;
+                spec_url_section = vuid_spec_text[i].url_id;
+                break;
+            }
+        }
+
+        if (spec_text) {
+            oss << line_start << "\"SpecText\" : \"" << spec_text << "\"," << new_line;
+        } else {
+            oss << line_start << "\"SpecText\" : \"\"," << new_line;
+        }
+
+        // Construct and append the specification text and link to the appropriate version of the spec
+        if (spec_text && spec_url_section) {
+#ifdef ANNOTATED_SPEC_LINK
+            std::string spec_url_base = ANNOTATED_SPEC_LINK;
+#else
+            std::string spec_url_base = "https://docs.vulkan.org/spec/latest/";
+#endif
+            oss << line_start << "\"SpecUrl\" : \"" << spec_url_base << spec_url_section << "#" << vuid_text << "\"" << new_line;
+
+        } else {
+            oss << line_start << "\"SpecUrl\" : \"\"" << new_line;
+        }
+    } else {
+        oss << line_start << "\"SpecText\" : \"\"," << new_line;
+        oss << line_start << "\"SpecUrl\" : \"\"" << new_line;
+    }
+    oss << "}";
+    return oss.str();
 }
 
 void DebugReport::SetUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo) {
@@ -340,7 +489,9 @@ std::string DebugReport::FormatHandle(const char *handle_type_name, uint64_t han
     if (print_handle) {
         str << "0x" << std::hex << handle;
     }
-    str << "[" << handle_name.c_str() << "]";
+    if (!handle_name.empty()) {
+        str << "[" << handle_name.c_str() << "]";
+    }
     return str.str();
 }
 
@@ -549,87 +700,26 @@ VKAPI_ATTR void DeactivateInstanceDebugCallbacks(DebugReport *debug_report) {
 
 // helper for VUID based filtering. This needs to be separate so it can be called before incurring
 // the cost of sprintf()-ing the err_msg needed by LogMsgLocked().
-bool DebugReport::LogMsgEnabled(std::string_view vuid_text, VkDebugUtilsMessageSeverityFlagsEXT msg_severity,
+bool DebugReport::LogMsgEnabled(uint32_t vuid_hash, VkDebugUtilsMessageSeverityFlagsEXT msg_severity,
                                 VkDebugUtilsMessageTypeFlagsEXT msg_type) {
     if (!(active_msg_severities & msg_severity) || !(active_msg_types & msg_type)) {
         return false;
     }
     // If message is in filter list, bail out very early
-    const uint32_t message_id = hash_util::VuidHash(vuid_text);
-    if (filter_message_ids.find(message_id) != filter_message_ids.end()) {
+    if (filter_message_ids.find(vuid_hash) != filter_message_ids.end()) {
         return false;
     }
-    if ((duplicate_message_limit > 0) && UpdateLogMsgCounts(static_cast<int32_t>(message_id))) {
+    if ((duplicate_message_limit > 0) && UpdateLogMsgCounts(static_cast<int32_t>(vuid_hash))) {
         // Count for this particular message is over the limit, ignore it
         return false;
     }
     return true;
 }
 
-bool DebugReport::LogMsg(VkFlags msg_flags, const LogObjectList &objects, const Location &loc, std::string_view vuid_text,
-                         const char *format, va_list argptr) {
-    assert(*(vuid_text.data() + vuid_text.size()) == '\0');
-
-    VkDebugUtilsMessageSeverityFlagsEXT msg_severity;
-    VkDebugUtilsMessageTypeFlagsEXT msg_type;
-
-    DebugReportFlagsToAnnotFlags(msg_flags, &msg_severity, &msg_type);
-    std::unique_lock<std::mutex> lock(debug_output_mutex);
-    // Avoid logging cost if msg is to be ignored
-    if (!LogMsgEnabled(vuid_text, msg_severity, msg_type)) {
-        return false;
-    }
-
-    std::string full_message = text::VFormat(format, argptr);
-    full_message = loc.Message() + " " + full_message;
-
-    // Append the spec error text to the error message, unless it contains a word treated as special
-    if ((vuid_text.find("VUID-") != std::string::npos)) {
-        // Linear search makes no assumptions about the layout of the string table. This is not fast, but it does not need to be at
-        // this point in the error reporting path
-        uint32_t num_vuids = sizeof(vuid_spec_text) / sizeof(vuid_spec_text_pair);
-        const char *spec_text = nullptr;
-        // Only the Antora site will make use of the sections
-        std::string spec_url_section;
-        for (uint32_t i = 0; i < num_vuids; i++) {
-            if (0 == strncmp(vuid_text.data(), vuid_spec_text[i].vuid, vuid_text.size())) {
-                spec_text = vuid_spec_text[i].spec_text;
-                spec_url_section = vuid_spec_text[i].url_id;
-                break;
-            }
-        }
-
-        // Construct and append the specification text and link to the appropriate version of the spec
-        if (nullptr != spec_text) {
-#ifdef ANNOTATED_SPEC_LINK
-            std::string spec_url_base = ANNOTATED_SPEC_LINK;
-#else
-            std::string spec_url_base = "https://docs.vulkan.org/spec/latest/";
-#endif
-
-            // Add period at end if forgotten
-            // This provides better seperation between error message and spec text
-            if (full_message.back() != '.' && full_message.back() != '\n') {
-                full_message.append(".");
-            }
-
-            // Start Vulkan spec text with a new line to make it easier visually
-            if (full_message.back() != '\n') {
-                full_message.append("\n");
-            }
-
-            full_message.append("The Vulkan spec states: ");
-            full_message.append(spec_text);
-            full_message.append(" (");
-            full_message.append(spec_url_base);
-            full_message.append(spec_url_section);
-            full_message.append("#");  // CMake hates hashes
-            full_message.append(vuid_text);
-            full_message.append(")");
-        }
-    }
-
-    return DebugLogMsg(msg_flags, objects, full_message.c_str(), vuid_text.data());
+bool DebugReport::LogMessageVaList(VkFlags msg_flags, std::string_view vuid_text, const LogObjectList &objects, const Location &loc,
+                                   const char *format, va_list argptr) {
+    const std::string main_message = text::VFormat(format, argptr);
+    return LogMessage(msg_flags, vuid_text, objects, loc, main_message);
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerBreakCallback([[maybe_unused]] VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -646,74 +736,66 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MessengerBreakCallback([[maybe_unused]] VkDebugUt
     return false;
 }
 
-static void PrintMessageSeverity(VkFlags vk_flags, char *msg_flags) {
-    bool separator = false;
+static std::string CreateDefaultCallbackMessage(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+                                                VkDebugUtilsMessageTypeFlagsEXT message_type,
+                                                const VkDebugUtilsMessengerCallbackDataEXT &callback_data) {
+    std::ostringstream oss;
 
-    msg_flags[0] = 0;
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-        strcat(msg_flags, "VERBOSE");
-        separator = true;
+    // The callback is in JSON (this is the only way the first char is '{')
+    // If the user enables JSON, we only will print out JSON.
+    if (callback_data.pMessage[0] == '{') {
+        oss << callback_data.pMessage << '\n';
+        return oss.str();
     }
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        if (separator) strcat(msg_flags, ",");
-        strcat(msg_flags, "INFO");
-        separator = true;
-    }
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        if (separator) strcat(msg_flags, ",");
-        strcat(msg_flags, "WARN");
-        separator = true;
-    }
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        if (separator) strcat(msg_flags, ",");
-        strcat(msg_flags, "ERROR");
-    }
-}
 
-static void PrintMessageType(VkFlags vk_flags, char *msg_flags) {
-    bool separator = false;
+    if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        oss << "Validation Error: ";
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        if (message_type & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
+            oss << "Validation Performance Warning: ";
+        } else {
+            oss << "Validation Warning: ";
+        }
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        oss << "Validation Information: ";
+    } else if (message_severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+        oss << "Verbose Information: ";
+    }
 
-    msg_flags[0] = 0;
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
-        strcat(msg_flags, "GEN");
-        separator = true;
+    oss << "[ " << callback_data.pMessageIdName << " ] | MessageID = 0x" << std::hex << callback_data.messageIdNumber << '\n';
+
+    oss << callback_data.pMessage << '\n';
+
+    if (callback_data.objectCount > 0) {
+        oss << "Objects: " << callback_data.objectCount << '\n';
+        for (uint32_t i = 0; i < callback_data.objectCount; i++) {
+            const auto &debug_object = callback_data.pObjects[i];
+            oss << "    [" << i << "] " << string_VkObjectTypeHandleName(debug_object.objectType);
+            if (debug_object.objectHandle) {
+                oss << " 0x" << std::hex << debug_object.objectHandle;
+            } else {
+                oss << " VK_NULL_HANDLE";
+            }
+            if (debug_object.pObjectName) {
+                oss << "[" << debug_object.pObjectName << "]";
+            }
+            oss << '\n';
+        }
     }
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) {
-        if (separator) strcat(msg_flags, ",");
-        strcat(msg_flags, "SPEC");
-        separator = true;
-    }
-    if (vk_flags & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) {
-        if (separator) strcat(msg_flags, ",");
-        strcat(msg_flags, "PERF");
-    }
+
+#ifndef VK_USE_PLATFORM_ANDROID_KHR
+    oss << '\n';  // provide space between consecutive errors
+#endif
+
+    return oss.str();
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerLogCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                                     VkDebugUtilsMessageTypeFlagsEXT message_type,
                                                     const VkDebugUtilsMessengerCallbackDataEXT *callback_data, void *user_data) {
-    std::ostringstream msg_buffer;
-    char msg_severity[8];  // larget word is "VERBOSE\0"
-    char msg_type[8];
+    const std::string msg_buffer_str = CreateDefaultCallbackMessage(message_severity, message_type, *callback_data);
 
-    PrintMessageSeverity(message_severity, msg_severity);
-    PrintMessageType(message_type, msg_type);
-
-    msg_buffer << callback_data->pMessageIdName << "(" << msg_severity << " / " << msg_type
-               << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << '\n';
-    if (callback_data->objectCount > 0) {
-        msg_buffer << "    Objects: " << callback_data->objectCount << '\n';
-    }
-    for (uint32_t obj = 0; obj < callback_data->objectCount; ++obj) {
-        msg_buffer << "        [" << obj << "] " << std::hex << std::showbase
-                   << HandleToUint64(callback_data->pObjects[obj].objectHandle) << ", type: " << std::dec << std::noshowbase
-                   << callback_data->pObjects[obj].objectType
-                   << ", name: " << (callback_data->pObjects[obj].pObjectName ? callback_data->pObjects[obj].pObjectName : "NULL")
-                   << '\n';
-    }
-
-    const std::string msg_buffer_str = msg_buffer.str();
-
+    // By default we are really just printing to stdout
     // Even if this is stdout, we still want to print for android
     // VVL testing (and probably other systems now) call freopen() to map stdout to dedicated file
     fprintf((FILE *)user_data, "%s", msg_buffer_str.c_str());
@@ -740,28 +822,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MessengerWin32DebugOutputMsg(VkDebugUtilsMessageS
                                                             VkDebugUtilsMessageTypeFlagsEXT message_type,
                                                             const VkDebugUtilsMessengerCallbackDataEXT *callback_data,
                                                             [[maybe_unused]] void *user_data) {
-    std::ostringstream msg_buffer;
-    char msg_severity[8];  // larget word is "VERBOSE\0"
-    char msg_type[8];
-
-    PrintMessageSeverity(message_severity, msg_severity);
-    PrintMessageType(message_type, msg_type);
-
-    msg_buffer << callback_data->pMessageIdName << "(" << msg_severity << " / " << msg_type
-               << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << '\n';
-    if (callback_data->objectCount > 0) {
-        msg_buffer << "    Objects: " << callback_data->objectCount << '\n';
-    }
-
-    for (uint32_t obj = 0; obj < callback_data->objectCount; ++obj) {
-        msg_buffer << "       [" << obj << "]  " << std::hex << std::showbase
-                   << HandleToUint64(callback_data->pObjects[obj].objectHandle) << ", type: " << std::dec << std::noshowbase
-                   << callback_data->pObjects[obj].objectType
-                   << ", name: " << (callback_data->pObjects[obj].pObjectName ? callback_data->pObjects[obj].pObjectName : "NULL")
-                   << '\n';
-    }
-    const std::string tmp = msg_buffer.str();
-    [[maybe_unused]] const char *cstr = tmp.c_str();
+    const std::string msg_buffer_str = CreateDefaultCallbackMessage(message_severity, message_type, *callback_data);
+    [[maybe_unused]] const char *cstr = msg_buffer_str.c_str();
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
     OutputDebugString(cstr);

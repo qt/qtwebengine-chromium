@@ -31,21 +31,26 @@ class DescriptorClassTexelBufferPass : public Pass {
     void PrintDebugInfo() const final;
 
   private:
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst);
-    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data);
-    void Reset() final;
+    // This is metadata tied to a single instruction gathered during RequiresInstrumentation() to be used later
+    struct InstructionMeta {
+        const Instruction* target_instruction = nullptr;
+        const Instruction* access_chain_inst = nullptr;
+        const Instruction* var_inst = nullptr;
+        const Instruction* image_inst = nullptr;
 
-    uint32_t link_function_id = 0;
+        uint32_t descriptor_set = 0;
+        uint32_t descriptor_binding = 0;
+        uint32_t descriptor_index_id = 0;  // index input the descriptor array
+    };
+
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta);
+    uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
+                                const InstructionMeta& meta);
+
     uint32_t GetLinkFunctionId();
 
-    const Instruction* access_chain_inst_ = nullptr;
-    const Instruction* var_inst_ = nullptr;
-    const Instruction* image_inst_ = nullptr;
-
-    uint32_t descriptor_set_ = 0;
-    uint32_t descriptor_binding_ = 0;
-    uint32_t descriptor_index_id_ = 0;  // index input the descriptor array
-    uint32_t descriptor_offset_id_ = 0;
+    // Function IDs to link in
+    uint32_t link_function_id_ = 0;
 };
 
 }  // namespace spirv

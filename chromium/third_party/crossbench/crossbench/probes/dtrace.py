@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import atexit
 import subprocess
-from typing import TYPE_CHECKING, Optional, TextIO, Type
+from typing import TYPE_CHECKING, Self, TextIO, Type
+
+from typing_extensions import override
 
 from crossbench.parse import PathParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
@@ -31,17 +33,19 @@ class DTraceProbe(Probe):
   RESULT_LOCATION = ResultLocation.BROWSER
 
   @classmethod
-  def config_parser(cls) -> ProbeConfigParser:
+  @override
+  def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
         "script_path", required=True, type=PathParser.non_empty_file_path)
     return parser
 
-  def __init__(self, script_path: LocalPath):
+  def __init__(self, script_path: LocalPath) -> None:
     super().__init__()
     self._script_path = script_path.resolve()
 
   @property
+  @override
   def key(self) -> ProbeKeyT:
     return super().key + (("script_path", str(self.script_path)),)
 
@@ -49,6 +53,7 @@ class DTraceProbe(Probe):
   def script_path(self) -> LocalPath:
     return self._script_path
 
+  @override
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_macos(browser)
@@ -81,6 +86,7 @@ class DTraceProbe(Probe):
           self, "Cannot execute 'sudo dtrace'. "
           "This probe will fail to start.") from e
 
+  @override
   def get_context_cls(self) -> Type[DTraceProbeContext]:
     return DTraceProbeContext
 
@@ -93,8 +99,8 @@ class DTraceProbeContext(ProbeContext[DTraceProbe]):
     self._output_path: LocalPath = (
         self.local_result_path.with_suffix(".output.txt"))
     self._log_path: LocalPath = self.local_result_path.with_suffix(".log")
-    self._dtrace_process: Optional[subprocess.Popen] = None
-    self._log_file: Optional[TextIO] = None
+    self._dtrace_process: subprocess.Popen | None = None
+    self._log_file: TextIO | None = None
     atexit.register(self.stop_dtrace_process)
 
   def start(self) -> None:

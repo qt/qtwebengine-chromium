@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
  */
 #pragma once
 #include "containers/subresource_adapter.h"
-#include "containers/range_vector.h"
+#include "containers/range.h"
 #include "generated/sync_validation_types.h"
+#include "containers/limits.h"
 #include <set>
 
 namespace vvl {
@@ -28,9 +29,6 @@ struct IndexBufferBinding;
 }  // namespace vvl
 
 namespace syncval_state {
-class CommandBuffer;
-class ImageState;
-class ImageViewState;
 class Swapchain;
 }  // namespace syncval_state
 
@@ -45,12 +43,15 @@ constexpr static QueueId kQueueIdInvalid = QueueId(vvl::kU32Max);
 constexpr static QueueId kQueueAny = kQueueIdInvalid - 1;
 
 using ResourceUsageTag = size_t;
-constexpr static ResourceUsageTag kMaxIndex = std::numeric_limits<ResourceUsageTag>::max();
-constexpr static ResourceUsageTag kInvalidTag = kMaxIndex;
 
-using ResourceUsageRange = sparse_container::range<ResourceUsageTag>;
+// TODO: in the current implementation invalid tag is used not only as initial value
+// but also in some other scenarios (e.g. error reporting classifies layout transition
+// based on tag validity). Clarify when tag can be invalid and document this.
+constexpr static ResourceUsageTag kInvalidTag = std::numeric_limits<ResourceUsageTag>::max();
+
+using ResourceUsageRange = vvl::range<ResourceUsageTag>;
 using ResourceAddress = VkDeviceSize;
-using ResourceAccessRange = sparse_container::range<ResourceAddress>;
+using ResourceAccessRange = vvl::range<ResourceAddress>;
 
 // Usage tag extended with resource handle information
 struct ResourceUsageTagEx {
@@ -75,12 +76,8 @@ constexpr VkImageAspectFlags kDepthStencilAspects = VK_IMAGE_ASPECT_DEPTH_BIT | 
 
 // Useful Utilites for manipulating StageAccess parameters, suitable as base class to save typing
 struct SyncStageAccess {
-    static inline const SyncAccessInfo &AccessInfo(SyncAccessIndex access_index) {
-        return syncAccessInfoByAccessIndex()[access_index];
-    }
-    static inline SyncAccessFlags FlagBit(SyncAccessIndex stage_access) {
-        return syncAccessInfoByAccessIndex()[stage_access].access_bit;
-    }
+    static const SyncAccessInfo &AccessInfo(SyncAccessIndex access_index) { return GetSyncAccessInfos()[access_index]; }
+    static SyncAccessFlags FlagBit(SyncAccessIndex stage_access) { return GetSyncAccessInfos()[stage_access].access_bit; }
 
     static bool IsRead(SyncAccessIndex access_index) { return syncAccessReadMask[access_index]; }
     static bool IsRead(const SyncAccessInfo &info) { return IsRead(info.access_index); }
@@ -88,7 +85,7 @@ struct SyncStageAccess {
     static bool IsWrite(const SyncAccessInfo &info) { return IsWrite(info.access_index); }
 
     static VkPipelineStageFlags2 PipelineStageBit(SyncAccessIndex access_index) {
-        return syncAccessInfoByAccessIndex()[access_index].stage_mask;
+        return GetSyncAccessInfos()[access_index].stage_mask;
     }
     static SyncAccessFlags AccessScopeByStage(VkPipelineStageFlags2 stages);
     static SyncAccessFlags AccessScopeByAccess(VkAccessFlags2 access);

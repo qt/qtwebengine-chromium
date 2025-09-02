@@ -8,12 +8,12 @@ import argparse
 import enum
 from typing import Any
 
-from crossbench import compat
 from crossbench.parse import ObjectParser
+from crossbench.str_enum_with_help import StrEnumWithHelp
 
 
 @enum.unique
-class BrowserDriverType(compat.StrEnumWithHelp):
+class BrowserDriverType(StrEnumWithHelp):
   WEB_DRIVER = ("WebDriver", "Use Selenium with webdriver, for local runs.")
   APPLE_SCRIPT = ("AppleScript", "Use AppleScript, for local macOS runs only")
   ANDROID = ("Android",
@@ -51,22 +51,22 @@ class BrowserDriverType(compat.StrEnumWithHelp):
     raise argparse.ArgumentTypeError(f"Unknown driver type: {repr(value)}")
 
   @property
-  def is_remote_driver(self):
+  def is_remote_driver(self) -> bool:
     if self in (BrowserDriverType.CHROMEOS_SSH, BrowserDriverType.LINUX_SSH):
       return True
     return False
 
   @property
-  def is_local_driver(self):
+  def is_local_driver(self) -> bool:
     return not self.is_remote_driver
 
   @property
-  def is_remote_browser(self):
+  def is_remote_browser(self) -> bool:
     if self in (BrowserDriverType.ANDROID, BrowserDriverType.CHROMEOS_SSH,
                 BrowserDriverType.LINUX_SSH):
       return True
     return False
 
   @property
-  def is_local_browser(self):
+  def is_local_browser(self) -> bool:
     return not self.is_remote_browser

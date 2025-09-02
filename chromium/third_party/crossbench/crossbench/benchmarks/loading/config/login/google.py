@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+import datetime as dt
+from typing import TYPE_CHECKING
+
+from typing_extensions import override
 
 from crossbench.benchmarks.loading.config.login.base import PresetLoginBlock
 
@@ -27,8 +30,11 @@ TRUSTED_EMAIL_CHECK: str = (
 class GoogleLogin(PresetLoginBlock):
   """Google-specific login steps."""
 
-  def _submit_login_field(self, action: Actions, aria_label: str,
-                          input_val: str, button_name: str) -> None:
+  def _submit_login_field(self, action: Actions, secret: UsernamePassword,
+                          aria_label: str, input_val: str,
+                          button_name: str) -> None:
+    if secret.is_interactive:
+      return
     action.wait_js_condition(
         ("return "
          f"document.querySelector(\"[aria-label='{aria_label}']\") != null &&"
@@ -38,9 +44,15 @@ class GoogleLogin(PresetLoginBlock):
               f"inputField.value = {repr(input_val)};"
               f"document.getElementById({repr(button_name)}).click();")
 
+  def timeout(self, secret: UsernamePassword) -> dt.timedelta:
+    if secret.is_interactive:
+      return dt.timedelta(seconds=60)
+    return dt.timedelta(seconds=10)
+
+  @override
   def run_with(self, runner: ActionRunner, run: Run,
                page: InteractivePage) -> None:
-    secret: Optional[UsernamePassword] = run.secrets.google
+    secret: UsernamePassword | None = run.secrets.google
     if not secret:
       raise RuntimeError("No google login provided")
 
@@ -49,25 +61,28 @@ class GoogleLogin(PresetLoginBlock):
 
     with run.actions("Login", measure=False) as action:
       action.show_url(GOOGLE_LOGIN_URL)
-      self._submit_login_field(action, "Email or phone", secret.username,
-                               "identifierNext")
+      self._submit_login_field(action, secret, "Email or phone",
+                               secret.username, "identifierNext")
       action.wait_js_condition(
-          "return document.getElementById('verifycontactNext') || "
-          "document.getElementById('passwordNext') != null;", 0.2, 10)
+          "return document.getElementById('verifycontactNext') != null || "
+          "document.getElementById('passwordNext') != null;", 0.2,
+          self.timeout(secret))
+
       if action.js(TRUSTED_EMAIL_CHECK):
         self._test_account_login(action, secret)
       else:
         self._standard_login(action, secret)
 
-  def _standard_login(self, action, secret):
-    self._submit_login_field(action, "Enter your password", secret.password,
-                             "passwordNext")
+  def _standard_login(self, action: Actions, secret: UsernamePassword) -> None:
+    self._submit_login_field(action, secret, "Enter your password",
+                             secret.password, "passwordNext")
     action.wait_js_condition(
         "return document.URL.startsWith('https://myaccount.google.com');", 0.2,
-        10)
+        self.timeout(secret))
 
-  def _test_account_login(self, action, secret):
-    self._submit_login_field(action, "Enter trusted contact\\’s email",
+  def _test_account_login(self, action: Actions,
+                          secret: UsernamePassword) -> None:
+    self._submit_login_field(action, secret, "Enter trusted contact\\’s email",
                              secret.password, "verifycontactNext")
     # TODO: handle account passkey setup, for now each test account needs a
     # one time manual interaction.

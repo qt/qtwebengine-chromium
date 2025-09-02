@@ -5,17 +5,22 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Tuple, Type
+from typing import TYPE_CHECKING, Type
+
+from typing_extensions import override
 
 from crossbench.benchmarks.motionmark.motionmark_1 import (
     MotionMark1Benchmark, MotionMark1Probe, MotionMark1ProbeContext,
     MotionMark1Story)
 
+if TYPE_CHECKING:
+  from crossbench.benchmarks.base import VersionParts
 
 class MotionMark13Probe(MotionMark1Probe):
   __doc__ = MotionMark1Probe.__doc__
   NAME = "motionmark_1.3"
 
+  @override
   def get_context_cls(self) -> Type[MotionMark13ProbeContext]:
     return MotionMark13ProbeContext
 
@@ -48,5 +53,6 @@ class MotionMark13Benchmark(MotionMark1Benchmark):
   PROBES = (MotionMark13Probe,)
 
   @classmethod
-  def version(cls) -> Tuple[int, ...]:
-    return (1, 3)
+  @override
+  def version(cls) -> VersionParts:
+    return (1, 3, 0)

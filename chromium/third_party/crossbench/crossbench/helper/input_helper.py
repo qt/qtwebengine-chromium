@@ -8,7 +8,8 @@ import datetime as dt
 import threading
 
 
-def input_with_timeout(timeout=dt.timedelta(seconds=10), default=None):
+def input_with_timeout(
+    timeout: dt.timedelta = dt.timedelta(seconds=10), default=None):
   result_container = [default]
   wait = threading.Thread(
       target=_input, args=[
@@ -20,7 +21,7 @@ def input_with_timeout(timeout=dt.timedelta(seconds=10), default=None):
   return result_container[0]
 
 
-def _input(results_container):
+def _input(results_container) -> None:
   try:
     results_container[0] = input()
   except KeyboardInterrupt:

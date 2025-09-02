@@ -9,7 +9,9 @@ import datetime as dt
 import logging
 import shlex
 import subprocess
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import Tuple, TYPE_CHECKING, Any, Dict, List, Optional
+
+from typing_extensions import override
 
 from crossbench import parse
 from crossbench.plt.arch import MachineArch
@@ -28,19 +30,20 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
   def __init__(self, host_platform: Platform, host: str, port: int,
                ssh_port: int, ssh_user: str) -> None:
     super().__init__(host_platform, host, port, ssh_port, ssh_user)
-    self._machine: Optional[MachineArch] = None
-    self._system_details: Optional[Dict[str, Any]] = None
-    self._cpu_details: Optional[Dict[str, Any]] = None
+    self._machine: MachineArch | None = None
+    self._system_details: Dict[str, Any] | None = None
+    self._cpu_details: Dict[str, Any] | None = None
     self._port_forward_popens: Dict[int, subprocess.Popen] = {}
     self._reverse_port_forward_popens: Dict[int, subprocess.Popen] = {}
     atexit.register(self._stop_all_port_forward)
 
   @property
+  @override
   def name(self) -> str:
     return "linux_ssh"
 
   def _build_ssh_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
-    self._validate_shell_args(shell, args)
+    self.validate_shell_args(args, shell)
     ssh_cmd: ListCmdArgs = [
         "ssh", "-p", f"{self._ssh_port}", f"{self._ssh_user}@{self._host}"
     ]
@@ -48,16 +51,15 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
 
     if shell:
       combined_ssh_cmd: str = ""
-
       for cmd in ssh_cmd:
         combined_ssh_cmd = combined_ssh_cmd + str(cmd) + " "
-
       return [combined_ssh_cmd]
 
     return ssh_cmd
 
-  def build_shell_cmd(self, *args: CmdArg) -> ListCmdArgs:
-    return self._build_ssh_cmd(*args)
+  @override
+  def build_shell_cmd(self, *args: CmdArg, shell: bool = False) -> ListCmdArgs:
+    return self._build_ssh_cmd(*args, shell=shell)
 
   def processes(self,
                 attrs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -103,7 +105,8 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
                   local_port, self, remote_port)
     return local_port
 
-  def _validate_forwarding_ports(self, local_port, remote_port):
+  def _validate_forwarding_ports(self, local_port: int,
+                                 remote_port: int) -> Tuple[int, int]:
     local_port = parse.NumberParser.positive_zero_int(local_port, "local_port")
     remote_port = parse.NumberParser.port_number(remote_port, "remote_port")
     if not local_port:
@@ -127,7 +130,8 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
                   local_port, self, remote_port)
     return remote_port
 
-  def _validate_reverse_forwarding_ports(self, remote_port, local_port):
+  def _validate_reverse_forwarding_ports(self, remote_port: int,
+                                         local_port: int) -> Tuple[int, int]:
     remote_port = parse.NumberParser.port_number(remote_port, "remote_port")
     local_port = parse.NumberParser.positive_zero_int(local_port, "local_port")
     if not local_port:

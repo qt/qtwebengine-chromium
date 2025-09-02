@@ -25,7 +25,10 @@ class RunThreadGroup(threading.Thread):
   - If runs are executed in parallel, multiple RunThreadGroup are used
   """
 
-  def __init__(self, runs: Iterable[Run], index=0, throw: bool = False) -> None:
+  def __init__(self,
+               runs: Iterable[Run],
+               index: int = 0,
+               throw: bool = False) -> None:
     super().__init__()
     self._index = index
     self._exceptions = exception.Annotator(throw)
@@ -82,7 +85,7 @@ class RunThreadGroup(threading.Thread):
   def is_success(self) -> bool:
     return self._exceptions.is_success
 
-  def _log_run(self, run: Run):
+  def _log_run(self, run: Run) -> None:
     logging.info("=" * 80)
     label = ""
     if run.is_warmup:

@@ -403,8 +403,8 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     // Shared Present Mode must have a minImageCount of 1
     if ((create_info.minImageCount < surface_caps.minImageCount) && !shared_present_mode) {
         if (LogError("VUID-VkSwapchainCreateInfoKHR-presentMode-02839", device, create_info_loc.dot(Field::minImageCount),
-                     "%" PRIu32 ", which is outside the bounds returned by "
-                     "vkGetPhysicalDeviceSurfaceCapabilitiesKHR() (i.e. minImageCount = %d, maxImageCount = %d).",
+                     "%" PRIu32 ", is outside the bounds (minImageCount = %d, maxImageCount = %d) returned by "
+                                "vkGetPhysicalDeviceSurfaceCapabilitiesKHR().",
                      create_info.minImageCount, surface_caps.minImageCount, surface_caps.maxImageCount)) {
             return true;
         }
@@ -412,8 +412,8 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
 
     if ((surface_caps.maxImageCount > 0) && (create_info.minImageCount > surface_caps.maxImageCount)) {
         if (LogError("VUID-VkSwapchainCreateInfoKHR-minImageCount-01272", device, create_info_loc.dot(Field::minImageCount),
-                     "%" PRIu32 ", which is outside the bounds returned by "
-                     "vkGetPhysicalDeviceSurfaceCapabilitiesKHR() (i.e. minImageCount = %d, maxImageCount = %d).",
+                     "%" PRIu32 ", is outside the bounds (minImageCount = %d, maxImageCount = %d) returned by "
+                                "vkGetPhysicalDeviceSurfaceCapabilitiesKHR().",
                      create_info.minImageCount, surface_caps.minImageCount, surface_caps.maxImageCount)) {
             return true;
         }
@@ -625,13 +625,8 @@ bool CoreChecks::ValidateCreateSwapchain(const VkSwapchainCreateInfoKHR &create_
     if (image_properties_result != VK_SUCCESS) {
         if (LogError("VUID-VkSwapchainCreateInfoKHR-imageFormat-01778", device, create_info_loc,
                      "vkGetPhysicalDeviceImageFormatProperties() unexpectedly failed, "
-                     "with following params: "
-                     "format: %s, imageType: %s, "
-                     "tiling: %s, usage: %s, "
-                     "flags: %s.",
-                     string_VkFormat(image_create_info.format), string_VkImageType(image_create_info.imageType),
-                     string_VkImageTiling(image_create_info.tiling), string_VkImageUsageFlags(image_create_info.usage).c_str(),
-                     string_VkImageCreateFlags(image_create_info.flags).c_str())) {
+                     "with following VkImageCreateInfo\n%s",
+                     string_VkPhysicalDeviceImageFormatInfo2(image_create_info).c_str())) {
             return true;
         }
     }
@@ -1364,7 +1359,7 @@ bool core::Instance::PreCallValidateCreateDisplayPlaneSurfaceKHR(VkInstance inst
                          device_properties.limits.maxImageDimension2D);
     }
 
-    if (pd_state->vkGetPhysicalDeviceDisplayPlanePropertiesKHR_called) {
+    if (pd_state->GetCallState(vvl::Func::vkGetPhysicalDeviceDisplayPlanePropertiesKHR) != vvl::UNCALLED) {
         if (plane_index >= pd_state->display_plane_property_count) {
             skip |= LogError("VUID-VkDisplaySurfaceCreateInfoKHR-planeIndex-01252", display_mode,
                              create_info_loc.dot(Field::planeIndex),
@@ -1654,7 +1649,7 @@ bool core::Instance::ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(VkP
                                                                              const Location &loc) const {
     bool skip = false;
     auto pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
-    if (pd_state->vkGetPhysicalDeviceDisplayPlanePropertiesKHR_called) {
+    if (pd_state->GetCallState(vvl::Func::vkGetPhysicalDeviceDisplayPlanePropertiesKHR) != vvl::UNCALLED) {
         if (planeIndex >= pd_state->display_plane_property_count) {
             skip |= LogError("VUID-vkGetDisplayPlaneSupportedDisplaysKHR-planeIndex-01249", physicalDevice, loc,
                              "is %" PRIu32 ", but vkGetPhysicalDeviceDisplayPlaneProperties(2)KHR returned %" PRIu32

@@ -6,15 +6,15 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-from typing import Dict, Union
+from typing import Dict, TypeAlias
 
 # Arbitrary very large number that doesn't break any browser driver protocol.
 # chromedriver likely uses an uint32 ms internally, 2**30ms == 12days.
 SAFE_MAX_TIMEOUT_TIMEDELTA = dt.timedelta(milliseconds=2**30)
 
 
-AnyTime = Union[float, int, dt.timedelta]
-AnyTimeUnit = Union[float, int, dt.timedelta]
+AnyTime: TypeAlias = float | int | dt.timedelta
+AnyTimeUnit: TypeAlias = float | int | dt.timedelta
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,9 +47,7 @@ class Timing:
       raise ValueError(
           f"Timing.run_timeout, must be >= 0, but got {self.run_timeout}")
 
-  def units(self,
-            time: AnyTime,
-            absolute_time: bool = False) -> Union[int, float]:
+  def units(self, time: AnyTime, absolute_time: bool = False) -> int | float:
     """Convert absolute time (seconds, timedelta) to relative time units."""
     if isinstance(time, dt.timedelta):
       seconds = time.total_seconds()
@@ -81,14 +79,14 @@ class Timing:
                     time_units: AnyTimeUnit,
                     time_unit_duration: dt.timedelta,
                     absolute_time: bool = False) -> dt.timedelta:
-    time_units_f: Union[float, int] = self._to_units_f(time_units)
+    time_units_f: float | int = self._to_units_f(time_units)
     if absolute_time:
       absolute_time_f = dt.timedelta(seconds=time_units_f)
     else:
       absolute_time_f = time_units_f * time_unit_duration
     return self._to_safe_range(absolute_time_f)
 
-  def _to_units_f(self, time_units: AnyTimeUnit) -> Union[float, int]:
+  def _to_units_f(self, time_units: AnyTimeUnit) -> float | int:
     if isinstance(time_units, dt.timedelta):
       seconds = time_units.total_seconds()
     else:

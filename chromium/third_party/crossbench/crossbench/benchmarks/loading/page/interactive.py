@@ -8,6 +8,8 @@ import datetime as dt
 import logging
 from typing import TYPE_CHECKING, Optional, Tuple, cast
 
+from typing_extensions import override
+
 from crossbench.action_runner.action.action_type import ActionType
 from crossbench.action_runner.action.get import GetAction
 from crossbench.benchmarks.loading.page.base import Page, get_action_runner
@@ -36,7 +38,7 @@ class InteractivePage(Page):
                tabs: TabController = TabController.default(),
                about_blank_duration: dt.timedelta = dt.timedelta(),
                run_login: bool = True,
-               run_setup: bool = True):
+               run_setup: bool = True) -> None:
     assert name, "missing name"
     self._name: str = name
     assert isinstance(blocks, tuple)
@@ -65,6 +67,7 @@ class InteractivePage(Page):
     return self._blocks
 
   @property
+  @override
   def first_url(self) -> str:
     for block in self.blocks:
       for action in block:
@@ -86,6 +89,7 @@ class InteractivePage(Page):
     except Exception as e:  # pylint: disable=broad-except
       logging.error("Failed to dump HTML on failure: %s", str(e))
 
+  @override
   def setup(self, run: Run) -> None:
     action_runner = get_action_runner(run)
     if self._run_login and (login_block := self.login_block):
@@ -93,6 +97,7 @@ class InteractivePage(Page):
     if self._run_setup and (setup_block := self.setup_block):
       action_runner.run_setup(run, self, setup_block)
 
+  @override
   def teardown(self, run: Run) -> None:
     action_runner = get_action_runner(run)
     action_runner.teardown(run)
@@ -103,10 +108,12 @@ class InteractivePage(Page):
     for _ in self._playback:
       action_runner.run_interactive_page(run, self, multiple_tabs)
 
+  @override
   def run_with(self, run: Run, action_runner: ActionRunner,
                multiple_tabs: bool) -> None:
     action_runner.run_interactive_page(run, self, multiple_tabs)
 
+  @override
   def details_json(self) -> JsonDict:
     result = super().details_json()
     result["actions"] = list(block.to_json() for block in self._blocks)

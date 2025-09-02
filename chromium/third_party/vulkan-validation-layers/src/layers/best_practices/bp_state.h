@@ -28,18 +28,10 @@
 class BestPractices;
 
 namespace bp_state {
-class Image : public vvl::Image {
-  public:
-    Image(const vvl::Device& dev_data, VkImage handle, const VkImageCreateInfo* create_info, VkFormatFeatureFlags2 features)
-        : vvl::Image(dev_data, handle, create_info, features) {
-        SetupUsages();
-    }
 
-    Image(const vvl::Device& dev_data, VkImage handle, const VkImageCreateInfo* create_info, VkSwapchainKHR swapchain,
-          uint32_t swapchain_index, VkFormatFeatureFlags2 features)
-        : vvl::Image(dev_data, handle, create_info, swapchain, swapchain_index, features) {
-        SetupUsages();
-    }
+class ImageSubState : public vvl::ImageSubState {
+  public:
+    explicit ImageSubState(vvl::Image& img) : vvl::ImageSubState(img) { SetupUsages(); }
 
     struct Usage {
         IMAGE_SUBRESOURCE_USAGE_BP type;
@@ -65,9 +57,9 @@ class Image : public vvl::Image {
 
   private:
     void SetupUsages() {
-        usages_.resize(create_info.arrayLayers);
+        usages_.resize(base.create_info.arrayLayers);
         for (auto& mip_vec : usages_) {
-            mip_vec.resize(create_info.mipLevels, {IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED, VK_QUEUE_FAMILY_IGNORED});
+            mip_vec.resize(base.create_info.mipLevels, {IMAGE_SUBRESOURCE_USAGE_BP::UNDEFINED, VK_QUEUE_FAMILY_IGNORED});
         }
     }
     // A 2d vector for all the array layers and mip levels.
@@ -78,42 +70,13 @@ class Image : public vvl::Image {
     std::vector<std::vector<Usage>> usages_;
 };
 
-class PhysicalDevice : public vvl::PhysicalDevice {
-  public:
-    PhysicalDevice(VkPhysicalDevice phys_dev) : vvl::PhysicalDevice(phys_dev) {}
+static inline ImageSubState& SubState(vvl::Image& img) {
+    return *static_cast<ImageSubState*>(img.SubState(LayerObjectTypeBestPractices));
+}
 
-    // Track the call state and array sizes for various query functions
-    CALL_STATE vkGetPhysicalDeviceQueueFamilyPropertiesState = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceQueueFamilyProperties2State = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceQueueFamilyProperties2KHRState = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceLayerPropertiesState = UNCALLED;      // Currently unused
-    CALL_STATE vkGetPhysicalDeviceExtensionPropertiesState = UNCALLED;  // Currently unused
-    CALL_STATE vkGetPhysicalDeviceFeaturesState = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceSurfaceCapabilitiesKHRState = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceSurfacePresentModesKHRState = UNCALLED;
-    CALL_STATE vkGetPhysicalDeviceSurfaceFormatsKHRState = UNCALLED;
-    uint32_t surface_formats_count = 0;
-    CALL_STATE vkGetPhysicalDeviceDisplayPlanePropertiesKHRState = UNCALLED;
-};
-
-class Swapchain : public vvl::Swapchain {
-  public:
-    Swapchain(vvl::Device& dev_data, const VkSwapchainCreateInfoKHR* create_info, VkSwapchainKHR handle)
-        : vvl::Swapchain(dev_data, create_info, handle) {}
-
-    CALL_STATE vkGetSwapchainImagesKHRState = UNCALLED;
-};
-
-class DeviceMemory : public vvl::DeviceMemory {
-  public:
-    DeviceMemory(VkDeviceMemory handle, const VkMemoryAllocateInfo* allocate_info, uint64_t fake_address,
-                 const VkMemoryType& memory_type, const VkMemoryHeap& memory_heap,
-                 std::optional<vvl::DedicatedBinding>&& dedicated_binding, uint32_t physical_device_count)
-        : vvl::DeviceMemory(handle, allocate_info, fake_address, memory_type, memory_heap, std::move(dedicated_binding),
-                            physical_device_count) {}
-
-    std::optional<float> dynamic_priority;  // VK_EXT_pageable_device_local_memory priority
-};
+static inline const ImageSubState& SubState(const vvl::Image& img) {
+    return *static_cast<const ImageSubState*>(img.SubState(LayerObjectTypeBestPractices));
+}
 
 struct AttachmentInfo {
     uint32_t framebufferAttachment;
@@ -188,10 +151,9 @@ struct CommandBufferStateNV {
     bool depth_test_enable = false;
 };
 
-class CommandBuffer : public vvl::CommandBuffer {
+class CommandBufferSubState : public vvl::CommandBufferSubState {
   public:
-    CommandBuffer(BestPractices& bp, VkCommandBuffer handle, const VkCommandBufferAllocateInfo* allocate_info,
-                  const vvl::CommandPool* pool);
+    explicit CommandBufferSubState(vvl::CommandBuffer& cb) : vvl::CommandBufferSubState(cb) {}
 
     RenderPassState render_pass_state;
     CommandBufferStateNV nv;
@@ -219,20 +181,12 @@ class CommandBuffer : public vvl::CommandBuffer {
     vvl::unordered_map<VkEvent, SignalingInfo> event_signaling_state;
 };
 
-class DescriptorPool : public vvl::DescriptorPool {
-  public:
-    DescriptorPool(vvl::Device& dev, const VkDescriptorPool handle, const VkDescriptorPoolCreateInfo* create_info)
-        : vvl::DescriptorPool(dev, handle, create_info) {}
+static inline CommandBufferSubState& SubState(vvl::CommandBuffer& cb) {
+    return *static_cast<CommandBufferSubState*>(cb.SubState(LayerObjectTypeBestPractices));
+}
 
-    uint32_t freed_count{0};
-};
+static inline const CommandBufferSubState& SubState(const vvl::CommandBuffer& cb) {
+    return *static_cast<const CommandBufferSubState*>(cb.SubState(LayerObjectTypeBestPractices));
+}
 
-class Pipeline : public vvl::Pipeline {
-  public:
-    Pipeline(const vvl::Device& state_data, const VkGraphicsPipelineCreateInfo* create_info,
-             std::shared_ptr<const vvl::PipelineCache>&& pipe_cache, std::shared_ptr<const vvl::RenderPass>&& rpstate,
-             std::shared_ptr<const vvl::PipelineLayout>&& layout);
-
-    const std::vector<AttachmentInfo> access_framebuffer_attachments;
-};
 }  // namespace bp_state

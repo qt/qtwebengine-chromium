@@ -21,8 +21,8 @@
 import os
 import re
 from generators.generator_utils import buildListVUID, PlatformGuardHelper
-from generators.vulkan_object import Member, Struct
-from generators.base_generator import BaseGenerator
+from vulkan_object import Member, Struct
+from base_generator import BaseGenerator
 
 # This class is a container for any source code, data, or other behavior that is necessary to
 # customize the generator script for a specific target API variant (e.g. Vulkan SC). As such,
@@ -157,6 +157,9 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkCmdSetScissorWithCount',
             'vkCmdBindVertexBuffers2',
             'vkCmdCopyBuffer2',
+            'vkCmdPipelineBarrier2',
+            'vkCmdSetEvent2',
+            'vkCmdWaitEvents2',
             'vkCmdBuildAccelerationStructuresKHR',
             'vkCmdBuildAccelerationStructuresIndirectKHR',
             'vkBuildAccelerationStructuresKHR',
@@ -215,6 +218,8 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'vkGetMicromapBuildSizesEXT',
             'vkWriteMicromapsPropertiesEXT',
             'vkReleaseSwapchainImagesEXT',
+            'vkConvertCooperativeVectorMatrixNV',
+            'vkCmdConvertCooperativeVectorMatrixNV',
         ]
 
         # Commands to ignore
@@ -277,6 +282,22 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             'VkAccelerationStructureGeometryInstancesDataKHR',
             'VkAccelerationStructureGeometryAabbsDataKHR',
             'VkIndirectExecutionSetPipelineInfoEXT', # VkIndirectExecutionSetShaderInfoEXT is done manually
+        ]
+
+        # These functions entrypoints we as VVL expose
+        self.layerExtensionFunctions = [
+            # VK_EXT_debug_utils
+            'vkCmdBeginDebugUtilsLabelEXT',
+            'vkCmdEndDebugUtilsLabelEXT',
+            'vkCmdInsertDebugUtilsLabelEXT',
+            'vkCreateDebugUtilsMessengerEXT',
+            'vkDestroyDebugUtilsMessengerEXT',
+            'vkQueueBeginDebugUtilsLabelEXT',
+            'vkQueueEndDebugUtilsLabelEXT',
+            'vkQueueInsertDebugUtilsLabelEXT',
+            'vkSetDebugUtilsObjectNameEXT',
+            'vkSetDebugUtilsObjectTagEXT',
+            'vkSubmitDebugUtilsMessageEXT',
         ]
 
         # Map of structs type names to generated validation code for that struct type
@@ -521,7 +542,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
             out.append('    [[maybe_unused]] const Location loc = error_obj.location;\n')
 
             # Cannot validate extension dependencies for device extension APIs having a physical device as their dispatchable object
-            if command.extensions and (not any(x.device for x in command.extensions) or command.params[0].type != 'VkPhysicalDevice'):
+            if command.extensions and command.name not in self.layerExtensionFunctions and (not any(x.device for x in command.extensions) or command.params[0].type != 'VkPhysicalDevice'):
                 cExpression =  []
                 outExpression =  []
                 for extension in command.extensions:
@@ -756,7 +777,7 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         lines = []    # Generated lines of code
         duplicateCountVuid = [] # prevent duplicate VUs being generated
 
-        # TODO Using a regex in this context is not ideal. Would be nicer if usedLines were a list of objects with "settings" 
+        # TODO Using a regex in this context is not ideal. Would be nicer if usedLines were a list of objects with "settings"
         validatePNextRegex = re.compile(r'(.*ValidateStructPnext\(.*)(\).*\n*)', re.M)
 
         # Special struct since lots of functions have this, but it can be all combined to the same call (since it is always from the top level of a funciton)
@@ -1057,49 +1078,6 @@ class StatelessValidationHelperOutputGenerator(BaseGenerator):
         # TODO - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9185
         if struct.name == 'VkPhysicalDeviceLayeredApiPropertiesListKHR':
             return ""
-
-        if struct.sType and struct.version and all(not x.promotedTo for x in struct.extensions):
-            pNextCheck += f'''
-                if (extensions.api_version < {struct.version.nameApi}) {{
-                    skip |= log.LogError(
-                            pnext_vuid, error_obj.handle, loc.dot(Field::pNext),
-                            "includes a pointer to a VkStructureType ({struct.sType}) which was added in {struct.version.nameApi} but the "
-                            "current effective API version is %s.", StringAPIVersion(extensions.api_version).c_str());
-                }}
-                '''
-
-        elif struct.sType and len(struct.extensions) > 0:
-            extNames = set([x.name for x in struct.extensions])
-
-            # Skip extensions that are not in the target API
-            # This check is needed because parts of the base generator code bypass the
-            # dependency resolution logic in the registry tooling and thus the generator
-            # may attempt to generate code for extensions which are not supported in the
-            # target API variant, thus this check needs to happen even if any specific
-            # target API variant may not specifically need it
-            extNames.intersection(self.vk.extensions.keys())
-            if len(extNames) == 0:
-                return ""
-
-            extNames = sorted(list(extNames)) # make the order deterministic
-
-            # Dependent on enabled extension
-            extension_conditionals = list()
-            for ext_name in extNames:
-                extension = self.vk.extensions[ext_name]
-                extension_conditionals.append( f'(!IsExtEnabled(extensions.{extension.name.lower()}))' )
-            if len(extension_conditionals) == 1 and extension_conditionals[0][0] == '(' and extension_conditionals[0][-1] == ')':
-                extension_conditionals[0] = extension_conditionals[0][1:-1]# strip extraneous parentheses
-
-            extension_check = f'if ({" && ".join(extension_conditionals)}) {{'
-            pNextCheck += f'''
-                    {extension_check}
-                        skip |= log.LogError(
-                            pnext_vuid, error_obj.handle, loc.dot(Field::pNext),
-                            "includes a pointer to a VkStructureType ({struct.sType}), but its parent extension "
-                            "{self.englishJoin(extNames, "or")} has not been enabled.");
-                    }}
-                '''
 
         expr = self.expandStructCode(struct.name, struct.name, 'pNext_loc', 'structure->', '', [], '')
         structValidationSource = self.ScrubStructCode(expr)

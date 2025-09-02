@@ -1,6 +1,6 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
+// https://protobuf.dev/
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -36,12 +36,8 @@
 #include <set>
 #include <string>
 
-#include <google/protobuf/stubs/logging.h>
-#include <google/protobuf/stubs/common.h>
 #include <google/protobuf/compiler/scc.h>
 #include <google/protobuf/compiler/code_generator.h>
-
-#include <google/protobuf/port_def.inc>
 
 namespace google {
 namespace protobuf {
@@ -134,10 +130,13 @@ struct GeneratorOptions {
 // header.  If you create your own protocol compiler binary and you want it to
 // support JavaScript output, you can do so by registering an instance of this
 // CodeGenerator with the CommandLineInterface in your main() function.
-class PROTOC_EXPORT Generator : public CodeGenerator {
+class Generator : public CodeGenerator {
  public:
   Generator() {}
   virtual ~Generator() {}
+
+  Generator(const Generator&) = delete;
+  Generator& operator=(const Generator&) = delete;
 
   bool Generate(const FileDescriptor* file, const std::string& parameter,
                 GeneratorContext* context, std::string* error) const override {
@@ -322,15 +321,11 @@ class PROTOC_EXPORT Generator : public CodeGenerator {
   void GenerateRepeatedMessageHelperMethods(const GeneratorOptions& options,
                                             io::Printer* printer,
                                             const FieldDescriptor* field) const;
-
-  GOOGLE_DISALLOW_EVIL_CONSTRUCTORS(Generator);
 };
 
 }  // namespace js
 }  // namespace compiler
 }  // namespace protobuf
 }  // namespace google
-
-#include <google/protobuf/port_undef.inc>
 
 #endif  // GOOGLE_PROTOBUF_COMPILER_JS_GENERATOR_H__

@@ -81,7 +81,7 @@ indicated by *install_dir*:
 ## Build Requirements
 
 1. `C99` capable compiler
-2. `CMake` version 3.17.2 or greater
+2. `CMake` version 3.22.1 or greater
 3. `Git`
 
 ### Test Requirements
@@ -271,7 +271,7 @@ These variables should be set using the `-D` option when invoking CMake to gener
     - [2019](https://www.visualstudio.com/vs/older-downloads/)
   - The Community Edition of each of the above versions is sufficient, as
     well as any more capable edition.
-- [CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-win64-x64.zip) is recommended.
+- [CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-win64-x64.zip) is recommended.
   - Use the installer option to add CMake to the system PATH
 - Git Client Support
   - [Git for Windows](http://git-scm.com/download/win) is a popular solution
@@ -382,7 +382,7 @@ This repository has been built and tested on the two most recent Ubuntu LTS
 versions, although earlier versions may work.
 It is be straightforward to adapt this repository to other Linux distributions.
 
-[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.tar.gz) is recommended.
+[CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-Linux-x86_64.tar.gz) is recommended.
 
 #### Required Package List
 
@@ -522,22 +522,22 @@ If not already installed, install the following 32-bit development libraries:
 
 `gcc-multilib gcc-multilib g++-multilib libc6:i386 libc6-dev-i386 libgcc-s1:i386 libwayland-dev:i386 libxrandr-dev:i386`
 
-This list may vary depending on your distribution and which windowing systems
-you are building for.
+This list may vary depending on your distribution and which windowing systems you are building for.
 
-Set up your environment for building 32-bit targets:
+Set up your environment for building 32-bit targets when configuring your build:
 
-    export CFLAGS=-m32
-    export CXXFLAGS=-m32
-    export LDFLAGS=-m32
-    export ASFLAGS=--32
+      cmake ... -D CMAKE_CXX_FLAGS=-m32 -D CMAKE_C_FLAGS=-m32
+
+However, you may find that pkg-config picks incorrect libraries. This is due to a CMake implementation issue:
+https://gitlab.kitware.com/cmake/cmake/-/issues/25317
 
 Your PKG_CONFIG configuration may be different, depending on your distribution.
 
+You can the `PKG_CONFIG_PATH` environment variable to address this issue.
+
 Finally, build the repository normally as explained above.
 
-These notes are taken from the Github Actions workflow `linux-32` which is run
-regularly as a part of CI.
+These notes are taken from the Github Actions workflow `linux-32` which is run regularly as a part of CI.
 
 ## Building on MacOS
 
@@ -561,7 +561,7 @@ Clone the Vulkan-Loader repository:
 
 ### MacOS build
 
-[CMake 3.17.2](https://cmake.org/files/v3.17/cmake-3.17.2-Darwin-x86_64.tar.gz) is recommended.
+[CMake 3.22.1](https://cmake.org/files/v3.22.1/cmake-3.22.1-Darwin-x86_64.tar.gz) is recommended.
 
 #### Building with the Unix Makefiles Generator
 

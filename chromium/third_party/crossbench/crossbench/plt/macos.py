@@ -13,13 +13,59 @@ import re
 import socket
 import traceback as tb
 from subprocess import SubprocessError
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple, Type
 
 import psutil
+from typing_extensions import override
 
 from crossbench import path as pth
+from crossbench.parse import NumberParser
 from crossbench.plt.posix import PosixPlatform
 from crossbench.plt.signals import MacOSSignals
+
+if TYPE_CHECKING:
+  from crossbench.plt.base import CPUFreqInfo
+  from crossbench.plt.display_info import DisplayInfo
+
+DISPLAY_NDRV_RE = re.compile(
+    "(?P<resX>[0-9]+) x (?P<resY>[0-9]+) @ (?P<freq>[0-9.]+)Hz")
+
+
+def parse_display_ndrvs(spdisplays_ndrvs: Dict) -> Iterator[DisplayInfo]:
+  """
+  Parses `system_profiler SPDisplaysDataType` output.
+  "SPDisplaysDataType" : [
+    {
+      ...
+      "spdisplays_ndrvs" : [
+        {
+          ...
+          "_spdisplays_resolution" : "1728 x 1117 @ 60.00Hz",
+          "spdisplays_ambient_brightness" : "spdisplays_no",
+          "spdisplays_pixelresolution" : "spdisplays_3456x2234Retina"
+          ...
+        },
+        {
+          ...
+          "_spdisplays_resolution" : "3360 x 1890 @ 30.00Hz",
+          "spdisplays_pixelresolution" : "6720 x 3780",
+          "spdisplays_resolution" : "3360 x 1890 @ 30.00Hz",
+          ...
+        }
+      ],
+      ...
+    }
+  ]
+  """
+  for spdisplay_ndrv in spdisplays_ndrvs:
+    # Use virtual pixel resolution of the monitor:
+    freq_str = spdisplay_ndrv.get("_spdisplays_resolution", "")
+    if match := DISPLAY_NDRV_RE.search(freq_str):
+      yield {
+          "resolution": (NumberParser.positive_int(match.group("resX")),
+                         NumberParser.positive_int(match.group("resY"))),
+          "refresh_rate": NumberParser.positive_float(match.group("freq")),
+      }
 
 
 class MacOSPlatform(PosixPlatform):
@@ -34,10 +80,12 @@ class MacOSPlatform(PosixPlatform):
   LSAPPINFO_PID_LINE_RE = r"\s*pid = ([0-9]+).*"
 
   @property
+  @override
   def is_macos(self) -> bool:
     return True
 
   @property
+  @override
   def name(self) -> str:
     return "macos"
 
@@ -46,27 +94,37 @@ class MacOSPlatform(PosixPlatform):
     return MacOSSignals
 
   @functools.cached_property
+  @override
   def version(self) -> str:
     return self.sh_stdout("sw_vers", "-productVersion").strip()
 
   @functools.cached_property
-  def device(self) -> str:  #pylint: disable=invalid-overridden-method
-    return self.sh_stdout("sysctl", "hw.model").strip().split(maxsplit=1)[1]
+  def version_parts(self) -> Tuple[int, ...]:
+    return tuple(map(int, self.version.split(".")))
 
   @functools.cached_property
+  @override
+  def device(self) -> str:  #pylint: disable=invalid-overridden-method
+    return self.sh_stdout("sysctl", "-n", "hw.model").strip()
+
+  @functools.cached_property
+  @override
   def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
     brand = self.sh_stdout("sysctl", "-n", "machdep.cpu.brand_string").strip()
-    num_cores = self.cpu_cores
+    num_cores = self.cpu_cores(logical=True)
     return f"{brand} {num_cores} cores"
 
-  @functools.cached_property
-  def cpu_cores(self) -> int:
+  @functools.lru_cache(maxsize=2)
+  @override
+  def cpu_cores(self, logical: bool = False) -> int:
     if self.is_local:
-      return super().cpu_cores
-    cores = self.sh_stdout("sysctl", "-n", "machdep.cpu.core_count").strip()
+      return super().cpu_cores(logical)
+    sysctl_name = "hw.logicalcpu_max" if logical else "hw.physicalcpu_max"
+    cores = self.sh_stdout("sysctl", "-n", sysctl_name).strip()
     return int(cores)
 
   @property
+  @override
   def is_battery_powered(self) -> bool:
     if self.is_local:
       return super().is_battery_powered
@@ -84,6 +142,7 @@ class MacOSPlatform(PosixPlatform):
     return 1
 
   @functools.lru_cache(maxsize=1)
+  @override
   def system_details(self) -> Dict[str, Any]:
     details = super().system_details()
     details.update({
@@ -95,6 +154,31 @@ class MacOSPlatform(PosixPlatform):
             self.sh_stdout("sysctl", "hw"),
     })
     return details
+
+  @functools.lru_cache(maxsize=1)
+  def display_details(self) -> Tuple[DisplayInfo, ...]:
+    display_info_raw = self.sh_stdout("system_profiler", "-json",
+                                      "SPDisplaysDataType").strip()
+    display_info = json.loads(display_info_raw)
+    if spdisplays_data := display_info.get("SPDisplaysDataType"):
+      if spdisplays_ndrvs := spdisplays_data[0].get("spdisplays_ndrvs"):
+        return tuple(parse_display_ndrvs(spdisplays_ndrvs))
+    return tuple()
+
+  def display_resolution(self) -> Tuple[int, int]:
+    return self.display_details()[0]["resolution"]
+
+  def _cpu_freq(self) -> Optional[CPUFreqInfo]:
+    if self.is_remote:
+      return super()._cpu_freq()
+    # BUG(394337121): older macOs versions on arm segfault with python 3.11
+    if self.is_arm64 and self.version_parts < (12, 0):
+      return None
+    try:
+      return super()._cpu_freq()
+    except FileNotFoundError as e:
+      logging.debug("psutil.cpu_freq() failed (normal on macOS M1): %s", e)
+      return None
 
   def _find_app_binary_path(self, app_path: pth.AnyPath) -> pth.AnyPath:
     assert app_path.suffix == ".app", f"Expected .app but got {app_path}"
@@ -177,6 +261,7 @@ class MacOSPlatform(PosixPlatform):
     assert self.is_dir(app_path)
     return app_path
 
+  @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     app_or_bin = self.path(app_or_bin)
     if not self.exists(app_or_bin):
@@ -202,7 +287,7 @@ class MacOSPlatform(PosixPlatform):
 
 
     # Backup solution use the binary (not the .app bundle) with --version.
-    maybe_bin_path: Optional[pth.AnyPath] = app_or_bin
+    maybe_bin_path: pth.AnyPath | None = app_or_bin
     if app_or_bin.suffix == ".app":
       maybe_bin_path = self.search_binary(app_or_bin)
     if not maybe_bin_path:
@@ -265,8 +350,10 @@ class MacOSPlatform(PosixPlatform):
             if auto_brightness := display.get("spdisplays_ambient_brightness"):
               return auto_brightness == "spdisplays_yes"
         raise ValueError(
-            "Could not find 'spdisplays_ndrvs' from SPDisplaysDataType")
-    raise ValueError("Could not get 'SPDisplaysDataType' form system profiler")
+            "Could not find 'spdisplays_ndrvs' from SPDisplaysDataType. "
+            f"Output={output}")
+    raise ValueError("Could not get 'SPDisplaysDataType' form system profiler. "
+                     f"Output={output}")
 
   def check_crowdstrike(self, disable: bool = False) -> bool:
     falconctl = self.path(
@@ -353,12 +440,13 @@ class MacOSPlatform(PosixPlatform):
     display_brightness = ctypes.c_float()  # pylint: disable=no-value-for-parameter
     ret = display_services.DisplayServicesGetBrightness(
         main_display, ctypes.byref(display_brightness))
-    assert ret == 0
+    assert ret == 0, f"ret={ret}, display_brightness={display_brightness}"
     return round(display_brightness.value * 100)
 
   def screenshot(self, result_path: pth.AnyPath) -> None:
     self.sh("screencapture", "-x", result_path)
 
+  @override
   def is_port_used(self, port: int) -> bool:
     # We need a custom solution for macos:
     # - psutil.net_connections requires root access on macos
