@@ -55,9 +55,6 @@ def builder(name, bucket, os, caches = None, triggered_by = None):
         execution_timeout = 1 * time.hour,
         dimensions = {"cpu": "x86-64", "os": os, "pool": "luci.flex.%s" % bucket},
         triggered_by = triggered_by,
-        experiments = {
-            "luci.recipes.use_python3": 100,
-        },
     )
 
 luci.logdog(
@@ -89,6 +86,28 @@ luci.bucket(name = "ci", acls = [
     ),
 ])
 
+# Shadow bucket for led.
+luci.bucket(
+    name = "ci.shadow",
+    shadows = "ci",
+    constraints = luci.bucket_constraints(
+        pools = ["luci.flex.ci"],
+        service_accounts = [
+            "gn-ci-builder@chops-service-accounts.iam.gserviceaccount.com",
+        ],
+    ),
+    bindings = [
+        # for led permissions.
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            groups = [
+                "project-gn-committers",
+            ],
+        ),
+    ],
+    dynamic = True,
+)
+
 def ci_builder(name, os, caches = None):
     builder(name, "ci", os, caches, triggered_by = ["gn-trigger"])
     luci.console_view_entry(
@@ -98,12 +117,16 @@ def ci_builder(name, os, caches = None):
     )
 
 ci_builder("linux", "Ubuntu-22.04")
-ci_builder("mac", "Mac-10.15", caches = [swarming.cache("macos_sdk")])
+
+# macOS version for this builder should be synced with
+# https://source.corp.google.com/h/chromium/infra/infra_superproject/+/main:infra_internal/infra/config/subprojects/gn.star
+ci_builder("mac", "Mac-13", caches = [swarming.cache("macos_sdk")])
 ci_builder("win", "Windows-10", caches = [swarming.cache("windows_sdk")])
 
 luci.cq(
     submit_max_burst = 4,
     submit_burst_delay = 8 * time.minute,
+    gerrit_listener_type = cq.GERRIT_LISTENER_TYPE_LEGACY_POLLER,
 )
 
 luci.cq_group(
@@ -138,6 +161,28 @@ luci.bucket(name = "try", acls = [
     ),
 ])
 
+# Shadow bucket for led.
+luci.bucket(
+    name = "try.shadow",
+    shadows = "try",
+    constraints = luci.bucket_constraints(
+        pools = ["luci.flex.try"],
+        service_accounts = [
+            "gn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+        ],
+    ),
+    bindings = [
+        # for led permissions.
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            groups = [
+                "project-gn-committers",
+            ],
+        ),
+    ],
+    dynamic = True,
+)
+
 luci.binding(
     realm = "try",
     roles = "role/swarming.taskTriggerer",
@@ -152,5 +197,8 @@ def try_builder(name, os, caches = None):
     )
 
 try_builder("linux", "Ubuntu-22.04")
-try_builder("mac", "Mac-10.15", caches = [swarming.cache("macos_sdk")])
+
+# macOS version for this builder should be synced with
+# https://source.corp.google.com/h/chromium/infra/infra_superproject/+/main:infra_internal/infra/config/subprojects/gn.star
+try_builder("mac", "Mac-13", caches = [swarming.cache("macos_sdk")])
 try_builder("win", "Windows-10", caches = [swarming.cache("windows_sdk")])

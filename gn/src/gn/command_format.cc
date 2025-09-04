@@ -116,6 +116,18 @@ int CountLines(const std::string& str) {
                               .size());
 }
 
+bool IsAssignment(std::string_view op) {
+  return op == "=" || op == "+=" || op == "-=";
+}
+
+bool IsTargetsList(std::string_view ident) {
+  return ident.ends_with("deps") || ident == "visibility";
+}
+
+bool IsSourcesList(std::string_view ident) {
+  return ident.ends_with("sources") || ident == "public";
+}
+
 class Printer {
  public:
   Printer();
@@ -163,12 +175,20 @@ class Printer {
   // Whether there's a blank separator line at the current position.
   bool HaveBlankLine();
 
+  // Shorten entries if possible. e.g. Shorten "//path/to/foo:foo" to
+  // "/path/to/foo". Applies to 'visibility', 'deps', or ends in 'deps'.
+  void ShortenIfApplicable(const BinaryOpNode* binop);
+
   // Sort a list on the RHS if the LHS is one of the following:
   // 'sources': sorted alphabetically.
   // 'deps' or ends in 'deps': sorted such that relative targets are first,
   //   followed by global targets, each internally sorted alphabetically.
   // 'visibility': same as 'deps'.
   void SortIfApplicable(const BinaryOpNode* binop);
+
+  // Remove duplicates. Applies to 'visibility', 'deps' or ends in 'deps',
+  // 'sources' or ends in 'sources', or 'public'.
+  void DeduplicateIfApplicable(const BinaryOpNode* binop);
 
   // Traverse a binary op node tree and apply a callback to each leaf node.
   void TraverseBinaryOpNode(const ParseNode* node,
@@ -396,6 +416,24 @@ bool Printer::HaveBlankLine() {
   return n > 2 && output_[n - 1] == '\n' && output_[n - 2] == '\n';
 }
 
+void Printer::ShortenIfApplicable(const BinaryOpNode* binop) {
+  const IdentifierNode* ident = binop->left()->AsIdentifier();
+  if (!ident || !IsAssignment(binop->op().value())) {
+    return;
+  }
+
+  if (!IsTargetsList(ident->value().value())) {
+    return;
+  }
+
+  TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
+    const ListNode* list = node->AsList();
+    if (list) {
+      const_cast<ListNode*>(list)->ShortenTargets();
+    }
+  });
+}
+
 void Printer::SortIfApplicable(const BinaryOpNode* binop) {
   if (const Comments* comments = binop->comments()) {
     const std::vector<Token>& before = comments->before();
@@ -407,23 +445,48 @@ void Printer::SortIfApplicable(const BinaryOpNode* binop) {
     }
   }
   const IdentifierNode* ident = binop->left()->AsIdentifier();
-  if ((binop->op().value() == "=" || binop->op().value() == "+=" ||
-       binop->op().value() == "-=") &&
-      ident) {
-    const std::string_view lhs = ident->value().value();
-    if (lhs.ends_with("sources") || lhs == "public") {
-      TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
-        const ListNode* list = node->AsList();
-        if (list)
-          const_cast<ListNode*>(list)->SortAsStringsList();
-      });
-    } else if (lhs.ends_with("deps") || lhs == "visibility") {
-      TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
-        const ListNode* list = node->AsList();
-        if (list)
-          const_cast<ListNode*>(list)->SortAsTargetsList();
-      });
+  if (!ident || !IsAssignment(binop->op().value())) {
+    return;
+  }
+
+  const std::string_view lhs = ident->value().value();
+  if (IsSourcesList(lhs)) {
+    TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
+      const ListNode* list = node->AsList();
+      if (list)
+        const_cast<ListNode*>(list)->SortAsStringsList();
+    });
+  } else if (IsTargetsList(lhs)) {
+    TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
+      const ListNode* list = node->AsList();
+      if (list)
+        const_cast<ListNode*>(list)->SortAsTargetsList();
+    });
+  }
+}
+
+void Printer::DeduplicateIfApplicable(const BinaryOpNode* binop) {
+  if (const Comments* comments = binop->comments()) {
+    const std::vector<Token>& before = comments->before();
+    if (!before.empty() && (before.front().value() == "# KEEPDUPS" ||
+                            before.back().value() == "# KEEPDUPS")) {
+      // Allow disabling of deduplication for specific actions that might
+      // want duplicate sources.
+      return;
     }
+  }
+  const IdentifierNode* ident = binop->left()->AsIdentifier();
+  if (!ident || !IsAssignment(binop->op().value())) {
+    return;
+  }
+
+  const std::string_view lhs = ident->value().value();
+  if (IsSourcesList(lhs) || IsTargetsList(lhs)) {
+    TraverseBinaryOpNode(binop->right(), [](const ParseNode* node) {
+      const ListNode* list = node->AsList();
+      if (list)
+        const_cast<ListNode*>(list)->DeduplicateList();
+    });
   }
 }
 
@@ -757,7 +820,10 @@ int Printer::Expr(const ParseNode* root,
   } else if (const BinaryOpNode* binop = root->AsBinaryOp()) {
     CHECK(precedence_.find(binop->op().value()) != precedence_.end());
 
+    // Shorten before sorting, since the shortening may affect the ordering.
+    ShortenIfApplicable(binop);
     SortIfApplicable(binop);
+    DeduplicateIfApplicable(binop);
 
     Precedence prec = precedence_[binop->op().value()];
 
@@ -783,9 +849,7 @@ int Printer::Expr(const ParseNode* root,
 
     int start_line = CurrentLine();
     int start_column = CurrentColumn();
-    bool is_assignment = binop->op().value() == "=" ||
-                         binop->op().value() == "+=" ||
-                         binop->op().value() == "-=";
+    bool is_assignment = IsAssignment(binop->op().value());
 
     int indent_column = start_column;
     if (is_assignment) {

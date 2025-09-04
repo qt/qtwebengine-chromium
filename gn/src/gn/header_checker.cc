@@ -151,6 +151,7 @@ bool HeaderChecker::Run(const std::vector<const Target*>& to_check,
 
 void HeaderChecker::RunCheckOverFiles(const FileMap& files, bool force_check) {
   WorkerPool pool;
+  task_count_.Increment();
 
   for (const auto& file : files) {
     // Only check C-like source files (RC files also have includes).
@@ -180,6 +181,8 @@ void HeaderChecker::RunCheckOverFiles(const FileMap& files, bool force_check) {
       }
     }
   }
+
+  task_count_.Decrement();
 
   // Wait for all tasks posted by this method to complete.
   std::unique_lock<std::mutex> auto_lock(lock_);
@@ -413,7 +416,7 @@ void HeaderChecker::CheckInclude(
   // For all targets containing this file, we require that at least one be
   // a direct or public dependency of the current target, and either (1) the
   // header is public within the target, or (2) there is a friend definition
-  // whitelisting the includor.
+  // allowlisting the includor.
   //
   // If there is more than one target containing this header, we may encounter
   // some error cases before finding a good one. This error stores the previous
@@ -472,7 +475,7 @@ void HeaderChecker::CheckInclude(
     } else if (to_target->allow_circular_includes_from().find(
                    from_target->label()) !=
                to_target->allow_circular_includes_from().end()) {
-      // Not a dependency, but this include is whitelisted from the destination.
+      // Not a dependency, but this include is allowlisted from the destination.
       found_dependency = true;
       last_error = Err();
       break;
@@ -654,8 +657,9 @@ Err HeaderChecker::MakeUnreachableError(const InputFile& source_file,
       1)
     msg += "at least one of ";
   msg += "which should somehow be reachable.\n";
-  msg += "This might be a false alarm if you are using conditional include. "
-         "See \"gn help nogncheck\".";
+  msg +=
+      "This might be a false alarm if you are using conditional include. "
+      "See \"gn help nogncheck\".";
 
   // Danger: must call CreatePersistentRange to put in Err.
   return Err(CreatePersistentRange(source_file, range), "Include not allowed.",

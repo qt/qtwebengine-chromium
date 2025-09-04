@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -467,8 +468,10 @@ class ListNode : public ParseNode {
     return contents_;
   }
 
+  void ShortenTargets();
   void SortAsStringsList();
   void SortAsTargetsList();
+  void DeduplicateList();
 
   struct SortRange {
     size_t begin;
@@ -516,11 +519,13 @@ class LiteralNode : public ParseNode {
   void set_value(const Token& t) { value_ = t; }
 
   void SetNewLocation(int line_number);
+  void ShortenTarget();
 
   static constexpr const char* kDumpNodeName = "LITERAL";
 
  private:
   Token value_;
+  std::string shortened_value_;
 
   LiteralNode(const LiteralNode&) = delete;
   LiteralNode& operator=(const LiteralNode&) = delete;

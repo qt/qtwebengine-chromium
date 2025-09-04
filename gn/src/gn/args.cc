@@ -21,6 +21,7 @@ How build arguments are set
 
   First, system default arguments are set based on the current system. The
   built-in arguments are:
+   - gn_version
    - host_cpu
    - host_os
    - current_cpu
@@ -29,7 +30,8 @@ How build arguments are set
    - target_os
 
   Next, project-specific overrides are applied. These are specified inside
-  the default_args variable of //.gn. See "gn help dotfile" for more.
+  the default_args variable of //.gn. See "gn help dotfile" for more. Note
+  that during processing of the dotfile itself, only `gn_version` is defined.
 
   If specified, arguments from the --args command line flag are used. If that
   flag is not specified, args from previous builds in the build directory will
@@ -135,6 +137,46 @@ const Value* Args::GetArgOverride(const char* name) const {
   if (found == all_overrides_.end())
     return nullptr;
   return &found->second;
+}
+
+std::vector<const Settings*> Args::GetSortedToolchainsLocked() const {
+  std::vector<const Settings*> toolchains;
+  toolchains.reserve(declared_arguments_per_toolchain_.size());
+  for (const auto& map_pair : declared_arguments_per_toolchain_) {
+    toolchains.push_back(map_pair.first);
+  }
+  std::sort(toolchains.begin(), toolchains.end(),
+            [](const Settings* a, const Settings* b) -> bool {
+              // NOTE: There can be multiple default toolchains in the map!
+              // which happens when declare_args() blocks are found in args.gn
+              // or some of its imports. This uses a Settings instance with
+              // an empty label, where `is_default()` returns true.
+              if (a->is_default() != b->is_default())
+                return a->is_default();
+              return a->toolchain_label() < b->toolchain_label();
+            });
+  return toolchains;
+}
+
+std::optional<Value> Args::GetArgFromAllArguments(const char* name) const {
+  // First, look into overrides defined in .gn
+  const Value* override = GetArgOverride(name);
+  if (override)
+    return std::make_optional(*override);
+
+  // Second, look into each toolchain definition, the default one
+  // always appear first here.
+  std::lock_guard<std::mutex> lock(lock_);
+
+  for (const Settings* toolchain : GetSortedToolchainsLocked()) {
+    const auto& value_map = declared_arguments_per_toolchain_[toolchain];
+    auto it = value_map.find(name);
+    if (it != value_map.end())
+      return std::make_optional(it->second);
+  }
+
+  // No match
+  return std::nullopt;
 }
 
 void Args::SetupRootScope(Scope* dest,
@@ -271,21 +313,7 @@ Args::ValueWithOverrideMap Args::GetAllArguments() const {
   // Sort the toolchains from declared_arguments_per_toolchain_ so
   // the return value will be deterministic. Always prioritize
   // the default toolchain.
-  std::vector<const Settings*> toolchains;
-  toolchains.reserve(declared_arguments_per_toolchain_.size());
-  for (const auto& map_pair : declared_arguments_per_toolchain_) {
-    toolchains.push_back(map_pair.first);
-  }
-  std::sort(toolchains.begin(), toolchains.end(),
-            [](const Settings* a, const Settings* b) -> bool {
-              // NOTE: There can be multiple default toolchains in the map!
-              // which happens when declare_args() blocks are found in args.gn
-              // or some of its imports. This uses a Settings instance with
-              // an empty label, where `is_default()` returns true.
-              if (a->is_default() != b->is_default())
-                return a->is_default();
-              return a->toolchain_label() < b->toolchain_label();
-            });
+  std::vector<const Settings*> toolchains = GetSortedToolchainsLocked();
 
   // Default values.
   for (const auto& toolchain : toolchains) {

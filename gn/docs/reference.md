@@ -54,6 +54,7 @@
     *   [import: Import a file into the current scope.](#func_import)
     *   [label_matches: Returns whether a label matches any of a list of patterns.](#func_label_matches)
     *   [not_needed: Mark variables from scope as not needed.](#func_not_needed)
+    *   [path_exists: Returns whether the given path exists.](#func_path_exists)
     *   [pool: Defines a pool object.](#func_pool)
     *   [print: Prints to the console.](#func_print)
     *   [print_stack_trace: Prints a stack trace.](#func_print_stack_trace)
@@ -108,10 +109,6 @@
     *   [cflags_objc: [string list] Flags passed to the Objective C compiler.](#var_cflags_objc)
     *   [cflags_objcc: [string list] Flags passed to the Objective C++ compiler.](#var_cflags_objcc)
     *   [check_includes: [boolean] Controls whether a target's files are checked.](#var_check_includes)
-    *   [code_signing_args: [string list] [deprecated] Args for the post-processing script.](#var_code_signing_args)
-    *   [code_signing_outputs: [file list] [deprecated] Outputs of the post-processing step.](#var_code_signing_outputs)
-    *   [code_signing_script: [file name] [deprecated] Script for the post-processing step.](#var_code_signing_script)
-    *   [code_signing_sources: [file list] [deprecated] Sources for the post-processing step.](#var_code_signing_sources)
     *   [complete_static_lib: [boolean] Links all deps into a static library.](#var_complete_static_lib)
     *   [configs: [label list] Configs applying to this target or config.](#var_configs)
     *   [contents: Contents to write to file.](#var_contents)
@@ -146,6 +143,7 @@
     *   [partial_info_plist: [filename] Path plist from asset catalog compiler.](#var_partial_info_plist)
     *   [pool: [string] Label of the pool used by binary targets and actions.](#var_pool)
     *   [post_processing_args: [string list] Args for the post-processing script.](#var_post_processing_args)
+    *   [post_processing_manifest: [file] Name of the generated bundle manifest.](#var_post_processing_manifest)
     *   [post_processing_outputs: [file list] Outputs of the post-processing step.](#var_post_processing_outputs)
     *   [post_processing_script: [file name] Script for the post-processing step.](#var_post_processing_script)
     *   [post_processing_sources: [file list] Sources for the post-processing step.](#var_post_processing_sources)
@@ -162,6 +160,7 @@
     *   [script: [file name] Script file for actions.](#var_script)
     *   [sources: [file list] Source files for a target.](#var_sources)
     *   [swiftflags: [string list] Flags passed to the swift compiler.](#var_swiftflags)
+    *   [target_xcode_platform: [string] The desired platform for the build.](#var_target_xcode_platform)
     *   [testonly: [boolean] Declares a target must only be used for testing.](#var_testonly)
     *   [transparent: [bool] True if the bundle is transparent.](#var_transparent)
     *   [visibility: [label list] A list of labels that can depend on a target.](#var_visibility)
@@ -784,7 +783,7 @@
       Generate files for an IDE. Currently supported values:
       "eclipse" - Eclipse CDT settings file.
       "vs" - Visual Studio project/solution files.
-             (default Visual Studio version: 2019)
+             (default Visual Studio version: 2022)
       "vs2013" - Visual Studio 2013 project/solution files.
       "vs2015" - Visual Studio 2015 project/solution files.
       "vs2017" - Visual Studio 2017 project/solution files.
@@ -918,6 +917,10 @@
 
   --json-ide-script-args=<argument>
       Optional second argument that will be passed to executed script.
+
+  --filter-with-data
+      Additionally follows data deps when filtering. Without this flag, only
+      public and private linked deps will be followed. Only used with --filters.
 ```
 
 #### **Ninja Outputs**
@@ -1767,15 +1770,12 @@
   be defined and non-empty to inform when the script needs to be re-run. The
   `post_processing_args` will be passed as is to the script (so path have to be
   rebased) and additional inputs may be listed via `post_processing_sources`.
-```
 
-#### **Migration**
-
-```
-  The post-processing step used to be limited to code-signing. The properties
-  used to be named `code_signing_$name` instead of `post_processing_$name`. The
-  old names are still accepted as alias to facilitate migration but a warning
-  will be emitted and the alias eventually be removed.
+  If `post_processing_manifest` is defined, then gn will write a file listing
+  the expected content of the generated bundle (one file per line). The file
+  can then be passed as a parameter to `post_processing_script` via the
+  `post_processing_args` array. This can only be set if `post_processing_script`
+  is set.
 ```
 
 #### **Variables**
@@ -1789,10 +1789,10 @@
            visibility
   Bundle vars: bundle_root_dir, bundle_contents_dir, bundle_resources_dir,
                bundle_executable_dir, bundle_deps_filter, product_type,
-               post_processing_args, post_processing_script,
-               post_processing_sources, post_processing_outputs,
-               xcode_extra_attributes, xcode_test_application_name,
-               partial_info_plist
+               post_processing_args, post_processing_manifest,
+               post_processing_script, post_processing_sources,
+               post_processing_outputs, xcode_extra_attributes,
+               xcode_test_application_name, partial_info_plist
 ```
 
 #### **Example**
@@ -1867,6 +1867,7 @@
         if (is_ios && code_signing) {
           deps += [ ":${app_name}_generate_executable" ]
           post_processing_script = "//build/config/ios/codesign.py"
+          post_processing_manifest = "$target_out_dir/$target_name.manifest"
           post_processing_sources = [
             invoker.entitlements_path,
             "$target_gen_dir/$app_name",
@@ -1885,6 +1886,7 @@
                 invoker.entitlements_path, root_build_dir),
             "-e=" + rebase_path(
                 "$target_gen_dir/$app_name.xcent", root_build_dir),
+            "-m=" + rebase_path(post_processing_manifest, root_build_dir),
             rebase_path(bundle_root_dir, root_build_dir),
           ]
         } else {
@@ -3066,6 +3068,18 @@
   not_needed(invoker, "*", [ "config" ])
   not_needed(invoker, [ "data_deps", "deps" ])
 ```
+### <a name="func_path_exists"></a>**path_exists**: Returns whether the given path exists.&nbsp;[Back to Top](#gn-reference)
+
+```
+  path_exists(path)
+```
+
+#### **Examples**:
+```
+  path_exists("//")  # true
+  path_exists("BUILD.gn")  # true
+  path_exists("/abs-non-existent")  # false
+```
 ### <a name="func_pool"></a>**pool**: Defines a pool object.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -4244,8 +4258,8 @@
         libraries in this target. Includes any specified renamed dependencies.
 
     {{rustdeps}}
-        Expands to the list of -Ldependency=<path> strings needed to compile
-        this target.
+        Expands to the list of -Ldependency=<path> and -Clink-arg=<path> strings
+        needed to compile this target.
 
     {{rustenv}}
         Expands to the list of environment variables.
@@ -4544,7 +4558,10 @@
 ### <a name="var_gn_version"></a>**gn_version**: [number] The version of gn.&nbsp;[Back to Top](#gn-reference)
 
 ```
-  Corresponds to the number printed by `gn --version`.
+  Corresponds to the number printed by `gn --version`. This variable is
+  only variable available in the dotfile (all the rest are missing
+  because the dotfile has to be parsed before args.gn or anything else
+  is processed).
 ```
 
 #### **Example**
@@ -5409,56 +5426,6 @@
     check_includes = false
     ...
   }
-```
-### <a name="var_code_signing_args"></a>**code_signing_args**: [string list] [deprecated] Args for the post-processing script.&nbsp;[Back to Top](#gn-reference)
-
-```
-  For create_bundle targets, post_processing_args is the list of arguments to
-  pass to the post-processing script. Typically you would use source expansion
-  (see "gn help source_expansion") to insert the source file names.
-
-  Deprecated: this is an old name for the "post_processing_args" property of
-  the "create_bundle" target. It is still supported to avoid breaking existing
-  build rules, but a warning will be emitted when it is used.
-
-  See also "gn help create_bundle" and "gn help post_processing_args".
-```
-### <a name="var_code_signing_outputs"></a>**code_signing_outputs**: [file list] [deprecated] Outputs of the post-processing step.&nbsp;[Back to Top](#gn-reference)
-
-```
-  Outputs from the post-processing step of a create_bundle target. Must refer to
-  files in the build directory.
-
-  Deprecated: this is an old name for the "post_processing_outputs" property of
-  the "create_bundle" target. It is still supported to avoid breaking existing
-  build rules, but a warning will be emitted when it is used.
-
-  See also "gn help create_bundle" and "gn help post_processing_args".
-```
-### <a name="var_code_signing_script"></a>**code_signing_script**: [file name] [deprecated] Script for the post-processing step."&nbsp;[Back to Top](#gn-reference)
-
-```
-  An absolute or buildfile-relative file name of a Python script to run for a
-  create_bundle target to perform the post-processing step.
-
-  Deprecated: this is an old name for the "post_processing_script" property of
-  the "create_bundle" target. It is still supported to avoid breaking existing
-  build rules, but a warning will be emitted when it is used.
-
-  See also "gn help create_bundle" and "gn help post_processing_args".
-```
-### <a name="var_code_signing_sources"></a>**code_signing_sources**: [file list] [deprecated] Sources for the post-processing step.&nbsp;[Back to Top](#gn-reference)
-
-```
-  A list of files used as input for the post-processing step of a create_bundle
-  target. Non-absolute paths will be resolved relative to the current build
-  file.
-
-  Deprecated: this is an old name for the "post_processing_sources" property of
-  the "create_bundle" target. It is still supported to avoid breaking existing
-  build rules, but a warning will be emitted when it is used.
-
-  See also "gn help create_bundle" and "gn help post_processing_args".
 ```
 ### <a name="var_complete_static_lib"></a>**complete_static_lib**: [boolean] Links all deps into a static library.&nbsp;[Back to Top](#gn-reference)
 
@@ -6436,6 +6403,15 @@
 
   See also "gn help create_bundle".
 ```
+### <a name="var_post_processing_manifest"></a>**post_processing_manifest**: [file] Name of the generated bundle manifest.&nbsp;[Back to Top](#gn-reference)
+
+```
+  Path where a manifest listing all the files found in the bundle will be
+  written for the post processing step. The path must be outside of the
+  bundle_root_dir.
+
+  See also "gen help create_bundle".
+```
 ### <a name="var_post_processing_outputs"></a>**post_processing_outputs**: [file list] Outputs of the post-processing step.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -6562,7 +6538,7 @@
   If no public files are declared, other targets (assuming they have visibility
   to depend on this target) can include any file in the sources list. If this
   variable is defined on a target, dependent targets may only include files on
-  this whitelist unless that target is marked as a friend (see "gn help
+  this allowlist unless that target is marked as a friend (see "gn help
   friend").
 
   Header file permissions are also subject to visibility. A target must be
@@ -6884,6 +6860,28 @@
      "deps" list. If a dependency is public, they will be applied
      recursively.
 ```
+### <a name="var_target_xcode_platform"></a>**target_xcode_platform**: The desired platform for the build.&nbsp;[Back to Top](#gn-reference)
+
+```
+  This value should be used to indicate the kind of iOS or iOS-based platform
+  that is being the desired platform for the primary object(s) of the build.
+
+  This should be set to the most specific value possible. So, "iphoneos" or
+  "tvos" should be used instead of "ios" where applicable, even though
+  iPhoneOS and tvOS are both iOS variants.
+
+  GN defaults this value to "iphoneos" and the configuration files should set
+  it to an appropriate value if it is not set via the command line or in the
+  args.gn file.
+
+  This value configures the base SDK and the targeted device families of the
+  generated Xcode project. only meaningful when generating with --ide=xcode.
+
+  Possible values
+
+  - "iphoneos"
+  - "tvos"
+```
 ### <a name="var_testonly"></a>**testonly**: Declares a target must only be used for testing.&nbsp;[Back to Top](#gn-reference)
 
 ```
@@ -7090,6 +7088,7 @@
 ```
   First, system default arguments are set based on the current system. The
   built-in arguments are:
+   - gn_version
    - host_cpu
    - host_os
    - current_cpu
@@ -7098,7 +7097,8 @@
    - target_os
 
   Next, project-specific overrides are applied. These are specified inside
-  the default_args variable of //.gn. See "gn help dotfile" for more.
+  the default_args variable of //.gn. See "gn help dotfile" for more. Note
+  that during processing of the dotfile itself, only `gn_version` is defined.
 
   If specified, arguments from the --args command line flag are used. If that
   flag is not specified, args from previous builds in the build directory will
@@ -7157,6 +7157,10 @@
   --dotfile:
 
     gn gen out/Debug --root=/home/build --dotfile=/home/my_gn_file.gn
+
+  The system variable `gn_version` is available in the dotfile, but none of
+  the other variables are, because the dotfile is processed before args.gn
+  or anything else is processed.
 ```
 
 #### **Variables**
@@ -7199,7 +7203,7 @@
       default. They can be checked explicitly by running
       "gn check --check-system" or "gn gen --check=system"
 
-  exec_script_whitelist [optional]
+  exec_script_allowlist [optional]
       A list of .gn/.gni files (not labels) that have permission to call the
       exec_script function. If this list is defined, calls to exec_script will
       be checked against this list and GN will fail if the current file isn't
@@ -7213,10 +7217,16 @@
       If unspecified, the ability to call exec_script is unrestricted.
 
       Example:
-        exec_script_whitelist = [
+        exec_script_allowlist = [
           "//base/BUILD.gn",
           "//build/my_config.gni",
         ]
+
+  exec_script_whitelist [optional]
+      A synonym for "exec_script_allowlist" that exists for backwards
+      compatibility. New code should use "exec_script_allowlist" instead.
+      If both values are set, only the value in "exec_script_allowlist" will
+      have any effect (so don't set both!).
 
   export_compile_commands [optional]
       A list of label patterns for which to generate a Clang compilation
@@ -7343,18 +7353,52 @@
   2. Execute the build config file identified by .gn to set up the global
      variables and default toolchain name. Any arguments, variables, defaults,
      etc. set up in this file will be visible to all files in the build.
+     Any values set in the `default_args` scope will be merged into
+     subsequent `declare_args()` scopes and override the default values.
 
-  3. Load the //BUILD.gn (in the source root directory).
+  3. Process the --args command line option or load the arguments from
+     the args.gn file in the build directory. These values will be merged
+     into any subsequent declare_args() scope (after the `default_args`
+     are merged in) to override the default values. See `help buildargs`
+     for more on how args are handled.
 
-  4. Recursively evaluate rules and load BUILD.gn in other directories as
+  4. Load the BUILDCONFIG.gn file and create a dedicated scope for it.
+
+  5. Load the //BUILD.gn (in the source root directory). The BUILD.gn
+     file is executed in a scope whose parent scope is the BUILDCONFIG.gn
+     file, i.e., only the definitions in the BUILDCONFIG.gn file exist.
+
+  5. If the BUILD.gn file imports other files, each of those other
+     files is executed in a separate scope whose parent is the BUILDCONFIG.gn
+     file, i.e., no definitions from the importing BUILD.gn file are
+     available. When the imported file has been fully processed, its scope
+     is merged into the BUILD.gn file's scope. If there is a conflict
+     (both the BUILD.gn file and the imported file define some variable
+     or rule with the same name but different values), a runtime error
+     will be thrown. See "gn help import" for more on this.
+
+  6. Recursively evaluate rules and load BUILD.gn in other directories as
      necessary to resolve dependencies. If a BUILD file isn't found in the
      specified location, GN will look in the corresponding location inside
      the secondary_source defined in the dotfile (see "gn help dotfile").
+     Each BUILD.gn file will again be executed in a new scope whose only
+     parent is BUILDCONFIG.gn's scope.
 
-  5. When a target's dependencies are resolved, write out the `.ninja`
+  7. If a target is referenced using an alternate toolchain, then
+
+     1. The toolchain file is loaded in a scope whose parent is the
+        BUILDCONFIG.gn file.
+     2. The BUILDCONFIG.gn file is re-loaded and re-parsed into a new
+        scope, with any `toolchain_args` merged into the defaults. See
+        `help buildargs` for more on how args are handled.
+     3. The BUILD.gn containing the target is then parsed as in step 5,
+        only we use the scope from step 7.2 instead of the default
+        BUILDCONFIG.gn scope.
+
+  8. When a target's dependencies are resolved, write out the `.ninja`
      file to disk.
 
-  6. When all targets are resolved, write out the root build.ninja file.
+  9. When all targets are resolved, write out the root build.ninja file.
 
   Note that the BUILD.gn file name may be modulated by .gn arguments such as
   build_file_extension.
@@ -7376,9 +7420,14 @@
     }
 
   There is also a generic "target" function for programmatically defined types
-  (see "gn help target"). You can define new types using templates (see "gn
-  help template"). A template defines some custom code that expands to one or
-  more other targets.
+  (see "gn help target").
+
+  You can define new types using templates (see "gn help template"). A template
+  defines some custom code that expands to one or more other targets. When a
+  template is invoked, it is executed in the scope of the file that defined the
+  template (as described above). To access values from the caller's scope, you
+  must use the `invoker` variable (see "gn help template" for more on the
+  invoker).
 
   Before executing the code inside the target's { }, the target defaults are
   applied (see "gn help set_defaults"). It will inject implicit variable
@@ -8086,7 +8135,7 @@
   GN's header checker helps validate that the includes match the build
   dependency graph. Sometimes an include might be conditional or otherwise
   problematic, but you want to specifically allow it. In this case, it can be
-  whitelisted.
+  allowlisted.
 
   Include lines containing the substring "nogncheck" will be excluded from
   header checking. The most common case is a conditional include:
@@ -8325,6 +8374,7 @@
     *   --nocolor: Force non-colored output.
     *   -q: Quiet mode. Don't print output on success.
     *   --root: Explicitly specify source root.
+    *   --root-pattern: Add root pattern override.
     *   --root-target: Override the root target.
     *   --runtime-deps-list-file: Save runtime dependencies for targets in file.
     *   --script-executable: Set the executable used to execute scripts.

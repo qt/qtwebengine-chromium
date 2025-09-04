@@ -59,6 +59,10 @@ const char kDotfile_Help[] =
 
     gn gen out/Debug --root=/home/build --dotfile=/home/my_gn_file.gn
 
+  The system variable `gn_version` is available in the dotfile, but none of
+  the other variables are, because the dotfile is processed before args.gn
+  or anything else is processed.
+
 Variables
 
   arg_file_template [optional]
@@ -98,7 +102,7 @@ Variables
       default. They can be checked explicitly by running
       "gn check --check-system" or "gn gen --check=system"
 
-  exec_script_whitelist [optional]
+  exec_script_allowlist [optional]
       A list of .gn/.gni files (not labels) that have permission to call the
       exec_script function. If this list is defined, calls to exec_script will
       be checked against this list and GN will fail if the current file isn't
@@ -112,10 +116,16 @@ Variables
       If unspecified, the ability to call exec_script is unrestricted.
 
       Example:
-        exec_script_whitelist = [
+        exec_script_allowlist = [
           "//base/BUILD.gn",
           "//build/my_config.gni",
         ]
+
+  exec_script_whitelist [optional]
+      A synonym for "exec_script_allowlist" that exists for backwards
+      compatibility. New code should use "exec_script_allowlist" instead.
+      If both values are set, only the value in "exec_script_allowlist" will
+      have any effect (so don't set both!).
 
   export_compile_commands [optional]
       A list of label patterns for which to generate a Clang compilation
@@ -397,6 +407,9 @@ Setup::Setup()
       dotfile_scope_(&dotfile_settings_) {
   dotfile_settings_.set_toolchain_label(Label());
 
+  dotfile_provider_ =
+      std::make_unique<ScopePerFileProvider>(&dotfile_scope_, false, true);
+
   build_settings_.set_item_defined_callback(
       [task_runner = scheduler_.task_runner(),
        builder = &builder_](std::unique_ptr<Item> item) {
@@ -626,7 +639,7 @@ bool Setup::FillArgsFromArgsInputFile(Err* err) {
   arg_scope.GetCurrentScopeValues(&overrides);
   build_settings_.build_args().AddArgOverrides(overrides);
   build_settings_.build_args().set_build_args_dependency_files(
-      arg_scope.build_dependency_files());
+      arg_scope.CollectBuildDependencyFiles());
   return true;
 }
 
@@ -1088,26 +1101,32 @@ bool Setup::FillOtherConfig(const base::CommandLine& cmdline, Err* err) {
     check_system_includes_ = check_system_includes_value->boolean_value();
   }
 
-  // Fill exec_script_whitelist.
-  const Value* exec_script_whitelist_value =
-      dotfile_scope_.GetValue("exec_script_whitelist", true);
-  if (exec_script_whitelist_value) {
+  // Fill exec_script_allowlist.
+  const Value* exec_script_allowlist_value =
+      dotfile_scope_.GetValue("exec_script_allowlist", true);
+  if (!exec_script_allowlist_value) {
+    // Check for this value as well, for backwards-compatibility.
+    exec_script_allowlist_value =
+        dotfile_scope_.GetValue("exec_script_whitelist", true);
+  }
+
+  if (exec_script_allowlist_value) {
     // Fill the list of targets to check.
-    if (!exec_script_whitelist_value->VerifyTypeIs(Value::LIST, err)) {
+    if (!exec_script_allowlist_value->VerifyTypeIs(Value::LIST, err)) {
       return false;
     }
-    std::unique_ptr<SourceFileSet> whitelist =
+    std::unique_ptr<SourceFileSet> allowlist =
         std::make_unique<SourceFileSet>();
-    for (const auto& item : exec_script_whitelist_value->list_value()) {
+    for (const auto& item : exec_script_allowlist_value->list_value()) {
       if (!item.VerifyTypeIs(Value::STRING, err)) {
         return false;
       }
-      whitelist->insert(current_dir.ResolveRelativeFile(item, err));
+      allowlist->insert(current_dir.ResolveRelativeFile(item, err));
       if (err->has_error()) {
         return false;
       }
     }
-    build_settings_.set_exec_script_whitelist(std::move(whitelist));
+    build_settings_.set_exec_script_allowlist(std::move(allowlist));
   }
 
   // Fill optional default_args.
@@ -1165,6 +1184,17 @@ bool Setup::FillOtherConfig(const base::CommandLine& cmdline, Err* err) {
       return false;
     }
     export_compile_commands_.push_back(std::move(pat));
+  }
+
+  // Async non-linkable deps.
+  const Value* async_non_linkable_deps =
+      dotfile_scope_.GetValue("async_non_linkable_deps", true);
+  if (async_non_linkable_deps) {
+    if (!async_non_linkable_deps->VerifyTypeIs(Value::BOOLEAN, err)) {
+      return false;
+    }
+    build_settings_.set_async_non_linkable_deps(
+        async_non_linkable_deps->boolean_value());
   }
 
   return true;

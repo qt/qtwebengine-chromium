@@ -87,10 +87,13 @@ std::vector<ModuleDep> GetModuleDepsInformation(
     const Target* target,
     const ResolvedTargetData& resolved) {
   std::vector<ModuleDep> ret;
+  // Use a set to keep track of added PCM files to ensure uniqueness.
+  std::set<OutputFile> added_pcms;
 
-  auto add = [&ret](const Target* t, bool is_self) {
+  auto add_if_new = [&added_pcms, &ret](const Target* t, bool is_self) {
     const SourceFile* modulemap = GetModuleMapFromTargetSources(t);
-    CHECK(modulemap);
+    if (!modulemap)  // Not a module or no .modulemap file.
+      return;
 
     std::string label;
     CHECK(SubstitutionWriter::GetTargetSubstitution(
@@ -102,19 +105,29 @@ std::vector<ModuleDep> GetModuleDepsInformation(
         t->GetOutputFilesForSource(*modulemap, &tool_type, &modulemap_outputs));
     // Must be only one .pcm from .modulemap.
     CHECK(modulemap_outputs.size() == 1u);
-    ret.emplace_back(modulemap, label, modulemap_outputs[0], is_self);
+    const OutputFile& pcm_file = modulemap_outputs[0];
+
+    if (added_pcms.insert(pcm_file).second) {
+      ret.emplace_back(modulemap, label, pcm_file, is_self);
+    }
   };
 
   if (target->source_types_used().Get(SourceFile::SOURCE_MODULEMAP)) {
-    add(target, true);
+    add_if_new(target, true);
   }
 
-  for (const Target* dep : resolved.GetLinkedDeps(target)) {
-    // Having a .modulemap source means that the dependency is modularized.
+  // Process direct dependencies and their publicly inherited modules.
+  for (const auto& pairs : resolved.GetModuleDepsInformation(target)) {
+    const Target* dep = pairs.target();
     if (dep->source_types_used().Get(SourceFile::SOURCE_MODULEMAP)) {
-      add(dep, false);
+      add_if_new(dep, false);
     }
   }
+
+  // Sort by pcm path for deterministic output.
+  std::sort(ret.begin(), ret.end(), [](const ModuleDep& a, const ModuleDep& b) {
+    return a.pcm < b.pcm;
+  });
 
   return ret;
 }
@@ -256,9 +269,7 @@ void NinjaCBinaryTargetWriter::WriteModuleDepsSubstitution(
     EscapeOptions options;
     options.mode = ESCAPE_NINJA_COMMAND;
 
-    out_ << substitution->ninja_name << " = -Xclang ";
-    EscapeStringToStream(out_, "-fmodules-embed-all-files", options);
-
+    out_ << substitution->ninja_name << " =";
     for (const auto& module_dep : module_dep_info) {
       if (!module_dep.is_self || include_self) {
         out_ << " ";
@@ -525,8 +536,9 @@ void NinjaCBinaryTargetWriter::WriteSwiftSources(
 
   for (const Target* swiftmodule :
        resolved().GetSwiftModuleDependencies(target_)) {
-      CHECK(swiftmodule->has_dependency_output()); {
-    swift_order_only_deps.push_back(swiftmodule->dependency_output());
+    CHECK(swiftmodule->has_dependency_output());
+    {
+      swift_order_only_deps.push_back(swiftmodule->dependency_output());
     }
   }
 
@@ -678,6 +690,8 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
   }
 
   // Append data dependencies as order-only dependencies.
+  // If `async_non_linkable_deps` flag is set, it uses
+  // validations instead.
   //
   // This will include data dependencies and input dependencies (like when
   // this target depends on an action). Having the data dependencies in this
@@ -690,7 +704,11 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
   // on the sources, there is already an implicit order-only dependency.
   // However, it's extra work to separate these out and there's no disadvantage
   // to listing them again.
-  WriteOrderOnlyDependencies(classified_deps.non_linkable_deps);
+  if (settings_->build_settings()->async_non_linkable_deps()) {
+    WriteValidations(classified_deps.non_linkable_deps);
+  } else {
+    WriteOrderOnlyDependencies(classified_deps.non_linkable_deps);
+  }
 
   // End of the link "build" line.
   out_ << std::endl;
@@ -759,15 +777,32 @@ void NinjaCBinaryTargetWriter::WriteLibsList(
 
 void NinjaCBinaryTargetWriter::WriteOrderOnlyDependencies(
     const UniqueVector<const Target*>& non_linkable_deps) {
-  if (!non_linkable_deps.empty()) {
-    out_ << " ||";
+  if (non_linkable_deps.empty())
+    return;
 
-    // Non-linkable targets.
-    for (auto* non_linkable_dep : non_linkable_deps) {
-      if (non_linkable_dep->has_dependency_output()) {
-        out_ << " ";
-        path_output_.WriteFile(out_, non_linkable_dep->dependency_output());
-      }
+  out_ << " ||";
+
+  // Non-linkable targets.
+  for (auto* non_linkable_dep : non_linkable_deps) {
+    if (non_linkable_dep->has_dependency_output()) {
+      out_ << " ";
+      path_output_.WriteFile(out_, non_linkable_dep->dependency_output());
+    }
+  }
+}
+
+void NinjaCBinaryTargetWriter::WriteValidations(
+    const UniqueVector<const Target*>& non_linkable_deps) {
+  if (non_linkable_deps.empty())
+    return;
+
+  out_ << " |@";
+
+  // Non-linkable targets.
+  for (auto* non_linkable_dep : non_linkable_deps) {
+    if (non_linkable_dep->has_dependency_output()) {
+      out_ << " ";
+      path_output_.WriteFile(out_, non_linkable_dep->dependency_output());
     }
   }
 }

@@ -369,7 +369,7 @@ Value RunConfig(const FunctionCallNode* function,
 
   // Create the new config.
   std::unique_ptr<Config> config = std::make_unique<Config>(
-      scope->settings(), label, scope->build_dependency_files());
+      scope->settings(), label, scope->CollectBuildDependencyFiles());
   config->set_defined_from(function);
   if (!Visibility::FillItemVisibility(config.get(), scope, err))
     return Value();
@@ -909,7 +909,7 @@ Value RunPool(const FunctionCallNode* function,
 
   // Create the new pool.
   std::unique_ptr<Pool> pool = std::make_unique<Pool>(
-      scope->settings(), label, scope->build_dependency_files());
+      scope->settings(), label, scope->CollectBuildDependencyFiles());
 
   if (label.name() == "console") {
     const Settings* settings = scope->settings();
@@ -1476,6 +1476,7 @@ struct FunctionInfoInitializer {
     INSERT_FUNCTION(Import, false)
     INSERT_FUNCTION(LabelMatches, false)
     INSERT_FUNCTION(NotNeeded, false)
+    INSERT_FUNCTION(PathExists, false)
     INSERT_FUNCTION(Pool, false)
     INSERT_FUNCTION(Print, false)
     INSERT_FUNCTION(PrintStackTrace, false)
@@ -1531,7 +1532,7 @@ Value RunFunction(Scope* scope,
   if (found_function->second.self_evaluating_args_runner) {
     // Self evaluating args functions are special weird built-ins like foreach.
     // Rather than force them all to check that they have a block or no block
-    // and risk bugs for new additions, check a whitelist here.
+    // and risk bugs for new additions, check an allowlist here.
     if (found_function->second.self_evaluating_args_runner != &RunForEach) {
       if (!VerifyNoBlockForFunctionCall(function, block, err))
         return Value();
