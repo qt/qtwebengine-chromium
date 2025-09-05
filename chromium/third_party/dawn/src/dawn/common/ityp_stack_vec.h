@@ -48,12 +48,10 @@ class stack_vec : private absl::InlinedVector<Value, StaticCapacity> {
     explicit stack_vec(Index size) : Base() { Base::resize(static_cast<I>(size)); }
 
     Value& operator[](Index i) {
-        DAWN_ASSERT(i < size());
         return Base::operator[](static_cast<I>(i));
     }
 
     constexpr const Value& operator[](Index i) const {
-        DAWN_ASSERT(i < size());
         return Base::operator[](static_cast<I>(i));
     }
 
