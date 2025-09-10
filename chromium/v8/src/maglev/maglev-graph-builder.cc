@@ -14,6 +14,7 @@
 #include "src/base/vector.h"
 #include "src/builtins/builtins-constructor.h"
 #include "src/builtins/builtins.h"
+#include "src/codegen/bailout-reason.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/common/assert-scope.h"
@@ -5673,6 +5674,12 @@ ReduceResult MaglevGraphBuilder::BuildInlined(ValueNode* context,
   // can manually set up the arguments.
   DCHECK_NOT_NULL(current_block_);
 
+  if (should_abort_compilation_) {
+    // We will abort the compilation at the end.
+    BuildAbort(AbortReason::kMaglevGraphBuildingFailed);
+    return ReduceResult::DoneWithAbort();
+  }
+
   // Set receiver.
   ValueNode* receiver =
       GetRawConvertReceiver(compilation_unit_->shared_function_info(), args);
@@ -10271,6 +10278,10 @@ void MaglevGraphBuilder::VisitSuspendGenerator() {
 
   int input_count = parameter_count_without_receiver() + args.register_count() +
                     GeneratorStore::kFixedInputCount;
+  if (input_count > Node::kMaxInputs) {
+    should_abort_compilation_ = true;
+    return;
+  }
   int debug_pos_offset = iterator_.current_offset() +
                          (BytecodeArray::kHeaderSize - kHeapObjectTag);
   AddNewNode<GeneratorStore>(
