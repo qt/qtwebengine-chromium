@@ -71,6 +71,15 @@ gfx::BufferFormat SinglePlaneSharedImageFormatToBufferFormat(
 COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT)
 SharedImageFormat GetSharedImageFormat(gfx::BufferFormat buffer_format);
 
+// Calculates the row size in bytes for a shared memory plane of a
+// SharedImageFormat. Returns size on success and std::nullopt if the row size
+// exceeds the maximum value of `size_t`.
+COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT)
+std::optional<size_t> SharedMemoryRowSizeForSharedImageFormat(
+    SharedImageFormat format,
+    int plane_index,
+    int width);
+
 // Utilities that conceptually belong only on the service side, but are
 // currently used by some clients. Usage is restricted to friended clients.
 class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT)
