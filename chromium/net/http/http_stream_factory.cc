@@ -48,7 +48,6 @@ namespace net {
 
 namespace {
 const char kAlternativeServiceHeader[] = "Alt-Svc";
-
 }  // namespace
 
 // static
