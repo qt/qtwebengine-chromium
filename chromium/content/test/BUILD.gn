@@ -3532,6 +3532,10 @@ test("content_unittests") {
   if (is_castos || is_cast_android) {
     deps += [ "//chromecast:chromecast_buildflags" ]
   }
+
+  if (is_qtwebengine) {
+    deps = []
+  }
 }
 
 if (is_ios) {

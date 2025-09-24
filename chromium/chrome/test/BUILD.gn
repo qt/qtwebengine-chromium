@@ -696,7 +696,9 @@ static_library("test_support") {
       "../browser/webapps/installable/ml_promotion_browsertest_base.h",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [ ":test_support_ui_android" ]
+    }
   } else {
     public_deps += [
       # Android uses //chrome:chrome_android_core instead of the //chrome/app
@@ -815,7 +817,9 @@ static_library("test_support") {
       "base/test_browser_window.cc",
       "base/test_browser_window.h",
     ]
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [ ":test_support_ui" ]
+    }
   }
 
   if (use_nss_certs) {
@@ -1021,10 +1025,12 @@ static_library("test_support") {
       "//ui/chromeos/resources:resources_grit",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from += [
       "//chrome/browser/ash/login/users:test_support",
       "//chrome/browser/ash/settings:test_support",
     ]
+    }
   }
 
   if (is_win || is_mac || is_linux || is_chromeos) {
@@ -1118,6 +1124,10 @@ static_library("test_support") {
       "../browser/enterprise/signin/mock_user_policy_oidc_signin_service.cc",
       "../browser/enterprise/signin/mock_user_policy_oidc_signin_service.h",
     ]
+  }
+
+  if (is_qtwebengine) {
+    public_deps = []
   }
 }
 
@@ -2532,8 +2542,10 @@ if (!is_android) {
       "//v8",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from =
         [ "//chrome/browser/optimization_guide:browser_tests" ]
+    }
 
     if (is_chromeos) {
       deps += [
@@ -4787,8 +4799,10 @@ if (!is_android) {
         "//ui/views",
         "//url",
       ]
+      if (!is_qtwebengine) {
       allow_circular_includes_from +=
           [ "//chrome/browser/ui/lens:browser_tests" ]
+      }
       if (use_aura) {
         deps += [ "//ui/aura:test_support" ]
       }
@@ -5497,6 +5511,10 @@ if (!is_android) {
 
     if (chrome_root_store_cert_management_ui) {
       deps += [ "//components/server_certificate_database" ]
+    }
+
+    if (is_qtwebengine) {
+      deps = []
     }
   }
 }
@@ -6932,7 +6950,7 @@ test("unit_tests") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     assert(toolkit_views)
     sources += [
       "../browser/accessibility/live_caption/live_caption_unavailability_notifier_unittest.cc",
@@ -9042,10 +9060,12 @@ test("unit_tests") {
       deps += [ "//chrome/browser/chromeos/extensions/wm" ]
     }
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [
       "//chrome/browser/web_applications:web_applications_unit_tests",
       "//chrome/browser/web_applications/extensions:unit_tests",
     ]
+    }
 
     deps += [
       "//chrome/browser/extensions:cws_item_service_proto",
@@ -10134,6 +10154,11 @@ test("unit_tests") {
       "../browser/ui/startup/default_browser_prompt/default_browser_prompt_manager_unittest.cc",
       "../browser/ui/startup/default_browser_prompt/default_browser_prompt_unittest.cc",
     ]
+  }
+
+  if (is_qtwebengine) {
+    deps = []
+    public_deps = []
   }
 }
 
@@ -11530,6 +11555,9 @@ if (!is_android && !is_chromeos_device) {
         "//components/compose/core/browser",
         "//components/compose/core/browser:features",
       ]
+    }
+    if (is_qtwebengine) {
+      deps = []
     }
   }
 }
