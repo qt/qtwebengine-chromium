@@ -1036,6 +1036,9 @@ group("telemetry_gpu_common_data") {
     # For WebGPU CTS tests.
     "//third_party/dawn/webgpu-cts",
   ]
+  if (is_qtwebengine) {
+    data_deps = []
+  }
 }
 
 group("telemetry_gpu_unittest_data") {
@@ -3747,6 +3750,10 @@ test("content_unittests") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    deps = []
+  }
 }
 
 if (is_ios) {

@@ -778,7 +778,9 @@ static_library("test_support") {
       "../browser/webapps/installable/ml_promotion_browsertest_base.h",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [ ":test_support_ui_android" ]
+    }
   } else {
     public_deps += [
       # Android uses //chrome:chrome_android_core instead of the //chrome/app
@@ -914,7 +916,9 @@ static_library("test_support") {
       "base/test_browser_window.cc",
       "base/test_browser_window.h",
     ]
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [ ":test_support_ui" ]
+    }
   }
 
   if (enable_devtools_frontend) {
@@ -1123,10 +1127,12 @@ static_library("test_support") {
       "//ui/chromeos/resources:resources_grit",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from += [
       "//chrome/browser/ash/login/users:test_support",
       "//chrome/browser/ash/settings:test_support",
     ]
+    }
   }
 
   if (is_win || is_mac || is_linux || is_chromeos) {
@@ -1223,6 +1229,10 @@ static_library("test_support") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    public_deps = []
+  }
 }
 
 if (is_android) {
@@ -3099,11 +3109,13 @@ if (!is_android) {
     # c/b/ui/passwords/password_change_ui_controller.h gets built from `//c/b/ui/passwords:passwords`.
     deps += [ "//chrome/browser/ui/passwords:impl" ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [
       # `alternate_nav_infobar_delegate_browsertest.cc` includes test_infobar.h, which is
       # built as part of //chrome/test:browser_tests, hence the circular dep.
       "//chrome/browser/ui/omnibox:browser_tests",
     ]
+    }
 
     if (is_chromeos) {
       deps += [
@@ -5422,8 +5434,10 @@ if (!is_android) {
         "//ui/views",
         "//url",
       ]
+      if (!is_qtwebengine) {
       allow_circular_includes_from +=
           [ "//chrome/browser/ui/lens:browser_tests" ]
+      }
       if (use_aura) {
         sources += [ "../browser/web_applications/isolated_web_apps/window_management/isolated_web_apps_window_open_permission_service_browsertest.cc" ]
         deps += [ "//ui/aura:test_support" ]
@@ -6159,6 +6173,10 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+    if (is_qtwebengine) {
+      deps = []
+    }
   }
 }
 
@@ -7658,7 +7676,7 @@ test("unit_tests") {
     }
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     assert(toolkit_views)
     sources += [
       "../browser/accessibility/live_caption/live_caption_unavailability_notifier_unittest.cc",
@@ -9843,10 +9861,12 @@ test("unit_tests") {
       deps += [ "../browser/enterprise/connectors/test:test_support" ]
     }
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [
       "//chrome/browser/web_applications:web_applications_unit_tests",
       "//chrome/browser/web_applications/extensions:unit_tests",
     ]
+    }
 
     deps += [
       "//chrome/browser/affiliations",
@@ -10950,6 +10970,11 @@ test("unit_tests") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    deps = []
+    public_deps = []
+  }
 }
 
 static_library("test_support_unit") {
@@ -12510,6 +12535,9 @@ if (!is_android && !is_chromeos_device) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+    if (is_qtwebengine) {
+      deps = []
+    }
   }
 }
 
