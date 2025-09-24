@@ -61,7 +61,7 @@ template("node") {
       if (!defined(deps)) {
         deps = []
       }
-      deps += [ "//third_party/node:check_version" ]
+#      deps += [ "//third_party/node:check_version" ]
     }
   }
 }

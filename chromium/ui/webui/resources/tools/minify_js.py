@@ -34,7 +34,7 @@ def main(argv):
   # does not allow compressing multiple files at once. This is done to avoid
   # launching NodeJS once for every input file.
   node_args = [
-      os.path.join(_HERE_PATH, 'minify_js.js'),  '--in_folder', in_path,
+      os.path.join(_HERE_PATH, 'minify_js.mjs'),  '--in_folder', in_path,
     '--out_folder', out_path
   ] + args.in_files
   if args.ascii_only:
