@@ -5,7 +5,7 @@
 import eslintPluginLit from '../../../../third_party/node/node_modules/eslint-plugin-lit/lib/index.js';
 import typescriptEslint from '../../../../third_party/node/node_modules/@typescript-eslint/eslint-plugin/dist/index.js';
 import tsParser from '../../../../third_party/node/node_modules/@typescript-eslint/parser/dist/index.js';
-import webUiEslint from './webui_eslint_plugin.js';
+import webUiEslint from './webui_eslint_plugin.mjs';
 
 export const defaultConfig = [
   {

@@ -559,7 +559,7 @@ template("proto_library") {
                   _protoc_gen_ts_path,
                   "//tools/protoc_wrapper/protoc-gen-ts_proto.py",
                 ] + _protoc_gen_ts_runtime_deps
-      deps += [ "//third_party/node:check_version" ]
+#      deps += [ "//third_party/node:check_version" ]
     }
 
     if (_generate_with_plugin) {
