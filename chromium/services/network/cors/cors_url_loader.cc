@@ -121,7 +121,8 @@ std::optional<PreflightRequiredReason> NeedsPreflight(
 }
 
 base::Value::Dict NetLogCorsURLLoaderStartParams(
-    const ResourceRequest& request) {
+    const ResourceRequest& request,
+    net::NetLogCaptureMode capture_mode) {
   std::string cors_preflight_policy;
   switch (request.cors_preflight_policy) {
     case mojom::CorsPreflightPolicy::kConsiderPreflight:
@@ -133,7 +134,7 @@ base::Value::Dict NetLogCorsURLLoaderStartParams(
   }
 
   return base::Value::Dict()
-      .Set("url", request.url.possibly_invalid_spec())
+      .Set("url", SanitizeUrlForNetLog(request.url, capture_mode))
       .Set("method", request.method)
       .Set("headers", net::NetLogStringValue(request.headers.ToString()))
       .Set("is_revalidating", request.is_revalidating)
@@ -405,7 +406,10 @@ void CorsURLLoader::Start() {
   last_response_url_ = request_.url;
 
   net_log_.BeginEvent(net::NetLogEventType::CORS_REQUEST,
-                      [&] { return NetLogCorsURLLoaderStartParams(request_); });
+                      [&](net::NetLogCaptureMode capture_mode) {
+                        return NetLogCorsURLLoaderStartParams(request_,
+                                                              capture_mode);
+                      });
   StartRequest();
 }
 
