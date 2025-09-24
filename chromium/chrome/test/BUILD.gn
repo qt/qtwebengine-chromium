@@ -294,8 +294,10 @@ static_library("test_support") {
 
     # TODO(crbug.com/521960574): Fix extension_browsertest.cc and eliminate this
     # circular dependency.
-    allow_circular_includes_from +=
-        [ "//chrome/browser/extensions:test_support" ]
+    if (!is_qtwebengine) {
+      allow_circular_includes_from +=
+          [ "//chrome/browser/extensions:test_support" ]
+    }
   }
 
   if (enable_extensions) {
@@ -591,7 +593,9 @@ static_library("test_support") {
       "//components/supervised_user/core/browser/android",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from += [ ":test_support_ui_android" ]
+    }
   } else {
     public_deps += [
       # Android uses //chrome:chrome_android_core instead of the //chrome/app
@@ -676,10 +680,12 @@ static_library("test_support") {
       "base/test_browser_window.h",
     ]
     public_deps += [ "//chrome/browser/themes:theme_service_changed_waiter" ]
+    if (!is_qtwebengine) {
     allow_circular_includes_from += [
       ":test_support_ui",
       "//chrome/browser/ui/views/tabs/common:impl",
     ]
+    }
   }
 
   if (enable_devtools_frontend) {
@@ -854,11 +860,13 @@ static_library("test_support") {
       "//ui/chromeos/resources:resources_grit",
     ]
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from += [
       "//chrome/browser/ash/login/users:test_support",
       "//chrome/browser/ash/settings:test_support",
       "//chrome/browser/ash/system_web_apps/test_support",
     ]
+    }
   }
 
   if (is_win || is_mac || is_linux || is_chromeos) {
@@ -940,6 +948,10 @@ static_library("test_support") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    public_deps = []
+  }
 }
 
 if (is_android) {
@@ -3978,8 +3990,10 @@ if (!is_android) {
         "//ui/views",
         "//url",
       ]
+      if (!is_qtwebengine) {
       allow_circular_includes_from +=
           [ "//chrome/browser/ui/lens:browser_tests" ]
+      }
     }
 
     # TODO(crbug.com/353332589): Move this browsertest into
@@ -4724,6 +4738,10 @@ if (!is_android) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+    if (is_qtwebengine) {
+      deps = []
+    }
 
     if (!is_android) {
       deps += [
@@ -5993,7 +6011,7 @@ test("unit_tests") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     assert(toolkit_views)
     sources += [
       "../browser/chrome_browser_main_win_unittest.cc",
@@ -7360,10 +7378,12 @@ test("unit_tests") {
       deps += [ "../browser/enterprise/connectors/test:test_support" ]
     }
 
+    if (!is_qtwebengine) {
     allow_circular_includes_from = [
       "//chrome/browser/web_applications:web_applications_unit_tests",
       "//chrome/browser/web_applications/extensions:unit_tests",
     ]
+    }
 
     deps += [
       "//apps:unit_tests",
@@ -7647,8 +7667,10 @@ test("unit_tests") {
         "//chrome/browser/ui/save_to_drive",
         "//chrome/browser/ui/views/save_to_drive:unit_tests",
       ]
+      if (!is_qtwebengine) {
       allow_circular_includes_from +=
           [ "//chrome/browser/ui/views/save_to_drive:unit_tests" ]
+      }
     }
   }
 
@@ -8011,6 +8033,11 @@ test("unit_tests") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    deps = []
+    public_deps = []
+  }
 
   fuzztests = [
     "ActorProtoConversionFuzzTest.CanConvertAnyProto",
@@ -9538,6 +9565,9 @@ if (!is_android && !is_chromeos_device) {
     # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
     # enable the diagnostic by removing this line.
     configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+    if (is_qtwebengine) {
+      deps = []
+    }
   }
 }
 
