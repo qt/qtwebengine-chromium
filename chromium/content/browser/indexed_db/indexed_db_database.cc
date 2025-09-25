@@ -353,6 +353,8 @@ void IndexedDBDatabase::TransactionFinished(
 
 void IndexedDBDatabase::ScheduleOpenConnection(
     std::unique_ptr<IndexedDBPendingConnection> connection) {
+  CHECK(IsAcceptingConnections());
+
   connection_coordinator_.ScheduleOpenConnection(std::move(connection));
 }
 
