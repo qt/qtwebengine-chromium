@@ -18,6 +18,7 @@
 #include "content/browser/file_system_access/file_system_access_error.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "net/base/mime_util.h"
@@ -292,6 +293,16 @@ FileSystemChooser::ScopedObjects::ScopedObjects(
     : fullscreen_block(std::move(fullscreen_block)),
       pip_tucker(std::move(pip_tucker)) {}
 
+namespace {
+// Called when no file is selected due to being aborted.
+void AbortedCallback(FileSystemChooser::ResultCallback callback) {
+  std::move(callback).Run(
+      file_system_access_error::FromStatus(
+          blink::mojom::FileSystemAccessStatus::kOperationAborted),
+      {});
+}
+}  // namespace
+
 // static
 void FileSystemChooser::CreateAndShow(
     WebContents* web_contents,
@@ -299,9 +310,13 @@ void FileSystemChooser::CreateAndShow(
     ResultCallback callback,
     FileSystemChooser::ScopedObjects scoped_objects) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (web_contents->GetVisibility() == Visibility::HIDDEN) {
+    AbortedCallback(std::move(callback));
+    return;
+  }
   // `listener` deletes itself.
   auto* listener = new FileSystemChooser(options.type(), std::move(callback),
-                                         std::move(scoped_objects));
+                                         std::move(scoped_objects), web_contents);
   listener->dialog_ = ui::SelectFileDialog::Create(
       listener,
       GetContentClient()->browser()->CreateSelectFilePolicy(web_contents));
@@ -367,8 +382,10 @@ bool FileSystemChooser::IsShellIntegratedExtension(
 FileSystemChooser::FileSystemChooser(
     ui::SelectFileDialog::Type type,
     ResultCallback callback,
-    FileSystemChooser::ScopedObjects scoped_objects)
-    : type_(type),
+    FileSystemChooser::ScopedObjects scoped_objects,
+    WebContents* web_contents)
+    : WebContentsObserver(web_contents),
+      type_(type),
       callback_(std::move(callback)),
       scoped_objects_(std::move(scoped_objects)) {
   CHECK(IsValidFileDialogType(type_));
@@ -378,6 +395,13 @@ FileSystemChooser::~FileSystemChooser() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (dialog_) {
     dialog_->ListenerDestroyed();
+  }
+}
+
+void FileSystemChooser::OnVisibilityChanged(Visibility visibility) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (visibility == Visibility::HIDDEN) {
+    FileSelectionCanceled();
   }
 }
 
@@ -403,10 +427,7 @@ void FileSystemChooser::MultiFilesSelected(
 
 void FileSystemChooser::FileSelectionCanceled() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  std::move(callback_).Run(
-      file_system_access_error::FromStatus(
-          blink::mojom::FileSystemAccessStatus::kOperationAborted),
-      {});
+  AbortedCallback(std::move(callback_));
   delete this;
 }
 
