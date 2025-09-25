@@ -42,7 +42,8 @@ class WaylandConnection;
 class OrgGnomeMutterIdleMonitor;
 #endif
 
-// A PlatformScreen implementation for Wayland.
+// A PlatformScreen implementation for Wayland. Note that this object outlives
+// WaylandConnection.
 class WaylandScreen : public PlatformScreen
 #if BUILDFLAG(IS_LINUX)
     ,
@@ -152,7 +153,6 @@ class WaylandScreen : public PlatformScreen
       org_gnome_mutter_idle_monitor_;
 #endif
 
-  wl::Object<zwp_idle_inhibitor_v1> idle_inhibitor_;
   uint32_t screen_saver_suspension_count_ = 0;
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   display::TabletState tablet_state_;
