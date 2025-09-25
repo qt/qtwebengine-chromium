@@ -11875,31 +11875,6 @@
             ]
         }
     ],
-    "HeapProfilerMultiKeyHashSet": [
-        {
-            "platforms": [
-                "chromeos",
-                "chromeos_lacros",
-                "ios",
-                "linux",
-                "mac",
-                "windows"
-            ],
-            "experiments": [
-                {
-                    "name": "EnabledMultiKey_20250708",
-                    "params": {
-                        "nonstable-probability": "1.0",
-                        "stable-probability": "1.0"
-                    },
-                    "enable_features": [
-                        "HeapProfilerMultiKeyHashSet",
-                        "HeapProfilerReporting"
-                    ]
-                }
-            ]
-        }
-    ],
     "HeatmapPalmDetectionStudy": [
         {
             "platforms": [
