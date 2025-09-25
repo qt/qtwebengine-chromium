@@ -377,7 +377,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   const bool may_attach_to_browser = session->GetClient()->IsTrusted();
   session->CreateAndAddHandler<protocol::ServiceWorkerHandler>(
       /* allow_inspect_worker= */ may_attach_to_browser);
-  session->CreateAndAddHandler<protocol::StorageHandler>(session->GetClient());
+  session->CreateAndAddHandler<protocol::StorageHandler>(this,
+                                                         session->GetClient());
   session->CreateAndAddHandler<protocol::SystemInfoHandler>(
       /* is_browser_session= */ false);
   session->CreateAndAddHandler<protocol::TargetHandler>(
