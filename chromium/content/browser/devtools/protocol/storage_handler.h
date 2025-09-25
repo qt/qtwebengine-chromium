@@ -46,7 +46,8 @@ class StorageHandler
       public content::SharedStorageRuntimeManager::
           SharedStorageObserverInterface {
  public:
-  explicit StorageHandler(DevToolsAgentHostClient* client);
+  explicit StorageHandler(DevToolsAgentHostImpl* host,
+                          DevToolsAgentHostClient* client);
 
   StorageHandler(const StorageHandler&) = delete;
   StorageHandler& operator=(const StorageHandler&) = delete;
@@ -276,6 +277,8 @@ class StorageHandler
   void GotAllCookies(
       std::unique_ptr<Storage::Backend::GetCookiesCallback> callback,
       const std::vector<net::CanonicalCookie>& cookies);
+
+  const raw_ptr<DevToolsAgentHostImpl> host_;
 
   std::unique_ptr<Storage::Frontend> frontend_;
   raw_ptr<StoragePartition> storage_partition_{nullptr};
