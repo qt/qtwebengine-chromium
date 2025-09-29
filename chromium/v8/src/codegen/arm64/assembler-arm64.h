@@ -167,15 +167,16 @@ class MemOperand {
 class AssemblerZone {
  public:
   explicit AssemblerZone(const MaybeAssemblerZone& zone)
-      // Create a fresh Zone unless one is already provided.
-      : maybe_local_zone_(
-            std::holds_alternative<Zone*>(zone)
-                ? std::nullopt
-                : std::make_optional<Zone>(std::get<AccountingAllocator*>(zone),
-                                           ZONE_NAME)),
-        zone_(std::holds_alternative<Zone*>(zone)
-                  ? std::get<Zone*>(zone)
-                  : &maybe_local_zone_.value()) {}
+  {
+    // Create a fresh Zone unless one is already provided.
+    if (std::holds_alternative<Zone*>(zone)) {
+      zone_ = std::get<Zone*>(zone);
+    } else {
+      maybe_local_zone_.emplace(std::get<AccountingAllocator*>(zone),
+                                ZONE_NAME);
+      zone_ = &maybe_local_zone_.value();
+    }
+  }
 
   Zone* get() const { return zone_; }
 

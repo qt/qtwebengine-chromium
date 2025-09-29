@@ -8,6 +8,10 @@
 
 #include "include/v8config.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace v8::base {
 
 #if defined(V8_HOST_ARCH_X64) || defined(V8_HOST_ARCH_IA32)
@@ -54,13 +58,17 @@ void FPU::SetFlushDenormals(bool value) {
 #error "Unsupported compiler"
 #endif
 
-#elif defined(V8_HOST_ARCH_ARM64) || defined(V8_HOST_ARCH_ARM)
+#elif (defined(V8_HOST_ARCH_ARM64) || defined(V8_HOST_ARCH_ARM))
 
 namespace {
 // Bit 24 is the flush-to-zero mode control bit. Setting it to 1 flushes
 // denormals to 0.
 constexpr int kFlushDenormToZeroBit = (1 << 24);
 int GetStatusWord() {
+#if defined(_MSC_VER) && defined(V8_HOST_ARCH_ARM64)
+  __int64 result = _ReadStatusReg(ARM64_FPCR);
+  return result;
+#else
   int result;
 #if defined(V8_HOST_ARCH_ARM64)
   asm volatile("mrs %x[result], FPCR" : [result] "=r"(result));
@@ -68,14 +76,19 @@ int GetStatusWord() {
   asm volatile("vmrs %[result], FPSCR" : [result] "=r"(result));
 #endif
   return result;
+#endif // defined(_MSC_VER) && defined(V8_HOST_ARCH_ARM64)
 }
 
 void SetStatusWord(int a) {
+#if defined(_MSC_VER) && defined(V8_HOST_ARCH_ARM64)
+  _WriteStatusReg(ARM64_FPCR, a);
+#else
 #if defined(V8_HOST_ARCH_ARM64)
   asm volatile("msr FPCR, %x[src]" : : [src] "r"(a));
 #else
   asm volatile("vmsr FPSCR, %[src]" : : [src] "r"(a));
 #endif
+#endif // defined(_MSC_VER) && defined(V8_HOST_ARCH_ARM64)
 }
 }  // namespace
 
