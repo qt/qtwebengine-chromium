@@ -265,7 +265,7 @@ if (current_cpu == "arm64" || current_cpu == "arm64e") {
   # There are known problems with LLVM-based compilers targeting Windows for
   # SVE code generation. Since there are no client Windows devices that
   # support SVE(2) at this time, disable SVE(2) on AArch64 Windows targets.
-  if (!is_win) {
+  if (!is_win && is_clang) {
     source_set("libaom_intrinsics_sve") {
       check_includes = false
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -351,7 +351,7 @@ static_library("libaom") {
       ":libaom_intrinsics_neon_dotprod",
       ":libaom_intrinsics_neon_i8mm",
     ]
-    if (!is_win) {
+    if (!is_win && is_clang) {
       deps += [
         ":libaom_intrinsics_sve",
         ":libaom_intrinsics_sve2",
