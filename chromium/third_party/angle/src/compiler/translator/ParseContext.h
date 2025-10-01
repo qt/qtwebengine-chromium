@@ -26,6 +26,20 @@ struct TMatrixFields
     int col;
 };
 
+struct ClipCullDistanceInfo
+{
+    // Whether the size is specified by redeclaring the built-in
+    uint32_t size = 0;
+    // What is the maximum constant index used with this built-in
+    int32_t maxIndex = -1;
+    // Whether any non-constant indices were used with this built-in
+    bool hasNonConstIndex = false;
+    // Whether .length() has been called on this built-in
+    bool hasArrayLengthMethodCall = false;
+    // A location to associate with post-parse errors
+    TSourceLoc firstEncounter = kNoSourceLoc;
+};
+
 //
 // The following are extra variables needed during parsing, grouped together so
 // they can be passed to the parser without needing a global.
@@ -486,6 +500,21 @@ class TParseContext : angle::NonCopyable
                                       TIntermTyped *falseExpression,
                                       const TSourceLoc &line);
 
+    uint32_t getClipDistanceArraySize() const
+    {
+        return mClipDistanceInfo.size > 0 ? mClipDistanceInfo.size : mClipDistanceInfo.maxIndex + 1;
+    }
+    uint32_t getCullDistanceArraySize() const
+    {
+        return mCullDistanceInfo.size > 0 ? mCullDistanceInfo.size : mCullDistanceInfo.maxIndex + 1;
+    }
+    bool isClipDistanceRedeclared() const { return mClipDistanceInfo.size > 0; }
+    bool isCullDistanceRedeclared() const { return mCullDistanceInfo.size > 0; }
+    bool isClipDistanceUsed() const
+    {
+        return mClipDistanceInfo.maxIndex >= 0 || mClipDistanceInfo.hasNonConstIndex;
+    }
+
     int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
     int getGeometryShaderInvocations() const
     {
@@ -517,16 +546,13 @@ class TParseContext : angle::NonCopyable
         return mTessEvaluationShaderInputPointType;
     }
 
-    const TVector<TType *> &getDeferredArrayTypesToSize() const
-    {
-        return mDeferredArrayTypesToSize;
-    }
-
     void markShaderHasPrecise() { mHasAnyPreciseType = true; }
     bool hasAnyPreciseType() const { return mHasAnyPreciseType; }
     AdvancedBlendEquations getAdvancedBlendEquations() const { return mAdvancedBlendEquations; }
 
     ShShaderOutput getOutputType() const { return mOutputType; }
+
+    bool postParseChecks();
 
     const ShCompileOptions &getCompileOptions() const { return mCompileOptions; }
 
@@ -770,6 +796,12 @@ class TParseContext : angle::NonCopyable
     TDirectiveHandler mDirectiveHandler;
     angle::pp::Preprocessor mPreprocessor;
     void *mScanner;
+
+    // keep track of clip/cull distance redeclaration, accessed indices, etc so that gl_ClipDistance
+    // and gl_CullDistance can be validated and sized at the end of compilation.
+    int mMaxCombinedClipAndCullDistances;
+    ClipCullDistanceInfo mClipDistanceInfo;
+    ClipCullDistanceInfo mCullDistanceInfo;
 
     // keep track of local group size declared in layout. It should be declared only once.
     bool mComputeShaderLocalSizeDeclared;
