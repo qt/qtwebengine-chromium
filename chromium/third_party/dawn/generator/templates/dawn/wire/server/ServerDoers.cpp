@@ -82,22 +82,22 @@ namespace dawn::wire::server {
             {% for type in by_category["object"] %}
                 {% set cType = as_cType(type.name) %}
                 case ObjectType::{{type.name.CamelCase()}}: {
-                    Reserved<{{cType}}> obj;
-                    WIRE_TRY(Objects<{{cType}}>().Get(objectId, &obj));
+                    ObjectData<{{cType}}> data;
+                    WIRE_TRY(Free<{{cType}}>(objectId, &data));
 
-                    if (obj->state == AllocationState::Allocated) {
-                        DAWN_ASSERT(obj->handle != nullptr);
+                    //* Handle actually releasing the object after untracking it.
+                    if (data.state == AllocationState::Allocated) {
+                        DAWN_ASSERT(data.handle != nullptr);
                         {% if type.name.get() == "device" %}
                             //* Destroy the device to ensure that the spontaneous callbacks, i.e.
                             //* the uncaptured error and logging callbacks, are cleared, and the
                             //* device lost callback is fired. This is important because once we
                             //* deallocate the ObjectData, those callbacks reference freed memory.
-                            mProcs.deviceDestroy(obj->handle);
+                            mProcs.deviceDestroy(data.handle);
 
                         {% endif %}
-                        Release(obj->handle);
+                        Release(data.handle);
                     }
-                    Objects<{{cType}}>().Free(objectId);
                     return WireResult::Success;
                 }
             {% endfor %}

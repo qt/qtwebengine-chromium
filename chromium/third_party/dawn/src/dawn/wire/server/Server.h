@@ -89,8 +89,10 @@ struct ForwardToServerHelper {
                 // Do nothing if the server has already been destroyed.
                 return;
             }
-            // Forward the arguments and the typed userdata to the Server:: member function.
-            (server.get()->*F)(data.get(), std::forward<decltype(args)>(args)...);
+            {
+                auto serverGuard = server.get()->GetGuard();
+                (server.get()->*F)(data.get(), std::forward<decltype(args)>(args)...);
+            }
         }
     };
 
@@ -188,7 +190,7 @@ class Server : public ServerBase {
     WireResult InjectInstance(WGPUInstance instance, const Handle& handle);
 
     WGPUDevice GetDevice(uint32_t id, uint32_t generation);
-    bool IsDeviceKnown(WGPUDevice device) const;
+    using ServerBase::IsDeviceKnown;
 
     template <typename T,
               typename Enable = std::enable_if<std::is_base_of<CallbackUserdata, T>::value>>
@@ -209,15 +211,6 @@ class Server : public ServerBase {
     template <typename Cmd, typename... Extensions>
     void SerializeCommand(const Cmd& cmd, Extensions&&... es) {
         mSerializer->SerializeCommand(cmd, std::forward<Extensions>(es)...);
-    }
-
-    template <typename T>
-    WireResult FillReservation(ObjectId id, T handle, Known<T>* known = nullptr) {
-        auto result = Objects<T>().FillReservation(id, handle, known);
-        if (result == WireResult::FatalError) {
-            Release(handle);
-        }
-        return result;
     }
 
     // Wrapper RAII helper for structs with FreeMember calls.

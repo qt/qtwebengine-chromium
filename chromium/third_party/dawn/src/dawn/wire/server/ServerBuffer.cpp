@@ -50,7 +50,7 @@ WireResult Server::PreHandleDeviceCreateErrorBuffer(const DeviceCreateErrorBuffe
 
 WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
     Known<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Get(cmd.selfId, &buffer));
+    WIRE_TRY(Get(cmd.selfId, &buffer));
 
     if (buffer->mappedAtCreation && !(buffer->usage & WGPUBufferUsage_MapWrite)) {
         // This indicates the writeHandle is for mappedAtCreation only. Destroy on unmap
@@ -65,7 +65,7 @@ WireResult Server::PreHandleBufferUnmap(const BufferUnmapCmd& cmd) {
 WireResult Server::PreHandleBufferDestroy(const BufferDestroyCmd& cmd) {
     // Destroying a buffer does an implicit unmapping.
     Known<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Get(cmd.selfId, &buffer));
+    WIRE_TRY(Get(cmd.selfId, &buffer));
 
     // The buffer was destroyed. Clear the Read/WriteHandle.
     buffer->readHandle = nullptr;
@@ -128,7 +128,7 @@ WireResult Server::DoDeviceCreateBuffer(Known<WGPUDevice> device,
                                         const uint8_t* writeHandleCreateInfo) {
     // Create and register the buffer object.
     Reserved<WGPUBuffer> buffer;
-    WIRE_TRY(Objects<WGPUBuffer>().Allocate(&buffer, bufferHandle));
+    WIRE_TRY(Allocate(&buffer, bufferHandle));
     buffer->handle = mProcs.deviceCreateBuffer(device->handle, descriptor);
     buffer->usage = descriptor->usage;
     buffer->mappedAtCreation = (descriptor->mappedAtCreation != 0u);
@@ -242,7 +242,7 @@ void Server::OnBufferMapAsyncCallback(MapUserdata* data,
                                       WGPUStringView message) {
     // Skip sending the callback if the buffer has already been destroyed.
     Known<WGPUBuffer> buffer;
-    if (Objects<WGPUBuffer>().Get(data->buffer.id, &buffer) != WireResult::Success ||
+    if (Get(data->buffer.id, &buffer) != WireResult::Success ||
         buffer->generation != data->buffer.generation) {
         return;
     }
