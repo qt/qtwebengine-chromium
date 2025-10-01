@@ -44,7 +44,7 @@ std::shared_ptr<Server> Server::Create(const DawnProcTable& procs,
 Server::Server(const DawnProcTable& procs,
                CommandSerializer* serializer,
                MemoryTransferService* memoryTransferService)
-    : mSerializer(serializer), mProcs(procs), mMemoryTransferService(memoryTransferService) {
+    : ServerBase(procs), mSerializer(serializer), mMemoryTransferService(memoryTransferService) {
     if (mMemoryTransferService == nullptr) {
         // If a MemoryTransferService is not provided, fallback to inline memory.
         mOwnedMemoryTransferService = CreateInlineMemoryTransferService();
@@ -58,7 +58,7 @@ Server::~Server() {
     for (WGPUDevice device : Objects<WGPUDevice>().GetAllHandles()) {
         mProcs.deviceDestroy(device);
     }
-    DestroyAllObjects(mProcs);
+    DestroyAllObjects();
 }
 
 WireResult Server::InjectBuffer(WGPUBuffer buffer,

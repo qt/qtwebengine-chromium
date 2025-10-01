@@ -215,7 +215,7 @@ class Server : public ServerBase {
     WireResult FillReservation(ObjectId id, T handle, Known<T>* known = nullptr) {
         auto result = Objects<T>().FillReservation(id, handle, known);
         if (result == WireResult::FatalError) {
-            Release(mProcs, handle);
+            Release(handle);
         }
         return result;
     }
@@ -276,7 +276,6 @@ class Server : public ServerBase {
 
     WireDeserializeAllocator mAllocator;
     MutexProtected<ChunkedCommandSerializer> mSerializer;
-    DawnProcTable mProcs;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
     raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
 

@@ -95,7 +95,7 @@ namespace dawn::wire::server {
                             mProcs.deviceDestroy(obj->handle);
 
                         {% endif %}
-                        Release(mProcs, obj->handle);
+                        Release(obj->handle);
                     }
                     Objects<{{cType}}>().Free(objectId);
                     return WireResult::Success;
