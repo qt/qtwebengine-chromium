@@ -16,6 +16,7 @@
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/functions.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/lib.rs.h"
 
+#if BUILDFLAG(ENABLE_RUST)
 namespace {
 const char kSecurityJsonParsingTime[] = "Security.JSONParser.ParsingTime";
 }  // namespace
@@ -121,6 +122,8 @@ base::JSONReader::Result DecodeJSONInRust(std::string_view json,
 
 }  // namespace
 }  // namespace serde_json_lenient
+
+#endif  // BUILDFLAG(ENABLE_RUST)
 
 namespace base {
 
