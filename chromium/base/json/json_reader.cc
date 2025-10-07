@@ -21,7 +21,6 @@
 #include "base/strings/string_view_rust.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/functions.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/lib.rs.h"
-#endif
 
 // This namespace defines FFI-friendly functions that are be called from Rust in
 // //third_party/rust/serde_json_lenient/v0_2/wrapper/.
@@ -124,6 +123,8 @@ base::JSONReader::Result DecodeJSONInRust(std::string_view json,
 
 }  // namespace
 }  // namespace serde_json_lenient
+
+#endif  // BUILDFLAG(ENABLE_RUST)
 
 namespace base {
 
