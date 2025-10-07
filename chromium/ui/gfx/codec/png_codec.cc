@@ -12,13 +12,19 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
-#include "third_party/skia/include/codec/SkPngRustDecoder.h"
+#include "skia/buildflags.h"
+#include "third_party/skia/include/codec/SkPngDecoder.h"
+#include "third_party/skia/include/core/SkAlphaType.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
-#include "third_party/skia/include/encode/SkPngRustEncoder.h"
 #include "ui/gfx/codec/vector_wstream.h"
 #include "ui/gfx/geometry/size.h"
+
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
+#include "third_party/skia/include/codec/SkPngRustDecoder.h"
+#include "third_party/skia/include/encode/SkPngRustEncoder.h"
+#endif
 
 namespace gfx {
 
@@ -34,7 +40,11 @@ namespace {
 
 std::unique_ptr<SkCodec> CreatePngDecoder(std::unique_ptr<SkStream> stream,
                                           SkCodec::Result* result) {
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
   return SkPngRustDecoder::Decode(std::move(stream), result);
+#else
+  return SkPngDecoder::Decode(std::move(stream), result);
+#endif
 }
 
 struct PreparationOutputPC {

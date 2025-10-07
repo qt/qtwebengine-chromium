@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
+#include "skia/buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/graphics/color_behavior.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder_test_helpers.h"
@@ -1868,6 +1869,7 @@ TEST(PNGTests, SmallFctlBeforeIdat) {
   }
 }
 
+#if BUILDFLAG(SKIA_BUILD_RUST_PNG)
 // Regression test for a scenario somewhat-but-not-quite related to
 // https://crbug.com/428205250: an image with the following chunks:
 //

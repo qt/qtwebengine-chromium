@@ -33,6 +33,7 @@ import("//pdf/features.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//remoting/remoting_enable.gni")
 import("//services/on_device_model/on_device_model.gni")
+import("//skia/skia.gni")
 import("//third_party/closure_compiler/compile_js.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 import("//ui/base/ui_features.gni")
@@ -846,7 +847,7 @@ group("all_rust") {
     deps += [ "//testing/rust_gtest_interop:rust_gtest_interop_unittests" ]
   }
 
-  if (!is_cronet_build) {
+  if (enable_rust_png && !is_cronet_build) {
     deps += [ "//skia" ]
   }
 
