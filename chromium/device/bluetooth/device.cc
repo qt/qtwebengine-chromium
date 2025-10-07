@@ -8,12 +8,35 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "device/bluetooth/device.h"
-#include "device/bluetooth/public/mojom/gatt_result_type_converter.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 
 namespace bluetooth {
+static mojom::GattResult ConvertToGattResult(
+      const device::BluetoothGattService::GattErrorCode& input) {
+  switch (input) {
+    case device::BluetoothGattService::GattErrorCode::kUnknown:
+      return mojom::GattResult::UNKNOWN;
+    case device::BluetoothGattService::GattErrorCode::kFailed:
+      return mojom::GattResult::FAILED;
+    case device::BluetoothGattService::GattErrorCode::kInProgress:
+      return mojom::GattResult::IN_PROGRESS;
+    case device::BluetoothGattService::GattErrorCode::kInvalidLength:
+      return mojom::GattResult::INVALID_LENGTH;
+    case device::BluetoothGattService::GattErrorCode::kNotPermitted:
+      return mojom::GattResult::NOT_PERMITTED;
+    case device::BluetoothGattService::GattErrorCode::kNotAuthorized:
+      return mojom::GattResult::NOT_AUTHORIZED;
+    case device::BluetoothGattService::GattErrorCode::kNotPaired:
+      return mojom::GattResult::NOT_PAIRED;
+    case device::BluetoothGattService::GattErrorCode::kNotSupported:
+      return mojom::GattResult::NOT_SUPPORTED;
+  }
+  NOTREACHED();
+}
+
 Device::~Device() {
   adapter_->RemoveObserver(this);
 }
@@ -350,7 +373,7 @@ void Device::OnReadRemoteCharacteristic(
     const std::vector<uint8_t>& value) {
   if (error_code.has_value()) {
     std::move(callback).Run(
-        mojo::ConvertTo<mojom::GattResult>(error_code.value()),
+        ConvertToGattResult(error_code.value()),
         std::nullopt /* value */);
     return;
   }
@@ -365,7 +388,7 @@ void Device::OnWriteRemoteCharacteristic(
 void Device::OnWriteRemoteCharacteristicError(
     WriteValueForCharacteristicCallback callback,
     device::BluetoothGattService::GattErrorCode error_code) {
-  std::move(callback).Run(mojo::ConvertTo<mojom::GattResult>(error_code));
+  std::move(callback).Run(ConvertToGattResult(error_code));
 }
 
 void Device::OnReadRemoteDescriptor(
@@ -374,7 +397,7 @@ void Device::OnReadRemoteDescriptor(
     const std::vector<uint8_t>& value) {
   if (error_code.has_value()) {
     std::move(callback).Run(
-        mojo::ConvertTo<mojom::GattResult>(error_code.value()),
+        ConvertToGattResult(error_code.value()),
         /*value=*/std::nullopt);
     return;
   }
@@ -388,7 +411,7 @@ void Device::OnWriteRemoteDescriptor(WriteValueForDescriptorCallback callback) {
 void Device::OnWriteRemoteDescriptorError(
     WriteValueForDescriptorCallback callback,
     device::BluetoothGattService::GattErrorCode error_code) {
-  std::move(callback).Run(mojo::ConvertTo<mojom::GattResult>(error_code));
+  std::move(callback).Run(ConvertToGattResult(error_code));
 }
 
 const std::string& Device::GetAddress() {
