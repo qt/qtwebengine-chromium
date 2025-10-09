@@ -40,12 +40,13 @@ class RendererURLLoaderThrottle : public blink::URLLoaderThrottle,
       mojom::SafeBrowsing* safe_browsing,
       base::optional_ref<const blink::LocalFrameToken> local_frame_token);
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  // |extension_web_request_reporter_pending_remote| is used for sending
+  // |extension_web_request_reporter| is used for sending
   // extension web requests to the browser.
   RendererURLLoaderThrottle(
       mojom::SafeBrowsing* safe_browsing,
       base::optional_ref<const blink::LocalFrameToken> local_frame_token,
-      mojom::ExtensionWebRequestReporter* extension_web_request_reporter);
+      mojo::PendingRemote<mojom::ExtensionWebRequestReporter>
+          extension_web_request_reporter);
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
   ~RendererURLLoaderThrottle() override;
 
@@ -75,6 +76,8 @@ class RendererURLLoaderThrottle : public blink::URLLoaderThrottle,
   FRIEND_TEST_ALL_PREFIXES(
       SBRendererUrlLoaderThrottleDisableSkipSubresourcesTest,
       DefersHttpsImageUrl);
+  FRIEND_TEST_ALL_PREFIXES(SBRendererUrlLoaderThrottleTest,
+                           WillRedirectRequest_ProviderDestroyed_NoCrash);
 
   // blink::URLLoaderThrottle implementation.
   void DetachFromCurrentSequence() override;
@@ -145,12 +148,10 @@ class RendererURLLoaderThrottle : public blink::URLLoaderThrottle,
   // originated from an extension and destination is HTTP/HTTPS scheme only.
   void MaybeSendExtensionWebRequestData(network::ResourceRequest* request);
 
-  raw_ptr<mojom::ExtensionWebRequestReporter, ExperimentalRenderer>
+  mojo::Remote<mojom::ExtensionWebRequestReporter>
       extension_web_request_reporter_;
   mojo::PendingRemote<mojom::ExtensionWebRequestReporter>
-      extension_web_request_reporter_pending_remote_;
-  mojo::Remote<mojom::ExtensionWebRequestReporter>
-      extension_web_request_reporter_remote_;
+      pending_extension_web_request_reporter_;
   // Tracks if the request originated from an extension, used during redirects
   // to send web request data to the telemetry service.
   std::string origin_extension_id_;

@@ -177,17 +177,13 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
     }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-    if (pending_extension_web_request_reporter_) {
-      extension_web_request_reporter_.Bind(
-          std::move(pending_extension_web_request_reporter_));
-    }
-
     auto throttle = std::make_unique<safe_browsing::RendererURLLoaderThrottle>(
         safe_browsing_.get(), local_frame_token,
         extension_web_request_reporter_.get());
 #else
     auto throttle = std::make_unique<safe_browsing::RendererURLLoaderThrottle>(
-        safe_browsing_.get(), local_frame_token);
+        safe_browsing_.get(), local_frame_token,
+        CloneExtensionWebRequestReporterPendingRemote());
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
     throttles.emplace_back(std::move(throttle));
   }
