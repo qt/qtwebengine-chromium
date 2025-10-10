@@ -918,8 +918,10 @@ def GetThirdPartyDepsFromGNDepsOutput(
   return third_party_deps
 
 
-def FindThirdPartyDeps(gn_out_dir: str,
+def FindThirdPartyDeps(gn_binary : str,
+                       gn_out_dir: str,
                        gn_target: str,
+                       gn_generate: bool,
                        scan_root: str,
                        exclude_dirs: Optional[List[str]] = None,
                        extra_third_party_dirs: Optional[List[str]] = None,
@@ -935,15 +937,20 @@ def FindThirdPartyDeps(gn_out_dir: str,
   with tempfile.TemporaryDirectory(
       dir=os.path.join(gn_out_dir, '..')) as tmp_dir:
     shutil.copy(os.path.join(gn_out_dir, "args.gn"), tmp_dir)
-    # "gn desc" requires "build.ninja", but ok with empty "build.ninja".
-    # "gn gen" is slow and requires too much memory.
-    with open(os.path.join(tmp_dir, "build.ninja"), "w") as w:
-      pass
-    cmd = _GnBinary() + [
+    if not gn_generate:
+      # "gn desc" requires "build.ninja", but ok with empty "build.ninja".
+      # "gn gen" is slow and requires too much memory.
+      with open(os.path.join(tmp_dir, "build.ninja"), "w") as w:
+        pass
+    else:
+       tmp_dir = gn_out_dir
+    cmd = gn_binary + [
         "desc",
+        "--script-executable=%s" % sys.executable,
         "--root=%s" % scan_root, tmp_dir, gn_target, "deps", "--as=buildfile",
         "--all"
     ]
+                                      stderr=sys.stderr)
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, encoding='utf-8')
     if proc.returncode:
       sys.stderr.write('Failed: ' + shlex.join(cmd) + '\n')
@@ -970,7 +977,9 @@ def _DiscoverMetadatas(args):
     ]
 
   if args.gn_target is not None:
-    third_party_dirs = FindThirdPartyDeps(args.gn_out_dir, args.gn_target,
+    third_party_dirs = FindThirdPartyDeps(args.gn_binary,
+                                          args.gn_out_dir, args.gn_target,
+                                          args.gn_generate,
                                           args.scan_root, args.exclude_dirs,
                                           extra_third_party_dirs,
                                           args.extra_allowed_dirs)
@@ -1042,6 +1051,7 @@ def GenerateCredits(args, metadatas):
     for key, val in env.items():
       if escape:
         val = html.escape(val)
+        val = val.replace("*/", "* /")
       template = template.replace('{{%s}}' % key, val)
     return template
 
@@ -1052,8 +1062,10 @@ def GenerateCredits(args, metadatas):
 
     env = {
         'name': metadata['Name'],
+        'name-sanitized': metadata['Name'].replace(' ', '-'),
         'url': metadata['URL'],
         'license': license_content,
+        'license-type': metadata['License']
     }
 
     return {
@@ -1295,6 +1307,8 @@ def _AddCommonArgs(parser):
   parser.add_argument('--gn-out-dir',
                       help='GN output directory for scanning dependencies.')
   parser.add_argument('--gn-target', help='GN target to scan for dependencies.')
+  parser.add_argument('--gn-binary', help="GN binary location.")
+  parser.add_argument('--gn-generate', action='store_false', help='Generates gn project.')
   parser.add_argument(
       '--enable-warnings',
       action='store_true',
@@ -1376,6 +1390,9 @@ def main():
             args.exclude_dirs):
     if os.path.isabs(p):
       parser.error('Expected paths to be relative to scan root. Found: ' + p)
+
+  if not args.gn_binary:
+    args.gn_binary = _GnBinary()
 
   metadatas, had_errors = _DiscoverMetadatas(args)
 
