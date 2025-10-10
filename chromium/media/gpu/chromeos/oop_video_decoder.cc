@@ -10,7 +10,6 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
-#include "chromeos/components/cdm_factory_daemon/cdm_context_for_oopvd_impl.h"
 #include "media/base/format_utils.h"
 #include "media/base/video_util.h"
 #include "media/gpu/buffer_validation.h"
@@ -22,6 +21,10 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chromeos/components/cdm_factory_daemon/cdm_context_for_oopvd_impl.h"
+#endif
 
 #if BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"
