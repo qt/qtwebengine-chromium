@@ -14,7 +14,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/not_fatal_until.h"
-#include "base/notreached.h"
 #include "build/build_config.h"
 #include "device/bluetooth/advertisement.h"
 #include "device/bluetooth/bluetooth_local_gatt_service.h"
@@ -24,6 +23,7 @@
 #include "device/bluetooth/floss/floss_features.h"
 #include "device/bluetooth/gatt_service.h"
 #include "device/bluetooth/public/cpp/bluetooth_uuid.h"
+#include "device/bluetooth/public/mojom/connect_result_type_converter.h"
 #include "device/bluetooth/server_socket.h"
 #include "device/bluetooth/socket.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -44,58 +44,6 @@ const char kCannotConnectToDeviceError[] = "Cannot connect to device.";
 #endif
 
 }  // namespace
-
-static mojom::ConnectResult ConvertToConnectResult(
-      const device::BluetoothDevice::ConnectErrorCode& input) {
-  switch (input) {
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_CANCELED:
-      return mojom::ConnectResult::AUTH_CANCELED;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_FAILED:
-      return mojom::ConnectResult::AUTH_FAILED;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_REJECTED:
-      return mojom::ConnectResult::AUTH_REJECTED;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_TIMEOUT:
-      return mojom::ConnectResult::AUTH_TIMEOUT;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_FAILED:
-      return mojom::ConnectResult::FAILED;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_INPROGRESS:
-      return mojom::ConnectResult::INPROGRESS;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_UNKNOWN:
-      return mojom::ConnectResult::UNKNOWN;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_UNSUPPORTED_DEVICE:
-      return mojom::ConnectResult::UNSUPPORTED_DEVICE;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_DEVICE_NOT_READY:
-      return mojom::ConnectResult::NOT_READY;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_ALREADY_CONNECTED:
-      return mojom::ConnectResult::ALREADY_CONNECTED;
-    case device::BluetoothDevice::ConnectErrorCode::
-        ERROR_DEVICE_ALREADY_EXISTS:
-      return mojom::ConnectResult::ALREADY_EXISTS;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_DEVICE_UNCONNECTED:
-      return mojom::ConnectResult::NOT_CONNECTED;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_DOES_NOT_EXIST:
-      return mojom::ConnectResult::DOES_NOT_EXIST;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_INVALID_ARGS:
-      return mojom::ConnectResult::INVALID_ARGS;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_NON_AUTH_TIMEOUT:
-      return mojom::ConnectResult::NON_AUTH_TIMEOUT;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_NO_MEMORY:
-      return mojom::ConnectResult::NO_MEMORY;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_JNI_ENVIRONMENT:
-      return mojom::ConnectResult::JNI_ENVIRONMENT;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_JNI_THREAD_ATTACH:
-      return mojom::ConnectResult::JNI_THREAD_ATTACH;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_WAKELOCK:
-      return mojom::ConnectResult::WAKELOCK;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_UNEXPECTED_STATE:
-      return mojom::ConnectResult::UNEXPECTED_STATE;
-    case device::BluetoothDevice::ConnectErrorCode::ERROR_SOCKET:
-      return mojom::ConnectResult::SOCKET;
-    case device::BluetoothDevice::ConnectErrorCode::NUM_CONNECT_ERROR_CODES:
-      NOTREACHED();
-  }
-  NOTREACHED();
-}
 
 Adapter::ConnectToServiceRequestDetails::ConnectToServiceRequestDetails(
     const std::string& address,
@@ -530,7 +478,7 @@ void Adapter::OnGattConnect(
     std::optional<device::BluetoothDevice::ConnectErrorCode> error_code) {
   if (error_code.has_value()) {
     std::move(callback).Run(
-        ConvertToConnectResult(error_code.value()),
+        mojo::ConvertTo<mojom::ConnectResult>(error_code.value()),
         /*device=*/mojo::NullRemote());
     return;
   }
