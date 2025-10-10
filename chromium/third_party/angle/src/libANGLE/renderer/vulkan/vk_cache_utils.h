@@ -3013,15 +3013,9 @@ class UpdateDescriptorSetsBuilder final : angle::NonCopyable
     {
         return mDescriptorBufferInfos.allocate(count);
     }
-    VkDescriptorImageInfo *allocDescriptorImageInfos(uint32_t count)
-    {
-        return mDescriptorImageInfos.allocate(count);
-    }
-    VkWriteDescriptorSet *allocWriteDescriptorSets(uint32_t count)
-    {
-        return mWriteDescriptorSets.allocate(count);
-    }
-    VkBufferView *allocBufferViews(uint32_t count) { return mBufferViews.allocate(count); }
+    VkDescriptorImageInfo *allocDescriptorImageInfos(uint32_t count);
+    VkWriteDescriptorSet *allocWriteDescriptorSets(uint32_t count);
+    VkBufferView *allocBufferViews(uint32_t count);
 
     VkDescriptorBufferInfo &allocDescriptorBufferInfo() { return *allocDescriptorBufferInfos(1); }
     VkDescriptorImageInfo &allocDescriptorImageInfo() { return *allocDescriptorImageInfos(1); }
