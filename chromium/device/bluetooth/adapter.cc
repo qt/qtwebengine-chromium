@@ -478,7 +478,9 @@ void Adapter::OnGattConnect(
     std::optional<device::BluetoothDevice::ConnectErrorCode> error_code) {
   if (error_code.has_value()) {
     std::move(callback).Run(
-        mojo::ConvertTo<mojom::ConnectResult>(error_code.value()),
+        mojo::TypeConverter<
+          mojom::ConnectResult,
+          device::BluetoothDevice::ConnectErrorCode>::Convert(error_code.value()),
         /*device=*/mojo::NullRemote());
     return;
   }
