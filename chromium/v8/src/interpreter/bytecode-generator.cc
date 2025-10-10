@@ -582,7 +582,10 @@ class BytecodeGenerator::ControlScopeForIteration final
                            LoopBuilder* loop_builder)
       : ControlScope(generator),
         statement_(statement),
-        loop_builder_(loop_builder) {}
+        loop_builder_(loop_builder),
+        merge_elider_(generator) {}
+
+  HoleCheckElisionMergeScope& merge_elider() { return merge_elider_; }
 
  protected:
   bool Execute(Command command, Statement* statement,
@@ -594,6 +597,7 @@ class BytecodeGenerator::ControlScopeForIteration final
         loop_builder_->Break();
         return true;
       case CMD_CONTINUE:
+        merge_elider_.MergeBranch(generator());
         PopContextToExpectedDepth();
         loop_builder_->Continue();
         return true;
@@ -608,6 +612,7 @@ class BytecodeGenerator::ControlScopeForIteration final
  private:
   Statement* statement_;
   LoopBuilder* loop_builder_;
+  HoleCheckElisionMergeScope merge_elider_;
 };
 
 // Scoped class for enabling 'throw' in try-catch constructs.
@@ -2942,7 +2947,12 @@ void BytecodeGenerator::VisitIterationBody(IterationStatement* stmt,
                                            LoopBuilder* loop_builder) {
   loop_builder->LoopBody();
   ControlScopeForIteration execution_control(this, stmt, loop_builder);
-  Visit(stmt->body());
+  {
+    HoleCheckElisionMergeScope::Branch branch_elider(
+        execution_control.merge_elider());
+    Visit(stmt->body());
+  }
+  execution_control.merge_elider().Merge();
   loop_builder->BindContinueTarget();
 }
 
