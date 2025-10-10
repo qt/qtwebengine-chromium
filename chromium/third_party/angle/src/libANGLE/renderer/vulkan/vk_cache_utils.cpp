@@ -7340,6 +7340,19 @@ void UpdateDescriptorSetsBuilder::updateWriteDescriptorSet(
     }
 }
 
+VkDescriptorImageInfo *UpdateDescriptorSetsBuilder::allocDescriptorImageInfos(uint32_t count)
+{
+    return mDescriptorImageInfos.allocate(count);
+}
+VkWriteDescriptorSet *UpdateDescriptorSetsBuilder::allocWriteDescriptorSets(uint32_t count)
+{
+    return mWriteDescriptorSets.allocate(count);
+}
+VkBufferView *UpdateDescriptorSetsBuilder::allocBufferViews(uint32_t count)
+{
+    return mBufferViews.allocate(count);
+}
+
 // FramebufferCache implementation.
 void FramebufferCache::destroy(vk::Renderer *renderer)
 {
