@@ -6,7 +6,7 @@ import("//build/config/linux/pkg_config.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 
-assert(is_linux || is_chromeos)
+assert(is_linux || is_chromeos || is_qtwebengine)
 
 source_set("drm") {
   sources = [
