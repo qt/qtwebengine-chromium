@@ -12,7 +12,11 @@
 #include "ui/gfx/geometry/size.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if __has_include(<drm_fourcc.h>)
 #include <drm_fourcc.h>
+#else
+#include <libdrm/drm_fourcc.h>
+#endif
 #include <unistd.h>
 
 #include "base/posix/eintr_wrapper.h"

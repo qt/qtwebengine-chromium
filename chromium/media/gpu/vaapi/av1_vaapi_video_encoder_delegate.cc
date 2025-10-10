@@ -323,7 +323,11 @@ AV1BitstreamBuilder::FrameHeader FillAV1BuilderFrameHeader(
   for (size_t i = 0; i < libgav1::kNumInterReferenceFrameTypes; ++i) {
     pic_hdr.ref_frame_idx[i] = pic_param.ref_frame_idx[i];
   }
+#if VA_CHECK_VERSION(1, 15, 0)
   pic_hdr.refresh_frame_flags = pic_param.refresh_frame_flags;
+#else
+  pic_hdr.refresh_frame_flags = pic_param.reserved16bits0;
+#endif
   // Set order hint for each reference frame.
   pic_hdr.ref_order_hint[0] = pic_param.order_hint - 1;
   // Since we only use the last frame as the reference, these should
@@ -853,7 +857,11 @@ bool AV1VaapiVideoEncoderDelegate::FillPictureParam(
 #endif
   pic_param.primary_ref_frame =
       is_keyframe ? kPrimaryReferenceNone : pic_param.ref_frame_idx[0];
+#if VA_CHECK_VERSION(1, 15, 0)
   pic_param.refresh_frame_flags = pic.frame_header.refresh_frame_flags;
+#else
+  pic_param.reserved16bits0 = pic.frame_header.refresh_frame_flags;
+#endif
 
   pic_param.order_hint = frame_num_ & 0xFF;
 
