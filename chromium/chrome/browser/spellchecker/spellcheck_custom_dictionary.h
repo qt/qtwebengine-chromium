@@ -16,10 +16,13 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/task/sequenced_task_runner.h"
+#include "build/build_config.h"
 #include "components/spellcheck/browser/spellcheck_dictionary.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/model/model_error.h"
 #include "components/sync/model/sync_data.h"
 #include "components/sync/model/syncable_service.h"
+#endif
 
 namespace base {
 class Location;
@@ -38,8 +41,12 @@ class SyncChangeProcessor;
 //   foo
 //   checksum_v1 = ec3df4034567e59e119fcf87f2d9bad4
 //
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class SpellcheckCustomDictionary final : public SpellcheckDictionary,
                                          public syncer::SyncableService {
+#else
+class SpellcheckCustomDictionary final : public SpellcheckDictionary {
+#endif
  public:
   // A change to the dictionary.
   class Change {
@@ -161,12 +168,15 @@ class SpellcheckCustomDictionary final : public SpellcheckDictionary,
   // Returns true if the dictionary has been loaded. Otherwise returns false.
   bool IsLoaded();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns true if the dictionary is being synced. Otherwise returns false.
   bool IsSyncing();
+#endif
 
   // Overridden from SpellcheckDictionary:
   void Load() override;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Overridden from syncer::SyncableService:
   void WaitUntilReadyToSync(base::OnceClosure done) override;
   std::optional<syncer::ModelError> MergeDataAndStartSyncing(
@@ -179,6 +189,7 @@ class SpellcheckCustomDictionary final : public SpellcheckDictionary,
       const base::Location& from_here,
       const syncer::SyncChangeList& change_list) override;
   base::WeakPtr<SyncableService> AsWeakPtr() override;
+#endif
 
  private:
   friend class DictionarySyncIntegrationTestHelper;
@@ -214,10 +225,12 @@ class SpellcheckCustomDictionary final : public SpellcheckDictionary,
   // |dictionary_change| to pass it to the FILE thread.
   void Save(std::unique_ptr<Change> dictionary_change);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Notifies the sync service of the |dictionary_change|. Syncs up to the
   // maximum syncable words on the server. Disables syncing of this dictionary
   // if the server contains the maximum number of syncable words.
   std::optional<syncer::ModelError> Sync(const Change& dictionary_change);
+#endif
 
   // Notifies observers of the dictionary change if the dictionary has been
   // changed.
@@ -235,8 +248,10 @@ class SpellcheckCustomDictionary final : public SpellcheckDictionary,
   // Observers for dictionary load and content changes.
   base::ObserverList<Observer>::Unchecked observers_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Used to send local changes to the sync infrastructure.
   std::unique_ptr<syncer::SyncChangeProcessor> sync_processor_;
+#endif
 
   // True if the dictionary has been loaded. Otherwise false.
   bool is_loaded_;
