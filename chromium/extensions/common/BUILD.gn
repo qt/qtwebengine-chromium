@@ -519,6 +519,7 @@ jumbo_static_library("common") {
   jumbo_excluded_sources = [
     "manifest_handlers/file_handler_info.cc",
     "manifest_handlers/permissions_parser.cc",
+    "manifest_url_handlers.cc",
   ]
 
   deps = [

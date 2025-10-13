@@ -544,7 +544,7 @@ bool RenderViewHostImpl::CreateRenderView(
                   frame_tree_node->current_frame_host()->GetFrameToken()));
     } else if (frame_tree_->is_prerendering() &&
                (!base::FeatureList::IsEnabled(
-                    features::kPrerenderMoreCorrectSpeculativeRFHCreation) ||
+                    ::features::kPrerenderMoreCorrectSpeculativeRFHCreation) ||
                 main_rfh->lifecycle_state() ==
                     RenderFrameHostImpl::LifecycleStateImpl::kSpeculative)) {
       // During prerender, the browser may need to create new speculative local

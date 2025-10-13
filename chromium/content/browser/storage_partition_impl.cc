@@ -1441,9 +1441,9 @@ void StoragePartitionImpl::Initialize(
   // traffic labels should not be sent for off-the-record profiles, unless the
   // "enable_otr_profiles" feature parameter is true.
   if (base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTesting) &&
+          ::features::kCookieDeprecationFacilitatedTesting) &&
       (!is_in_memory() ||
-       features::kCookieDeprecationFacilitatedTestingEnableOTRProfiles.Get())) {
+       ::features::kCookieDeprecationFacilitatedTestingEnableOTRProfiles.Get())) {
     cookie_deprecation_label_manager_ =
         std::make_unique<CookieDeprecationLabelManagerImpl>(browser_context_);
   }
@@ -1969,7 +1969,7 @@ void StoragePartitionImpl::DeleteStaleSessionData() {
   GetDOMStorageContext()->StartScavengingUnusedSessionStorage();
 
   if (base::FeatureList::IsEnabled(
-          features::kDeleteStaleSessionCookiesOnStartup)) {
+          ::features::kDeleteStaleSessionCookiesOnStartup)) {
     // We need to delay deleting stale session cookies until after the cookie db
     // has initialized, otherwise we will bypass lazy loading and block.
     // See crbug.com/40285083 for more info.

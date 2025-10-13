@@ -2292,7 +2292,7 @@ WebUI* WebContentsImpl::GetWebUI() {
 
 void WebContentsImpl::SetAlwaysSendSubresourceNotifications() {
   if (!base::FeatureList::IsEnabled(
-          features::kReduceSubresourceResponseStartedIPC)) {
+          ::features::kReduceSubresourceResponseStartedIPC)) {
     return;
   }
 
@@ -2522,7 +2522,7 @@ const std::string& WebContentsImpl::GetEncoding() {
 }
 
 void WebContentsImpl::Discard() {
-  if (!base::FeatureList::IsEnabled(features::kWebContentsDiscard)) {
+  if (!base::FeatureList::IsEnabled(::features::kWebContentsDiscard)) {
     NOTREACHED();
   }
 
@@ -3075,7 +3075,7 @@ void WebContentsImpl::AttachInnerWebContents(
     RenderFrameHost* render_frame_host,
     bool is_full_page) {
   // Not reachable with MPArch based guests.
-  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(!base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
 
   OPTIONAL_TRACE_EVENT2("content", "WebContentsImpl::AttachInnerWebContents",
                         "inner_web_contents",
@@ -3193,7 +3193,7 @@ void WebContentsImpl::AttachInnerWebContents(
 void WebContentsImpl::AttachGuestPage(
     std::unique_ptr<GuestPageHolder> guest_page,
     RenderFrameHost* outer_render_frame_host) {
-  CHECK(base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
 
   OPTIONAL_TRACE_EVENT1("content", "WebContentsImpl::AttachGuestPage",
                         "guest_page", static_cast<void*>(guest_page.get()));
@@ -3407,7 +3407,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
   prefs.canvas_2d_layers_enabled =
       command_line.HasSwitch(switches::kEnableCanvas2DLayers) ||
-      base::FeatureList::IsEnabled(features::kEnableCanvas2DLayers);
+      base::FeatureList::IsEnabled(::features::kEnableCanvas2DLayers);
   prefs.antialiased_2d_canvas_disabled =
       command_line.HasSwitch(switches::kDisable2dCanvasAntialiasing);
   prefs.antialiased_clips_2d_canvas_enabled =
@@ -3436,7 +3436,7 @@ const blink::web_pref::WebPreferences WebContentsImpl::ComputeWebPreferences(
   }
 
   prefs.dont_send_key_events_to_javascript =
-      base::FeatureList::IsEnabled(features::kDontSendKeyEventsToJavascript);
+      base::FeatureList::IsEnabled(::features::kDontSendKeyEventsToJavascript);
 
 // TODO(dtapuska): Enable barrel button selection drag support on Android.
 // crbug.com/758042
@@ -3899,7 +3899,7 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params,
   // Checks whether the associated ssl_manager has any certificate error or HTTP
   // exceptions for any host and updates the renderer preferences.
   if (base::FeatureList::IsEnabled(
-          features::kReduceSubresourceResponseStartedIPC) &&
+          ::features::kReduceSubresourceResponseStartedIPC) &&
       GetController().ssl_manager()->HasAllowExceptionForAnyHost()) {
     renderer_preferences_.send_subresource_notification = true;
     SyncRendererPrefs();
@@ -4299,7 +4299,7 @@ void WebContentsImpl::EnterFullscreenMode(
   DCHECK(requesting_frame->IsActive());
   DCHECK(ContainsOrIsFocusedWebContents());
   if (base::FeatureList::IsEnabled(
-          features::kAutomaticFullscreenContentSetting)) {
+          ::features::kAutomaticFullscreenContentSetting)) {
     // Ensure the window is made active to take input focus. The user may have
     // activated another window between making a gesture and the site handling
     // that gesture to request fullscreen. The experimental automatic fullscreen
@@ -4834,7 +4834,7 @@ bool WebContentsImpl::OnRenderFrameProxyVisibilityChanged(
   }
 
   // Not reachable with MPArch based guests.
-  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
+  CHECK(!base::FeatureList::IsEnabled(::features::kGuestViewMPArch));
 
   DCHECK(GetOuterWebContents());
 
@@ -4912,7 +4912,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
       params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
 
   bool is_guest =
-      base::FeatureList::IsEnabled(features::kGuestViewMPArch)
+      base::FeatureList::IsEnabled(::features::kGuestViewMPArch)
           ? opener->GetOutermostMainFrame()->frame_tree()->is_guest()
           : IsGuest();
   // While some guest types do not have a guest SiteInstance, the ones that
@@ -4937,7 +4937,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
     site_instance = source_site_instance;
   }
 
-  if (is_guest && base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+  if (is_guest && base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     if (auto* guest = GuestPageHolderImpl::FromRenderFrameHost(*opener)) {
       return guest->CreateNewWindow(
           params.disposition, params.target_url, params.frame_name,
@@ -5082,7 +5082,7 @@ FrameTree* WebContentsImpl::CreateNewWindow(
         this, std::move(new_contents), params.target_url, params.disposition,
         *params.features, has_user_gesture, &was_blocked);
 
-    if (base::FeatureList::IsEnabled(features::kPwaNavigationCapturing)) {
+    if (base::FeatureList::IsEnabled(::features::kPwaNavigationCapturing)) {
       // The delegate may delete |new_contents_impl| during AddNewContents().
       // If that occurs and there isn't a replacement contents returned, exit.
       // Otherwise, use the replacement web contents that was navigated in.
@@ -5962,7 +5962,7 @@ WebContents* WebContentsImpl::OpenURL(
   }
 
   if (source_render_frame_host &&
-      base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+      base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     if (auto* guest = GuestPageHolderImpl::FromRenderFrameHost(
             *source_render_frame_host)) {
       if (auto* delegate = guest->delegate()) {
@@ -8067,9 +8067,9 @@ void WebContentsImpl::OnFirstVisuallyNonEmptyPaint(PageImpl& page) {
   }
 #if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(
-          features::kAndroidWarmUpSpareRendererWithTimeout) &&
-      features::kAndroidSpareRendererCreationTiming.Get() ==
-          features::kAndroidSpareRendererCreationAfterFirstPaint) {
+          ::features::kAndroidWarmUpSpareRendererWithTimeout) &&
+      ::features::kAndroidSpareRendererCreationTiming.Get() ==
+          ::features::kAndroidSpareRendererCreationAfterFirstPaint) {
     WarmUpAndroidSpareRenderer();
   }
 #endif
@@ -9164,9 +9164,9 @@ void WebContentsImpl::DidStopLoading() {
 
 #if BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(
-          features::kAndroidWarmUpSpareRendererWithTimeout) &&
-      features::kAndroidSpareRendererCreationTiming.Get() ==
-          features::kAndroidSpareRendererCreationAfterLoading) {
+          ::features::kAndroidWarmUpSpareRendererWithTimeout) &&
+      ::features::kAndroidSpareRendererCreationTiming.Get() ==
+          ::features::kAndroidSpareRendererCreationAfterLoading) {
     WarmUpAndroidSpareRenderer();
   }
 #endif
@@ -9588,7 +9588,7 @@ void WebContentsImpl::SetFocusedFrame(FrameTreeNode* node,
   // TODO(https://crbug.com/376085320): MPArch based <webview> allows focus on
   // the inner frame tree node. For now, disable this DCHECK when the flag is
   // enabled.
-  DCHECK(base::FeatureList::IsEnabled(features::kGuestViewMPArch) ||
+  DCHECK(base::FeatureList::IsEnabled(::features::kGuestViewMPArch) ||
          inner_contents ||
          node->current_frame_host()
              ->inner_tree_main_frame_tree_node_id()
@@ -10988,7 +10988,7 @@ std::vector<FrameTreeNode*> WebContentsImpl::GetUnattachedOwnedNodes(
     return {};
   }
   std::vector<FrameTreeNode*> unattached_owned_nodes;
-  if (base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
+  if (base::FeatureList::IsEnabled(::features::kGuestViewMPArch)) {
     guest_manager->ForEachUnattachedGuestPage(
         owner->GetPage(), [&](GuestPageHolder& guest_page) {
           unattached_owned_nodes.push_back(
@@ -11624,7 +11624,7 @@ std::unique_ptr<PrefetchHandle> WebContentsImpl::StartPrefetch(
     base::WeakPtr<PreloadingAttempt> attempt,
     std::optional<PreloadingHoldbackStatus> holdback_status_override) {
   if (!base::FeatureList::IsEnabled(
-          features::kPrefetchBrowserInitiatedTriggers)) {
+          ::features::kPrefetchBrowserInitiatedTriggers)) {
     return nullptr;
   }
 
@@ -11861,7 +11861,7 @@ void WebContentsImpl::WarmUpAndroidSpareRenderer() {
     return;
   }
   int renderer_timeout_seconds =
-      features::kAndroidSpareRendererTimeoutSeconds.Get();
+      ::features::kAndroidSpareRendererTimeoutSeconds.Get();
   if (renderer_timeout_seconds < 0) {
     SpareRenderProcessHostManagerImpl::Get().WarmupSpare(GetBrowserContext());
   } else {

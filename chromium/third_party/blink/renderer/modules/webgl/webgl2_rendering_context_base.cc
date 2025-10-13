@@ -5907,4 +5907,9 @@ void WebGL2RenderingContextBase::
   WebGLRenderingContextBase::DrawingBufferClientRestorePixelPackParameters();
 }
 
+#undef POPULATE_TEX_IMAGE_2D_PARAMS
+#undef POPULATE_TEX_SUB_IMAGE_2D_PARAMS
+#undef POPULATE_TEX_IMAGE_3D_PARAMS
+#undef POPULATE_TEX_SUB_IMAGE_3D_PARAMS
+
 }  // namespace blink

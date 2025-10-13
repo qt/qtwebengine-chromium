@@ -80,7 +80,7 @@ tracing::mojom::TracingService& TracingServiceController::GetService() {
 
   if (!service_) {
     auto receiver = service_.BindNewPipeAndPassReceiver();
-    if (base::FeatureList::IsEnabled(features::kTracingServiceInProcess)) {
+    if (base::FeatureList::IsEnabled(::features::kTracingServiceInProcess)) {
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN,
            base::WithBaseSyncPrimitives(), base::TaskPriority::USER_BLOCKING})
