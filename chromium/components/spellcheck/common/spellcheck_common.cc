@@ -12,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "third_party/icu/source/common/unicode/urename.h"
 #include "third_party/icu/source/common/unicode/utypes.h"
@@ -112,6 +113,7 @@ std::string GetSpellCheckLanguageRegion(std::string_view input_language) {
 
 base::FilePath GetVersionedFileName(std::string_view input_language,
                                     const base::FilePath& dict_dir) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // The default dictionary version is 3-0. This version indicates that the bdic
   // file contains a checksum.
   static const char kDefaultVersionString[] = "-3-0";
@@ -163,6 +165,9 @@ base::FilePath GetVersionedFileName(std::string_view input_language,
     }
   }
   std::string versioned_bdict_file_name(language + version + ".bdic");
+#else
+  std::string versioned_bdict_file_name(std::string(input_language) + ".bdic");
+#endif
   return dict_dir.AppendASCII(versioned_bdict_file_name);
 }
 

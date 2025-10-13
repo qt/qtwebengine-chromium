@@ -38,7 +38,7 @@ class BrowserContext;
 class RenderProcessHost;
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 namespace extensions {
 class LanguageSettingsPrivateApiTestDelayInit;
 }
@@ -154,7 +154,7 @@ class SpellcheckService : public KeyedService,
   // One-time initialization of dictionaries if needed.
   void InitializeDictionaries(base::OnceClosure done);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Callback for spellcheck_platform::RetrieveSpellcheckLanguages. Populates
   // map of preferred languages to available platform dictionaries then
   // loads the dictionaries.
@@ -184,7 +184,7 @@ class SpellcheckService : public KeyedService,
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT);
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceWindowsHybridBrowserTest,
                            WindowsHybridSpellcheck);
   FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceWindowsHybridBrowserTestDelayInit,
@@ -204,7 +204,7 @@ class SpellcheckService : public KeyedService,
   static std::string GetLanguageAndScriptTag(const std::string& full_tag,
                                              bool include_script_tag);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Returns the language subtag (first part of the full BCP47 tag)
   // if the generic accept language is supported by the browser.
   static std::string GetSupportedAcceptLanguageCodeGenericOnly(
@@ -257,7 +257,7 @@ class SpellcheckService : public KeyedService,
   std::vector<std::string> GetNormalizedAcceptLanguages(
       bool normalize_for_spellcheck = true) const;
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Initializes the platform spell checker.
   void InitializePlatformSpellchecker();
 
@@ -306,7 +306,7 @@ class SpellcheckService : public KeyedService,
   std::vector<std::unique_ptr<SpellcheckHunspellDictionary>>
       hunspell_dictionaries_;
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Maps accept language tags to Windows spellcheck BCP47 tags, an analog
   // of the hardcoded kSupportedSpellCheckerLanguages used for Hunspell,
   // with the difference that only language packs installed on the system
