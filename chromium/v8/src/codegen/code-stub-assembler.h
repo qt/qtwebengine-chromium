@@ -4503,11 +4503,11 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                     Label* bailout);
 
   TNode<Object> CallGetterIfAccessor(
-      TNode<Object> value, TNode<HeapObject> holder, TNode<Uint32T> details,
-      TNode<Context> context, TNode<Object> receiver, TNode<Object> name,
+      TNode<Object> value, std::optional<TNode<HeapObject>> holder, TNode<Uint32T> details,
+      TNode<Context> context, TNode<Object> receiver,
+      ExpectedReceiverMode expected_receiver_mode, TNode<Object> name,
       Label* if_bailout,
-      GetOwnPropertyMode mode = kCallJSGetterDontUseCachedName,
-      ExpectedReceiverMode expected_receiver_mode = kExpectingJSReceiver);
+      GetOwnPropertyMode mode = kCallJSGetterDontUseCachedName);
 
   TNode<IntPtrT> TryToIntptr(TNode<Object> key, Label* if_not_intptr,
                              TVariable<Int32T>* var_instance_type = nullptr);

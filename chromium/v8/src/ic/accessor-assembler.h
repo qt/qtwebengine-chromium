@@ -128,7 +128,7 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
     TNode<TaggedIndex> slot() const { return slot_; }
     TNode<HeapObject> vector() const { return vector_; }
     TNode<Object> lookup_start_object() const {
-      return lookup_start_object_.value();
+      return lookup_start_object_;
     }
 
     // Usable in cases where the receiver and the lookup start object are
@@ -139,13 +139,18 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
       return receiver_;
     }
 
+    // This is useful for figuring out whether we know anything about receiver
+    // type. If |receiver| and |lookup_start_object| are different TNodes
+    // then this ICParameters object belongs to LoadSuperIC.
+    bool IsLoadSuperIC() const { return lookup_start_object_ != receiver_; }
+
    private:
     TNode<Context> context_;
     TNode<Object> receiver_;
     TNode<Object> name_;
     TNode<TaggedIndex> slot_;
     TNode<HeapObject> vector_;
-    base::Optional<TNode<Object>> lookup_start_object_;
+    TNode<Object> lookup_start_object_;
   };
 
   struct LazyLoadICParameters {
@@ -185,6 +190,11 @@ class V8_EXPORT_PRIVATE AccessorAssembler : public CodeStubAssembler {
       DCHECK_EQ(receiver_, lookup_start_object_);
       return receiver_;
     }
+    // This is useful for figuring out whether we know anything about receiver
+    // type. If |receiver| and |lookup_start_object| are different TNodes
+    // then this ICParameters object belongs to LoadSuperIC.
+    bool IsLoadSuperIC() const { return lookup_start_object_ != receiver_; }
+
 
    private:
     LazyNode<Context> context_;

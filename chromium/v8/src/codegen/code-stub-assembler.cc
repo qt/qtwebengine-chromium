@@ -10151,8 +10151,9 @@ void CodeStubAssembler::ForEachEnumerableOwnProperty(
             Label slow_load(this, Label::kDeferred);
 
             var_value = CallGetterIfAccessor(
-                var_value.value(), object, var_details.value(), context, object,
-                next_key, &slow_load, kCallJSGetterUseCachedName);
+                var_value.value(), object, var_details.value(), context,
+                object, kExpectingJSReceiver, next_key, &slow_load,
+                kCallJSGetterUseCachedName);
             Goto(&callback);
 
             BIND(&slow_load);
@@ -10651,10 +10652,10 @@ template void CodeStubAssembler::LoadPropertyFromDictionary(
 // PropertyCell (TODO: use UnionT). Returns either the original value, or the
 // result of the getter call.
 TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
-    TNode<Object> value, TNode<HeapObject> holder, TNode<Uint32T> details,
-    TNode<Context> context, TNode<Object> receiver, TNode<Object> name,
-    Label* if_bailout, GetOwnPropertyMode mode,
-    ExpectedReceiverMode expected_receiver_mode) {
+    TNode<Object> value, std::optional<TNode<HeapObject>> holder, TNode<Uint32T> details,
+    TNode<Context> context, TNode<Object> receiver,
+    ExpectedReceiverMode expected_receiver_mode, TNode<Object> name,
+    Label* if_bailout, GetOwnPropertyMode mode) {
   TVARIABLE(Object, var_value, value);
   Label done(this), if_accessor_info(this, Label::kDeferred);
 
@@ -10696,6 +10697,7 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
 
       BIND(&if_function_template_info);
       {
+        if (holder.has_value()) {
         Label use_cached_property(this);
         TNode<HeapObject> cached_property_name = LoadObjectField<HeapObject>(
             getter, FunctionTemplateInfo::kCachedPropertyNameOffset);
@@ -10719,7 +10721,7 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
             break;
         }
         TNode<NativeContext> creation_context =
-            GetCreationContext(CAST(holder), if_bailout);
+            GetCreationContext(CAST(*holder), if_bailout);
         TNode<Context> caller_context = context;
         var_value = CallBuiltin(
             Builtin::kCallFunctionTemplate_Generic, creation_context, getter,
@@ -10729,9 +10731,14 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
         if (mode == kCallJSGetterUseCachedName) {
           Bind(&use_cached_property);
 
-          var_value = GetProperty(context, holder, cached_property_name);
+          var_value = GetProperty(context, *holder, cached_property_name);
 
           Goto(&done);
+        }
+        } else {
+          // |holder| must be available in order to handle lazy AccessorPair
+          // case (we need it for computing the function's context).
+          Unreachable();
         }
       }
     } else {
@@ -10743,11 +10750,12 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
   // AccessorInfo case.
   BIND(&if_accessor_info);
   {
+    if (holder.has_value()) {
     TNode<AccessorInfo> accessor_info = CAST(value);
     Label if_array(this), if_function(this), if_wrapper(this);
 
     // Dispatch based on {holder} instance type.
-    TNode<Map> holder_map = LoadMap(holder);
+    TNode<Map> holder_map = LoadMap(*holder);
     TNode<Uint16T> holder_instance_type = LoadMapInstanceType(holder_map);
     GotoIf(IsJSArrayInstanceType(holder_instance_type), &if_array);
     GotoIf(IsJSFunctionInstanceType(holder_instance_type), &if_function);
@@ -10761,7 +10769,7 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
       GotoIfNot(IsLengthString(
                     LoadObjectField(accessor_info, AccessorInfo::kNameOffset)),
                 if_bailout);
-      TNode<JSArray> array = CAST(holder);
+      TNode<JSArray> array = CAST(*holder);
       var_value = LoadJSArrayLength(array);
       Goto(&done);
     }
@@ -10774,7 +10782,7 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
                     LoadObjectField(accessor_info, AccessorInfo::kNameOffset)),
                 if_bailout);
 
-      TNode<JSFunction> function = CAST(holder);
+      TNode<JSFunction> function = CAST(*holder);
       GotoIfPrototypeRequiresRuntimeLookup(function, holder_map, if_bailout);
       var_value = LoadJSFunctionPrototype(function, if_bailout);
       Goto(&done);
@@ -10788,11 +10796,16 @@ TNode<Object> CodeStubAssembler::CallGetterIfAccessor(
       GotoIfNot(IsLengthString(
                     LoadObjectField(accessor_info, AccessorInfo::kNameOffset)),
                 if_bailout);
-      TNode<Object> holder_value = LoadJSPrimitiveWrapperValue(CAST(holder));
+      TNode<Object> holder_value = LoadJSPrimitiveWrapperValue(CAST(*holder));
       GotoIfNot(TaggedIsNotSmi(holder_value), if_bailout);
       GotoIfNot(IsString(CAST(holder_value)), if_bailout);
       var_value = LoadStringLengthAsSmi(CAST(holder_value));
       Goto(&done);
+    }
+    } else {
+     // |holder| must be available in order to handle AccessorInfo case (we
+     // need to pass it to the callback).
+     Unreachable();
     }
   }
 
@@ -10877,7 +10890,7 @@ void CodeStubAssembler::TryGetOwnProperty(
     }
     TNode<Object> value = CallGetterIfAccessor(
         var_value->value(), object, var_details->value(), context, receiver,
-        unique_name, if_bailout, mode, expected_receiver_mode);
+        expected_receiver_mode, unique_name, if_bailout, mode);
     *var_value = value;
     Goto(if_found_value);
   }
