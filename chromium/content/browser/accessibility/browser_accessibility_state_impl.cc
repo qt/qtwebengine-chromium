@@ -191,7 +191,7 @@ BrowserAccessibilityStateImpl* BrowserAccessibilityStateImpl::GetInstance() {
 }
 
 // On Android, Mac, and Windows there are platform-specific subclasses.
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)
+#if (!BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)) || BUILDFLAG(IS_QTWEBENGINE)
 // static
 std::unique_ptr<BrowserAccessibilityStateImpl>
 BrowserAccessibilityStateImpl::Create() {
@@ -399,7 +399,8 @@ void BrowserAccessibilityStateImpl::UpdateHistogramsOnUIThread() {
       "Accessibility.ManuallyEnabled",
       !GetAccessibilityMode().is_mode_off() && !allow_ax_mode_changes_);
 
-#if BUILDFLAG(IS_WIN)
+// WebEngine does not care about the system theme, and attempting to query it will crash
+#if !BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(IS_WIN)
   base::UmaHistogramEnumeration(
       "Accessibility.WinHighContrastTheme",
       ui::NativeTheme::GetInstanceForNativeUi()
