@@ -23,7 +23,7 @@ class AXPlatformNode;
 // Process-wide accessibility platform state.
 class COMPONENT_EXPORT(AX_PLATFORM) AXPlatform {
  public:
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // These strings are only needed for IA2 support.
   struct ProductStrings {
     // Product name, e.g. "Chrome".
@@ -44,7 +44,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatform {
     // Returns the effective process-wide accessibility mode.
     virtual AXMode GetAccessibilityMode() = 0;
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
     // Used to retrieve the product name, version, and toolkit version for IA2.
     // Only called the first time the data is needed to fill in the
     // product_strings_ member of AXPlatform.
@@ -126,7 +126,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatform {
   bool IsCaretBrowsingEnabled();
   void SetCaretBrowsingState(bool enabled);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the product name, e.g. "Chrome".
   const std::string& GetProductName() const;
 
@@ -191,7 +191,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatform {
   friend class ::ui::AXPlatformNode;
   FRIEND_TEST_ALL_PREFIXES(AXPlatformTest, Observer);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // Retrieves the product name, version, and toolkit version from the delegate
   // if they have not already been retrieved.
   void RetrieveProductStringsIfNeeded() const
@@ -206,7 +206,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXPlatform {
                      /*allow_reentrancy=*/false>
       observers_ GUARDED_BY_CONTEXT(thread_checker_);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // See product_name() product_version(), and toolkit_version().
   // These are lazily cached upon first use. Mutable to allow caching.
   mutable std::optional<ProductStrings> product_strings_

@@ -87,7 +87,7 @@ void AXPlatform::SetCaretBrowsingState(bool enabled) {
   caret_browsing_enabled_ = enabled;
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 const std::string& AXPlatform::GetProductName() const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   RetrieveProductStringsIfNeeded();
@@ -213,12 +213,12 @@ void AXPlatform::DetachFromThreadForTesting() {
   DETACH_FROM_THREAD(thread_checker_);
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 void AXPlatform::RetrieveProductStringsIfNeeded() const {
   if (!product_strings_) {
     product_strings_ = delegate_->GetProductStrings();
   }
 }
-#endif  // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace ui
