@@ -4223,7 +4223,7 @@ bool RenderFrameHostImpl::AccessibilityIsRootFrame() const {
 
 WebContentsAccessibility*
 RenderFrameHostImpl::AccessibilityGetWebContentsAccessibility() {
-  CHECK(AccessibilityIsRootFrame());
+  // CHECK(AccessibilityIsRootFrame());
   auto* view = static_cast<RenderWidgetHostViewBase*>(GetView());
   if (!view) {
     return nullptr;
@@ -13750,6 +13750,7 @@ bool RenderFrameHostImpl::IsSameSiteInstance(
 void RenderFrameHostImpl::UpdateAccessibilityMode() {
   ui::AXMode ax_mode = delegate_->GetAccessibilityMode();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!ax_mode.has_mode(ui::kAXModeBasic.flags()) &&
       browser_accessibility_manager_) {
     // Missing kWebContents and/or kNativeAPIs, so BrowserAccessibilityManager
@@ -13759,6 +13760,7 @@ void RenderFrameHostImpl::UpdateAccessibilityMode() {
     // Retain ax_unique_ids_ so that if browser accessibility is re-enabled, the
     // platform nodes corresponding to the blink nodes will have the same IDs.
   }
+#endif
 
   // Don't update accessibility mode for a frame that hasn't been created yet.
   if (!IsRenderFrameLive()) {

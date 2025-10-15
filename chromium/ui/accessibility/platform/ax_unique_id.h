@@ -44,8 +44,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXUniqueId final {
   constexpr operator const AXPlatformNodeId&() const { return id_; }
 
   friend bool operator==(const AXUniqueId&, const AXUniqueId&) = default;
-  friend bool operator<=>(const AXUniqueId&, const AXUniqueId&) = default;
-
+  friend auto operator<=>(const AXUniqueId&, const AXUniqueId&) = default;
   static AXUniqueId CreateForTest(int32_t max_id) {
     return AXUniqueId(GetNextAXUniqueId(max_id));
   }

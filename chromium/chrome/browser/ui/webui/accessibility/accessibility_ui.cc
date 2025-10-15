@@ -58,7 +58,7 @@
 #include "ui/accessibility/platform/inspect/ax_tree_formatter.h"
 #include "ui/base/webui/web_ui_util.h"
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"  // nogncheck crbug.com/40147906
@@ -101,7 +101,7 @@ static const char kUrlField[] = "url";
 static const char kValueField[] = "value";
 static const char kApiTypeField[] = "apiType";
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
 static const char kWidget[] = "widget";
 #endif
 
@@ -185,7 +185,7 @@ base::DictValue BuildTargetDescriptor(content::RenderViewHost* rvh) {
                                rvh->GetRoutingID(), accessibility_mode);
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 base::DictValue BuildTargetDescriptor(BrowserWindowInterface* browser) {
   base::DictValue target_data;
   target_data.Set(kSessionIdField, browser->GetSessionID().id());
@@ -212,7 +212,7 @@ void SetProcessModeBools(ui::AXMode ax_mode, base::DictValue& data) {
   data.Set(kScreenReader, ax_mode.has_mode(ui::AXMode::kScreenReader));
 }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 // Sets values in `data` for the platform node counts in `counts`.
 void SetNodeCounts(const ui::AXPlatformNodeWin::Counts& counts,
                    base::DictValue& data) {
@@ -391,7 +391,7 @@ void HandleAccessibilityRequestCallback(
   data.Set(kPagesField, std::move(page_list));
 
   base::ListValue browser_list;
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&browser_list](BrowserWindowInterface* browser) {
         browser_list.Append(BuildTargetDescriptor(browser));
@@ -400,7 +400,7 @@ void HandleAccessibilityRequestCallback(
 #endif  // !BUILDFLAG(IS_ANDROID)
   data.Set(kBrowsersField, std::move(browser_list));
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   SetNodeCounts(ui::AXPlatformNodeWin::GetCounts(), data);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
@@ -764,7 +764,7 @@ void AccessibilityUIMessageHandler::RegisterMessages() {
           &AccessibilityUIMessageHandler::HandleRequestNativeUITree,
           base::Unretained(this)));
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
   web_ui()->RegisterMessageCallback(
       "requestWidgetsTree",
       base::BindRepeating(
@@ -981,7 +981,7 @@ void AccessibilityUIMessageHandler::HandleRequestNativeUITree(
 
   AllowJavascript();
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   std::vector<AXPropertyFilter> property_filters;
   AddPropertyFilters(property_filters, allow, AXPropertyFilter::ALLOW);
   AddPropertyFilters(property_filters, allow_empty,
@@ -1017,7 +1017,7 @@ void AccessibilityUIMessageHandler::HandleRequestNativeUITree(
   FireWebUIListener(request_type, result);
 }
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
 void AccessibilityUIMessageHandler::HandleRequestWidgetsTree(
     const base::ListValue& args) {
   const base::DictValue& data = args[0].GetDict();
@@ -1037,7 +1037,7 @@ void AccessibilityUIMessageHandler::HandleRequestWidgetsTree(
   AllowJavascript();
   FireWebUIListener(request_type, result);
 }
-#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS)
+#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
 
 void AccessibilityUIMessageHandler::Callback(const std::string& str) {
   event_logs_.push_back(str);
@@ -1148,7 +1148,7 @@ void AccessibilityUIMessageHandler::OnUpdateDisplayTimer() {
       content::BrowserAccessibilityState::GetInstance()->GetAccessibilityMode(),
       data);
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   SetNodeCounts(ui::AXPlatformNodeWin::GetCounts(), data);
 #endif  // BUILDFLAG(IS_WIN)
 
