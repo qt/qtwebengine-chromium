@@ -27,8 +27,6 @@ DOMFloat32Array* transformationMatrixToDOMFloat32Array(const gfx::Transform&);
 
 gfx::Transform DOMFloat32ArrayToTransform(DOMFloat32Array*);
 
-gfx::Transform WTFFloatVectorToTransform(const Vector<float>&);
-
 DOMPointReadOnly* makeNormalizedQuaternion(double x,
                                            double y,
                                            double z,
