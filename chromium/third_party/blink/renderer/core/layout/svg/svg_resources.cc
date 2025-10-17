@@ -214,7 +214,9 @@ class SVGElementResourceClient::FilterData final
   }
 
   bool HasEffects() const { return LastEffect(); }
-
+  bool OriginTainted() const {
+    return LastEffect() ? LastEffect()->OriginTainted() : false;
+  }
   sk_sp<PaintFilter> BuildPaintFilter() {
    return paint_filter_builder::Build(LastEffect(), kInterpolationSpaceSRGB);
   }
@@ -391,6 +393,9 @@ void SVGElementResourceClient::UpdateFilterData(
       if (filter_data_->HasEffects()) {
         // BuildPaintFilter() can return null which means pass-through.
         operations.AppendReferenceFilter(filter_data_->BuildPaintFilter());
+        if (filter_data_->OriginTainted()) {
+          operations.SetOriginTainted();
+        }
       } else {
         // Create a filter chain that yields transparent black.
         operations.AppendOpacityFilter(0);
