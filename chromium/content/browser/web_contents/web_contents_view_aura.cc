@@ -1161,9 +1161,11 @@ void WebContentsViewAura::StartDragging(
   DragOperation result_op;
   {
     gfx::NativeView content_native_view = GetContentNativeView();
-    // Make sure event is within the web contents.
+    // Make sure event is within the web contents, and the web contents are
+    // visible.
     if (!content_native_view->GetBoundsInScreen().Contains(
-            event_info.location)) {
+            event_info.location) ||
+        !content_native_view->IsVisible()) {
       web_contents_->SystemDragEnded(source_rwh);
       return;
     }
