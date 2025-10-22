@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
 #include "base/types/id_type.h"
 #include "url/gurl.h"
 
@@ -81,6 +82,8 @@ struct SaveFileCreateInfo {
   std::string content_disposition;
   // Source type of saved file.
   SaveFileSource save_source;
+  // Callback to run to quarantine the file;
+  base::OnceClosure quarantine_callback;
 };
 
 }  // namespace content
